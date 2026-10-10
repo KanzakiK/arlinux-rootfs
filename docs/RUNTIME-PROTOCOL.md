@@ -133,8 +133,8 @@ discovery follows the approach demonstrated by
 [DroidDeck](https://github.com/Droid-Deck/DroidDeck/blob/main/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install).
 
 On Debian-based desktops, Steam retains ownership of compatibility selection.
-The launcher does not register a custom compatibility tool, replace Valve
-executables, or rewrite user-selected Proton/FEX choices. It removes selections
+The launcher does not overwrite Valve's depot executables or rewrite
+user-selected Proton/FEX choices. It removes selections
 of the former `arlinux-fex` tool once, with a configuration backup.
 
 Install **FEX-Emu** (3127680) and **Steam Linux Runtime 3.0 (sniper)** (1628350)
@@ -153,6 +153,28 @@ inside the runtime. FEX's GL/Vulkan thunks use the desktop's native GPU stack.
 Steam SDK links select x86-64 for `sdk64` and ARM64 for `sdkarm64`.
 Game and compatibility-tool support must be verified individually; native Linux
 game testing does not establish Windows/Proton support.
+
+For Windows games, install **Proton 11.0 (ARM64)** (4628740) through Steam and
+restart the client. The launcher registers **Proton ARM64 (ARLinux compatibility)**
+when the bundled core pack matches the installed depot. Select it in the game's
+Compatibility settings, then use Steam's normal Play button. The verified
+version is `1791559733 proton-11.0-2e-arm64`; Astral Ascent's Windows build has
+been verified on Redmi/Adreno 650 with Turnip.
+
+Following [DroidDeck's core-pack approach](https://github.com/Droid-Deck/DroidDeck-Components/tree/main/droiddeck-esync),
+a shadow directory reuses Valve's Proton, FEX and Windows DLLs. Only the Unix
+`ntdll.so` and `wineserver` are rebuilt from matching Valve Wine source; Wine
+loaders are copied unchanged so relative module lookup stays inside that tree.
+The PE-mapping patch requests execute permission before modifying executable
+file mappings, avoiding Android's denial of later `execmod`. Wine still applies
+its final section protections. Original and replacement hashes are checked on
+every launch; an unsupported Steam update is rejected rather than mixed with
+an old Wine core.
+
+This Windows tool invokes Valve's Proton directly, without pressure-vessel.
+It **does not provide namespace isolation**. Other compatibility selections and
+the Linux FEX graphics-provider path remain separate. Steam continues to own
+game installation, prefixes, launch arguments and compatibility selection.
 
 ## Hosted Android applications
 

@@ -140,6 +140,12 @@ static void enter_view(int info_fd)
 {
     if (!private_view) return;
     preserve_native_libraries();
+    /* Keep named shared memory visible across independent processes. A /dev
+     * mapping alone loses the host's nested /dev/shm bind after chroot. */
+    int supplied_shm = 0;
+    for (size_t i = 0; i < layout_count; i++)
+        if (!strcmp(layout[i].target, "/dev/shm")) supplied_shm = 1;
+    if (!supplied_shm) add_layout(VIEW_BIND, "/dev/shm", "/dev/shm", 1);
     struct rlimit limit;
     if (getrlimit(RLIMIT_NOFILE, &limit)) fail("getrlimit", strerror(errno));
     /* tawcroot's protected anchors start at fd 1000; Steam may lower soft to 1024. */

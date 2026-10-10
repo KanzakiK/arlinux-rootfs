@@ -16,6 +16,11 @@ gpu_inputs="$(git submodule status third_party/mesa third_party/libhybris third_
 gpu_inputs+="$(git -C third_party/mesa diff --binary HEAD | sha256sum)"
 
 ./tools/build/doctor.sh --quiet
+proton_core="${ARLINUX_PROTON_CORE:-$repo/build/linux/proton-core}"
+[[ -f "$proton_core/pack.json" ]] || {
+    echo 'Build the matching Wine core with tools/build/proton-core.sh into build/linux/proton-core first.' >&2
+    exit 2
+}
 
 # Runtime changes do not require downloading and unpacking the distribution
 # again. Cache only the unmodified seed, before adding libc or GPU payloads.
@@ -71,6 +76,8 @@ input_id() {
                 | sort -z | xargs -0 -r sha256sum)
         git -C "distributions/$product" submodule status --recursive || true
         printf '%s\n' "$gpu_inputs"
+        sha256sum "$proton_core/pack.json" "$proton_core/files/lib/wine/aarch64-unix/ntdll.so" \
+            "$proton_core/files/bin-arm64/wineserver"
         true
     } | sha256sum | cut -d' ' -f1
 }
@@ -151,6 +158,8 @@ PY
     install -Dm644 runtime/tools/arlinux-apps.desktop "$rootfs/usr/share/applications/arlinux-apps.desktop"
     install -Dm644 runtime/tools/steam.py "$rootfs/usr/lib/arlinux/steam.py"
     install -Dm644 runtime/tools/steam_fex.py "$rootfs/usr/lib/arlinux/steam_fex.py"
+    install -Dm644 runtime/tools/steam_proton.py "$rootfs/usr/lib/arlinux/steam_proton.py"
+    python3 tools/build/install-proton-core.py "$proton_core" "$rootfs/usr/lib/arlinux/proton-core"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm755 runtime/tools/arlinux-windows "$rootfs/usr/bin/arlinux-windows"
     install -Dm644 runtime/tools/windows-downloads.tsv "$rootfs/usr/lib/arlinux/guest/windows-downloads.tsv"

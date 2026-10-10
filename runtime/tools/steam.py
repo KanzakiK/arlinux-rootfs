@@ -294,8 +294,10 @@ def launch(root, arguments):
         subprocess.run(['sudo', 'ldconfig'], check=True)
     links(root)
     from steam_fex import configure
+    from steam_proton import configure as configure_proton
     os.chdir(root)
     while True:
+        configure_proton(root)
         if runtime_installed(root):
             configure(root)
             status = subprocess.run([str(binary), *arguments]).returncode

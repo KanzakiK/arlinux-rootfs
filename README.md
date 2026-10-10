@@ -26,7 +26,7 @@ sudo dpkg --add-architecture arm64
 sudo apt update
 sudo apt install \
   autoconf automake binutils-aarch64-linux-gnu build-essential ca-certificates \
-  curl debootstrap file g++-aarch64-linux-gnu gcc-aarch64-linux-gnu git \
+  bison flex curl debootstrap file g++-aarch64-linux-gnu gcc-aarch64-linux-gnu git \
   glslang-tools jq libarchive-tools libtool meson ninja-build patchelf pkgconf:arm64 python3 tar \
   wayland-protocols zstd \
   libegl-dev:arm64 libgl-dev:arm64 libgles-dev:arm64 libglvnd-dev:arm64 libwayland-dev:arm64 \
@@ -40,6 +40,11 @@ git clone --recurse-submodules https://github.com/taowen/arlinux-rootfs.git
 cd arlinux-rootfs
 ./build.sh doctor
 ./build.sh list
+mkdir -p build/proton-valve
+git clone https://github.com/ValveSoftware/wine.git build/proton-valve/wine
+git -C build/proton-valve/wine checkout e60892cc2398b0a83c332a2078c7b85e47bdb42b
+# Supply an LLVM-MinGW 23+ bin directory with ARM64X support.
+bash tools/build/proton-core.sh build/proton-valve/wine /path/to/llvm-mingw/bin build/linux/proton-core
 ./build.sh build debian
 ./build.sh verify out/debian.zip
 ```
@@ -48,6 +53,12 @@ Use `./build.sh build` to build every checked-out distribution. Build state is
 written to `build/`, finished bundles to `out/`, and reusable downloads to
 `${XDG_CACHE_HOME:-$HOME/.cache}/arlinux`. Set `ARLINUX_CACHE_DIR` to move the
 cache.
+
+The version-matched Proton core is built once and reused by distribution builds.
+Set `ARLINUX_PROTON_CORE` to use another output directory from `proton-core.sh`.
+Only its small runtime files enter the rootfs. Publish the matching
+`wine-source.tar.gz`, `execmod.patch`, and `pack.json` alongside releases that
+contain these Wine binaries; the build verifies their checksums before packaging.
 
 Prebuilt ZIP bundles are published as release assets in each distribution's
 own GitHub repository: [Debian](https://github.com/taowen/arlinux-debian/releases),
