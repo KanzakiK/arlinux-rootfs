@@ -156,12 +156,20 @@ game testing does not establish Windows/Proton support.
 
 For Windows games, install **Proton 11.0 (ARM64)** (4628740) through Steam and
 restart the client. The launcher registers **Proton ARM64 (ARLinux compatibility)**
-when the bundled core pack matches the installed depot. Select it in the game's
-Compatibility settings, then use Steam's normal Play button. The verified
+when the bundled core pack matches the installed depot, and selects it as the
+Windows default before starting Steam. Existing Valve `proton_*` selections use
+the same adapter. Explicit third-party tools and Linux FEX selections are left
+alone. The original Steam configuration is backed up before the first change;
+it is never edited while the client is running. Use Steam's normal Play button.
+The verified
 version is `1791559733 proton-11.0-2e-arm64`; Astral Ascent's Windows build has
 been verified on Redmi/Adreno 650 with Turnip.
 
-Following [DroidDeck's core-pack approach](https://github.com/Droid-Deck/DroidDeck-Components/tree/main/droiddeck-esync),
+Like [DroidDeck](https://github.com/Droid-Deck/DroidDeck/blob/main/tools/linuxfs/overlay/usr/local/bin/steam-compatibility),
+ARLinux registers an adapter around Valve's downloaded Proton. Version-matched
+core replacement is also used by DroidDeck's optional esync packs, but ARLinux's
+patch below addresses a different Android restriction; it is not DroidDeck's
+default Wine configuration. In ARLinux,
 a shadow directory reuses Valve's Proton, FEX and Windows DLLs. Only the Unix
 `ntdll.so` and `wineserver` are rebuilt from matching Valve Wine source; Wine
 loaders are copied unchanged so relative module lookup stays inside that tree.

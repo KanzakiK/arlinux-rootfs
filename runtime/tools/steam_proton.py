@@ -1,14 +1,16 @@
 """Apply an exact-version Proton core pack without modifying Valve's depot.
 
-The shadow-tree approach follows DroidDeck's version-matched core packs. Steam
-still supplies Proton, FEX, the Windows DLLs and game startup. This tool does not
-provide pressure-vessel's namespace isolation.
+Like DroidDeck, register an adapter around Steam's downloaded ARM64 Proton.
+Our version-matched core pack fixes Android executable mappings, not DroidDeck's
+optional esync support. Steam still supplies FEX, Windows DLLs and game startup.
+This tool does not provide pressure-vessel's namespace isolation.
 """
 import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import tempfile
 
@@ -19,13 +21,14 @@ LOADERS = ('files/bin-arm64/wine', 'files/lib/wine/aarch64-unix/wine',
            'files/lib/wine/aarch64-unix/wine-preloader')
 OWN = {'toolmanifest.vdf', 'compatibilitytool.vdf', 'arlinux-pack.json', 'run'}
 PACKS = Path('/usr/lib/arlinux/proton-core')
+TOOL = 'arlinux-proton-arm64'
 
 
 def configure(steam):
     """Register matching bundled packs before Steam scans compatibility tools.
 
-    Steam still owns depot installation and the user's compatibility selection.
-    Never change config.vdf or substitute an unmatched Wine version.
+    Steam still owns depot installation. Only a verified pack may become the
+    default Windows tool; explicit third-party tools and Linux FEX stay intact.
     """
     from steam_fex import app_directory, IncompleteRuntime
     try:
@@ -37,9 +40,100 @@ def configure(steam):
     for manifest in sorted(PACKS.glob('*/pack.json')):
         if json.loads(manifest.read_text()).get('version') == version:
             register(stock, manifest.parent, steam/'compatibilitytools.d/arlinux-proton-arm64')
+            select_default(steam)
             return
     print(f'Windows games: no matching Android core pack for {version}. '
           'Update ARLinux before using this Proton version.', flush=True)
+
+
+def select_default(steam):
+    """Set Steam's Windows default before startup, preserving unrelated config.
+
+    Do not race the running client's in-memory configuration. Official Proton
+    selections need the same Android adapter, but FEX and third-party tools do
+    not. A backup is retained beside config.vdf before the first change.
+    """
+    for process in Path('/proc').iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            if process.stat().st_uid != os.getuid():
+                continue
+            executable = (process/'cmdline').read_bytes().split(b'\0', 1)[0]
+            if executable == os.fsencode(steam/'steamrtarm64/steam'):
+                return
+        except OSError:
+            continue
+    config = steam/'config/config.vdf'
+    if not config.is_file():
+        return  # Steam creates its config on the first login.
+    original = config.read_text()
+    updated = default_config(original)
+    if updated == original:
+        return
+    backup = config.with_name('config.vdf.before-arlinux-proton')
+    if not backup.exists():
+        shutil.copy2(config, backup)
+    with tempfile.NamedTemporaryFile(mode='w', dir=config.parent, delete=False) as out:
+        temporary = Path(out.name)
+        out.write(updated)
+    try:
+        temporary.chmod(config.stat().st_mode & 0o777)
+        if config.read_text() != original:
+            raise RuntimeError('Steam configuration changed during setup; retry with Steam closed')
+        temporary.replace(config)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def default_config(text):
+    """Edit only CompatToolMapping; leave all other bytes and fields untouched."""
+    from steam import keyvalues
+    keyvalues(text)
+    tokens = list(re.finditer(r'"(?:\\.|[^"\\])*"|[{}]', text))
+    stack, spans = [], {}
+    for i, token in enumerate(tokens):
+        if token.group() == '{':
+            stack.append((json.loads(tokens[i-1].group()), token.end()))
+        elif token.group() == '}':
+            path = tuple(name.lower() for name, _ in stack)
+            spans[path] = (stack[-1][1], token.start())
+            stack.pop()
+    parent = ('installconfigstore', 'software', 'valve', 'steam')
+    span = spans.get((*parent, 'compattoolmapping'))
+    if span:
+        start, end = span
+        mapping = keyvalues(text[start:end])
+    elif parent in spans:
+        start = end = spans[parent][1]
+        mapping = {}
+    else:
+        raise RuntimeError('Steam configuration has no InstallConfigStore/Software/Valve/Steam')
+    changed = False
+    for app, entry in list(mapping.items()) + ([] if '0' in mapping else [('0', {})]):
+        name = entry.get('name', '')
+        # Valve's tool IDs use proton_*; GE and other custom tool IDs are not
+        # implicitly replaced. Native Linux selections (including FEX) survive.
+        if (app == '0' and not name) or name.lower().startswith('proton_'):
+            entry = dict(entry, name=TOOL)
+            entry.setdefault('config', '')
+            entry.setdefault('priority', '75' if app == '0' else '250')
+            mapping[app] = entry
+            changed = True
+    if not changed:
+        return text
+    def encode(data, indent):
+        lines = []
+        for key, value in data.items():
+            if isinstance(value, dict):
+                lines.extend([indent+json.dumps(key), indent+'{', encode(value, indent+'\t'), indent+'}'])
+            else:
+                lines.append(indent+json.dumps(key)+'\t\t'+json.dumps(value))
+        return '\n'.join(lines)
+    replacement = '\n'+encode(mapping, '\t'*5)+'\n'+'\t'*4
+    if not span:
+        replacement = '\n\t\t\t\t"CompatToolMapping"\n\t\t\t\t{'+replacement+'}\n'
+    return text[:start]+replacement+text[end:]
 
 
 def digest(path):
@@ -123,7 +217,7 @@ def register(stock, pack, tool):
 }
 ''')
         stage.rename(tool)
-    print(f'Registered {data["version"]}; restart Steam to select the tool')
+    print(f'Registered Android compatibility for {data["version"]}')
 
 
 def verify_tree(stock, tool, data):
