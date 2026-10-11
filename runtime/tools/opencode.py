@@ -2,17 +2,18 @@
 """Install the pinned official OpenCode Desktop on first use, then launch it."""
 import argparse
 import fcntl
-import hashlib
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
+import shared
 
 BINARY = Path('/opt/OpenCode/ai.opencode.desktop')
 MANIFEST = Path('/usr/lib/arlinux/guest/opencode-downloads.tsv')
 
 
-def install(cache):
+def install():
     row = next(line.split('\t') for line in MANIFEST.read_text().splitlines()
                if line.startswith('opencode-desktop\t'))
     _, version, expected, url = row
@@ -22,36 +23,40 @@ def install(cache):
         raise ValueError('Invalid OpenCode download manifest')
     print(f'Preparing OpenCode {version}. The first download may take a few minutes.\n'
           'Internet access is required. Subsequent launches use the installed app.', flush=True)
-    package = cache / f'{expected}.{extension}'
-
-    def verified():
-        if not package.is_file():
-            return False
-        with package.open('rb') as stream:
-            return hashlib.file_digest(stream, 'sha256').hexdigest() == expected
-
-    if not verified():
-        partial = package.with_suffix(package.suffix + '.part')
-        try:
-            subprocess.run(['curl', '-fL', '--retry', '3', '--connect-timeout', '20',
-                            '-o', str(partial), url], check=True)
-            with partial.open('rb') as stream:
-                if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
-                    raise ValueError('OpenCode download checksum mismatch')
-            partial.replace(package)
-        finally:
-            partial.unlink(missing_ok=True)
+    package = shared.download(url, expected, '.' + extension)
     env = dict(os.environ, DEBIAN_FRONTEND='noninteractive')
     if extension == 'deb':
         subprocess.run(['sudo', 'apt-get', 'update'], env=env, check=True)
-        subprocess.run(['sudo', 'apt-get', 'install', '-y', '--no-install-recommends',
-                        str(package)], env=env, check=True)
+        dependencies = subprocess.check_output(
+            ['dpkg-deb', '-f', str(package), 'Depends'], text=True).strip()
+        if dependencies:
+            subprocess.run(['sudo', 'apt-get', 'satisfy', '-y', '--no-install-recommends',
+                            dependencies], env=env, check=True)
     else:
         # The official ARM64 RPM contains an ordinary Linux application payload.
         subprocess.run(['sudo', 'pacman', '-S', '--needed', '--noconfirm',
                         'libarchive', 'gtk3', 'nss', 'libxss', 'libxtst', 'libsecret',
                         'alsa-plugins', 'libpulse', 'cups', 'libdrm', 'mesa'], check=True)
-        subprocess.run(['sudo', 'bsdtar', '-xpf', str(package), '-C', '/'], check=True)
+    # Share only the vendor's self-contained application, not distro libraries.
+    payloads = shared.directory('opencode')
+    destination = payloads / expected
+    with shared.locked(payloads / 'extract.lock'):
+        if not destination.is_dir():
+            with tempfile.TemporaryDirectory(prefix='extract-', dir=payloads) as temporary:
+                stage = Path(temporary)
+                if extension == 'deb':
+                    subprocess.run(['dpkg-deb', '-x', str(package), str(stage)], check=True)
+                else:
+                    subprocess.run(['bsdtar', '-xpf', str(package), '-C', str(stage)], check=True)
+                app = stage / 'opt/OpenCode'
+                if not os.access(app / BINARY.name, os.X_OK):
+                    raise RuntimeError('OpenCode executable missing from vendor package')
+                app.rename(destination)
+    BINARY.parent.parent.mkdir(parents=True, exist_ok=True)
+    if BINARY.parent.is_symlink():
+        BINARY.parent.unlink()
+    if not BINARY.parent.exists():
+        BINARY.parent.symlink_to(destination, target_is_directory=True)
     if not os.access(BINARY, os.X_OK):
         raise RuntimeError('OpenCode executable missing after installation')
     # Keep one Apps entry: the package ships two vendor launchers. Standard
@@ -60,7 +65,6 @@ def install(cache):
     applications.mkdir(parents=True, exist_ok=True)
     for name in ('ai.opencode.desktop.desktop', 'opencode-desktop.desktop'):
         (applications / name).write_text('[Desktop Entry]\nType=Application\nName=OpenCode\nHidden=true\n')
-    package.unlink()
 
 
 def main():
@@ -74,7 +78,7 @@ def main():
             print('Checking OpenCode installation…', flush=True)
         fcntl.flock(lock, fcntl.LOCK_EX)
         if not os.access(BINARY, os.X_OK):
-            install(cache)
+            install()
     # Keep the same accessibility and rendering path for Apps and voice AI.
     # Once preparation finishes, close its terminal without closing the GUI.
     with (cache / 'desktop.log').open('ab') as log:

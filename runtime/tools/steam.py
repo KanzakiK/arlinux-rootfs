@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import shared
 
 CDN = 'https://client-update.fastly.steamstatic.com/'
 CHANNELS = ('stable', 'publicbeta')
@@ -179,7 +180,7 @@ def install(root, channel):
     # Check existing installation ownership before downloading or changing files.
     links(root)
     dependencies()
-    cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home()/'.cache'))/'arlinux/steam'
+    cache = shared.directory('steam')
     cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='install-', dir=cache) as temporary:
         work = Path(temporary)
@@ -200,14 +201,8 @@ def install(root, channel):
             filename, expected = component['file'], component['sha2']
             if not re.fullmatch(r'[A-Za-z0-9_.-]+', filename) or not re.fullmatch(r'[0-9a-f]{64}', expected):
                 raise RuntimeError('Invalid Steam component name or checksum')
-            package = cache/filename
             print(f'Steam build {version}: {name} ({index}/{len(parts)})', flush=True)
-            if not package.is_file() or digest(package) != expected:
-                partial = work/filename
-                fetch(CDN + filename, partial)
-                if digest(partial) != expected:
-                    raise RuntimeError(f'Steam SHA-256 verification failed: {name}')
-                partial.replace(package)
+            package = shared.download(CDN + filename, expected, '.zip')
             extract(package, stage)
         binary = stage/'steamrtarm64/steam'
         with binary.open('rb') as source:

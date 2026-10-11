@@ -19,6 +19,7 @@ import tempfile
 import zipfile
 
 import windows
+import shared
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 LICENSES = {
@@ -27,26 +28,13 @@ LICENSES = {
 }
 
 
-def download(name, cache):
+def download(name):
     row = next(line.split('\t') for line in MANIFEST.read_text().splitlines()
                if line.startswith(name + '\t'))
     _, expected, url = row
     if (not re.fullmatch('[0-9a-f]{64}', expected) or not url.startswith('https://')):
         raise ValueError('Invalid Windows application download manifest')
-    target = cache / (expected + ('.zip' if name == 'paintnet' else '.exe'))
-    if not target.is_file() or windows.digest(target) != expected:
-        print(f'Downloading {name}…', flush=True)
-        partial = target.with_suffix('.part')
-        try:
-            subprocess.run(['curl', '-fL', '--retry', '3', '--connect-timeout', '20',
-                            '--speed-limit', '1024', '--speed-time', '60',
-                            '-o', str(partial), url], check=True)
-            if windows.digest(partial) != expected:
-                raise ValueError(f'{name}: download checksum mismatch')
-            partial.replace(target)
-        finally:
-            partial.unlink(missing_ok=True)
-    return target
+    return shared.download(url, expected, '.zip' if name == 'paintnet' else '.exe')
 
 
 def unpack_zip(archive, destination):
@@ -80,7 +68,7 @@ def consent(app, accepted):
         raise RuntimeError('Installation cancelled; no application license was accepted')
 
 
-def install_powerbi(root, prefix, cache):
+def install_powerbi(root, prefix):
     env = windows.environment(root, prefix)
     system = prefix / 'pfx/drive_c/windows/system32'
 
@@ -113,10 +101,10 @@ def install_powerbi(root, prefix, cache):
         try:
             if not native_clr.is_file():
                 run(cfg, '/v', 'winxp')
-                run(download('dotnet40', cache), '/q', '/norestart', '/log', r'C:\dotnet40.log',
+                run(download('dotnet40'), '/q', '/norestart', '/log', r'C:\dotnet40.log',
                     environment={'WINEDLLOVERRIDES': 'fusion=b'})
             run(cfg, '/v', 'win7')
-            run(download('dotnet48', cache), '/q', '/norestart', '/log', r'C:\dotnet48.log',
+            run(download('dotnet48'), '/q', '/norestart', '/log', r'C:\dotnet48.log',
                 environment={'WINEDLLOVERRIDES': 'fusion=b'})
         finally:
             run(cfg, '/v', 'win10')
@@ -127,8 +115,8 @@ def install_powerbi(root, prefix, cache):
             raise RuntimeError('Microsoft .NET 4.8 installation did not complete')
     webview = prefix / 'pfx/drive_c/Program Files (x86)/Microsoft/EdgeWebView/Application'
     if not list(webview.glob('*/msedgewebview2.exe')):
-        run(download('webview2', cache), '/silent', '/install')
-    run(download('powerbi', cache), '-quiet', '-norestart', 'ACCEPT_EULA=1', 'ENABLECXP=0')
+        run(download('webview2'), '/silent', '/install')
+    run(download('powerbi'), '-quiet', '-norestart', 'ACCEPT_EULA=1', 'ENABLECXP=0')
     executable = prefix / 'pfx/drive_c/Program Files/Microsoft Power BI Desktop/bin/PBIDesktop.exe'
     if not executable.is_file():
         raise RuntimeError('Power BI installer did not create PBIDesktop.exe; see installer logs in the prefix')
@@ -172,20 +160,17 @@ def prepare(app, accepted=False):
                 with tempfile.TemporaryDirectory(prefix='extract-', dir=home) as temporary:
                     stage = Path(temporary) / 'application'
                     stage.mkdir()
-                    unpack_zip(download(app, cache), stage)
+                    unpack_zip(download(app), stage)
                     if not (stage / 'paintdotnet.exe').is_file():
                         raise RuntimeError('Paint.NET executable missing from official archive')
                     application.parent.mkdir(parents=True, exist_ok=True)
                     stage.rename(application)
             executable = application / 'paintdotnet.exe'
         else:
-            executable = install_powerbi(root, prefix, cache)
+            executable = install_powerbi(root, prefix)
         temporary = pointer.with_suffix('.tmp')
         temporary.write_text(json.dumps({'executable': str(executable.relative_to(home))}) + '\n')
         temporary.replace(pointer)
-        for package in cache.glob('*'):
-            if package.suffix in ('.zip', '.exe', '.part'):
-                package.unlink()
         return executable, prefix, cache
 
 

@@ -13,6 +13,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import shared
+import hashlib
 
 
 def configure(steam):
@@ -33,7 +35,7 @@ def configure(steam):
         native = (Path(files)/'rootfs').resolve(strict=True)
         hybris = native/'usr/lib/hybris'
         directories = [native/'usr/lib/mesa', hybris,
-                       *map(Path, ('/system', '/system_ext', '/product', '/vendor', '/odm', '/apex'))]
+                       *map(Path, ('/arlinux-shared', '/system', '/system_ext', '/product', '/vendor', '/odm', '/apex'))]
         mounts = os.environ.get('STEAM_COMPAT_MOUNTS', '').split(':')
         mounts += [str(p) for p in directories if p.is_dir()]
         os.environ['STEAM_COMPAT_MOUNTS'] = ':'.join(dict.fromkeys(p for p in mounts if p))
@@ -172,9 +174,13 @@ def prepare(steam):
     if not platforms:
         raise IncompleteRuntime('Steam Linux Runtime 3.0 (sniper) is incomplete; verify its files in Steam')
     platform = max(platforms, key=lambda p: tuple(map(int, re.findall(r'\d+', p.name))))
-    cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home()/'.cache'))/'arlinux/steam-fex'
-    cache.mkdir(parents=True, exist_ok=True)
-    root = cache/(platform.name+'-v2')
+    cache = shared.directory('steam-fex')
+    # Never overwrite thunks in a provider used by another instance's process.
+    identity = hashlib.sha256()
+    identity.update((platform/'usr-mtree.txt.gz').read_bytes())
+    for thunk in ('libGL-guest.so', 'libvulkan-guest.so'):
+        identity.update((fex/'usr/share/fex-emu/GuestThunks'/thunk).read_bytes())
+    root = cache/(platform.name+'-v2-'+identity.hexdigest()[:24])
     with (cache/'prepare.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if not (root/'complete').exists():

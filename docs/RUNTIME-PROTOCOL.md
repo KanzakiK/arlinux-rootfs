@@ -35,7 +35,27 @@ preload library is injected. Distribution profiles must not override reserved
 `BIONICX_*` or `LD_LIBRARY_PATH` values, or inject `LD_PRELOAD`. Processes should
 inherit the session environment and launch applications with normal command lines.
 
-### Sandbox compatibility is not isolation
+### Cross-instance application storage
+
+The host maps its private `files/shared` directory to `/arlinux-shared` in
+every instance. This directory survives instance deletion, but not Android
+application uninstall or clearing app data. Release and Debug packages have
+separate stores. Distribution bundles must not include its contents.
+
+On-demand launchers keep SHA-256-addressed vendor installers in
+`/arlinux-shared/downloads`, with file locks and atomic publication. OpenCode
+application payloads, standalone Wine/FEX/DXVK runtimes and Steam's prepared
+FEX graphics providers are also shared, keyed by content/version. Do not
+modify a published runtime while it is running.
+
+Each instance retains its own package database and native dependencies, HOME,
+Wine prefixes, Steam client/account state, games and documents. WPS and Windows
+app installers reuse shared downloads but install into their instance. Sharing
+a download does not imply sharing mutable installed application state.
+The store is a disk-space optimization, not an isolation boundary. No automatic
+garbage collection removes an artifact that another instance may need.
+
+### Security boundary
 
 The Android app sandbox remains the security boundary. Linux instances and
 projects are not separate security boundaries; run only trusted guest software.

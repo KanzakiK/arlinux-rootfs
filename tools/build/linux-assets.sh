@@ -160,6 +160,7 @@ PY
     install -Dm644 runtime/tools/apps.py "$rootfs/usr/lib/arlinux/guest/yibu-launcher.py"
     install -Dm644 runtime/tools/arlinux-apps.desktop "$rootfs/usr/share/applications/arlinux-apps.desktop"
     install -Dm644 runtime/tools/steam.py "$rootfs/usr/lib/arlinux/steam.py"
+    install -Dm644 runtime/tools/shared.py "$rootfs/usr/lib/arlinux/shared.py"
     install -Dm644 runtime/tools/steam_fex.py "$rootfs/usr/lib/arlinux/steam_fex.py"
     install -Dm644 runtime/tools/steam_proton.py "$rootfs/usr/lib/arlinux/steam_proton.py"
     python3 tools/build/install-proton-core.py "$proton_core" "$rootfs/usr/lib/arlinux/proton-core"

@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import shared
 
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
@@ -21,7 +22,7 @@ MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
 
 def ensure_runtime():
     """Download the pinned standalone Wine release when no runtime is installed."""
-    if (storage()/'current.json').is_file():
+    if (runtime_storage()/'current.json').is_file():
         return runtime()
     entries = [line for line in MANIFEST.read_text().splitlines() if line.strip() and not line.startswith('#')]
     if not entries:
@@ -33,29 +34,9 @@ def ensure_runtime():
     if (len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected)
             or not url.startswith('https://github.com/taowen/proton-ge-custom/releases/download/')):
         raise ValueError('Invalid Windows runtime download source or checksum')
-    cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home()/'.cache'))/'arlinux/windows'
-    cache.mkdir(parents=True, exist_ok=True)
-    archive = cache/(expected+'.tar.gz')
-    with (cache/'download.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not archive.is_file() or digest(archive) != expected:
-            if not shutil.which('curl'):
-                raise RuntimeError('Install curl using the distribution package manager first')
-            print(f'Downloading {version}. The first installation is large and needs internet access.', flush=True)
-            partial = archive.with_suffix('.part')
-            try:
-                subprocess.run(['curl', '-fL', '--retry', '3', '--connect-timeout', '20',
-                                '--speed-limit', '1024', '--speed-time', '60',
-                                '-o', str(partial), url], check=True)
-                if digest(partial) != expected:
-                    raise ValueError('Downloaded Windows runtime SHA-256 mismatch')
-                partial.replace(archive)
-            finally:
-                partial.unlink(missing_ok=True)
-        install(archive, expected)
-        # The extracted runtime is already installed and verified; don't keep a
-        # second compressed copy in the user's instance indefinitely.
-        archive.unlink()
+    print(f'Preparing shared {version}. The first installation needs internet access.', flush=True)
+    archive = shared.download(url, expected, '.tar.gz')
+    install(archive, expected)
     return runtime()
 
 
@@ -100,12 +81,16 @@ def storage():
     return Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share'))/'arlinux/windows'
 
 
+def runtime_storage():
+    return shared.directory('windows')
+
+
 def install(archive, expected):
     """Install atomically; never overwrite binaries used by a running process."""
     actual = digest(archive)
     if actual != expected.lower():
         raise ValueError('Archive SHA-256 mismatch')
-    home = storage()
+    home = runtime_storage()
     runtimes = home/'runtimes'
     runtimes.mkdir(parents=True, exist_ok=True)
     destination = runtimes/actual
@@ -132,7 +117,7 @@ def install(archive, expected):
 
 
 def runtime():
-    home = storage()
+    home = runtime_storage()
     pointer = home/'current.json'
     if not pointer.is_file():
         raise RuntimeError('Install a runtime first: arlinux-windows --install BUNDLE --sha256 SHA256')
