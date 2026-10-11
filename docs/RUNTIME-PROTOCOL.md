@@ -48,8 +48,18 @@ application payloads, standalone Wine/FEX/DXVK runtimes and Steam's prepared
 FEX graphics providers are also shared, keyed by content/version. Do not
 modify a published runtime while it is running.
 
+Steam's complete client, depots (Proton, FEX, Steam Linux Runtime), games,
+account configuration and library-local game prefixes live in
+`/arlinux-shared/steam`. Valve still owns downloads, updates and game launch.
+The launcher holds a cross-instance session lock. Repeated clicks in the same
+session forward to Valve; another instance must wait for Steam to close.
+An existing stopped client can be moved into an empty shared installation;
+independent existing installations are never merged or overwritten.
+
 Each instance retains its own package database and native dependencies, HOME,
-Wine prefixes, Steam client/account state, games and documents. WPS and Windows
+standalone Wine prefixes and documents. Game data stored outside the Steam
+library, such as Linux games' HOME configuration, remains instance-local.
+WPS and Windows
 app installers reuse shared downloads but install into their instance. Sharing
 a download does not imply sharing mutable installed application state.
 The store is a disk-space optimization, not an isolation boundary. No automatic

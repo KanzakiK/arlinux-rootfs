@@ -23,6 +23,36 @@ CHANNELS = ('stable', 'publicbeta')
 PREINSTALLED = Path('/opt/arlinux/steam-client')
 
 
+def share_client(root, previous):
+    """Move one existing client without copying depots or merging accounts."""
+    if (root/'steamrtarm64/steam').is_file():
+        return
+    if not (previous/'steamrtarm64/steam').is_file():
+        return
+    if subprocess.run(['pgrep', '-f', re.escape(str(previous/'steamrtarm64/steam'))],
+                      stdout=subprocess.DEVNULL).returncode == 0:
+        raise RuntimeError('Close the existing Steam client before moving it to shared storage')
+    if root.exists():
+        if any(root.iterdir()):
+            raise RuntimeError('Preserving an incomplete shared Steam installation; use --update to repair it')
+        root.rmdir()
+    previous.rename(root)
+    # Keep existing SDK links and stored game-library paths valid through the
+    # move. The alias belongs to this instance; deleting it cannot delete Steam.
+    previous.symlink_to(root, target_is_directory=True)
+    listing = root/'steamapps/libraryfolders.vdf'
+    if listing.is_file():
+        old = json.dumps(str(previous))
+        new = json.dumps(str(root))
+        text = listing.read_text()
+        updated = re.sub(r'("path"\s+)' + re.escape(old), lambda m: m[1] + new, text)
+        if updated != text:
+            temporary = listing.with_suffix('.tmp')
+            temporary.write_text(updated)
+            temporary.replace(listing)
+    print('Moved Steam and its downloaded games/runtimes into /arlinux-shared/steam.', flush=True)
+
+
 def seed_client(root):
     """Populate a new user's installation from the optional, account-free seed.
 
@@ -153,7 +183,7 @@ def extract(archive, directory):
                 path.chmod(0o755 if executable or mode & 0o111 else 0o644)
 
 
-def links(root):
+def links(root, previous=None):
     steam = Path.home()/'.steam'
     steam.mkdir(exist_ok=True)
     # Steam uses separate SDK directories for x86-64 and ARM64 clients. Games
@@ -164,6 +194,12 @@ def links(root):
     old_targets = {'sdk64': root/'linuxarm64'}
     for name, target in targets.items():
         path = steam/name
+        if (previous is not None and previous != root and path.is_symlink()
+                and path.resolve() == (previous/target.relative_to(root)).resolve()):
+            # Only aliases owned by this launcher's old installation. Keep the
+            # old client itself untouched when a shared installation exists.
+            path.unlink()
+            path.symlink_to(target)
         if name in old_targets and path.is_symlink() and path.resolve() == old_targets[name]:
             path.unlink()
         if path.is_symlink() or path.exists():
@@ -174,7 +210,7 @@ def links(root):
 
 
 def install(root, channel):
-    if subprocess.run(['pgrep', '-f', str(root/'steamrtarm64/steam')],
+    if subprocess.run(['pgrep', '-f', re.escape(str(root/'steamrtarm64/steam'))],
                       stdout=subprocess.DEVNULL).returncode == 0:
         raise RuntimeError('Close Steam before installing or repairing it')
     # Check existing installation ownership before downloading or changing files.
@@ -367,7 +403,8 @@ def require_robust_futex():
 def main():
     if platform.machine() != 'aarch64':
         raise RuntimeError('Native Steam requires ARM64 Linux')
-    root = (Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share'))/'Steam').resolve()
+    previous = (Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share'))/'Steam').resolve()
+    root = shared.ROOT/'steam'
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--desktop', action='store_true',
                         help='Keep the launcher terminal open if startup fails')
@@ -375,15 +412,34 @@ def main():
     parser.add_argument('--channel', choices=CHANNELS, help='Select a Valve ARM64 channel (default: stable)')
     args, steam_arguments = parser.parse_known_args()
     require_robust_futex()
-    cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home()/'.cache'))/'arlinux/steam'
-    cache.mkdir(parents=True, exist_ok=True)
-    with (cache/'install.lock').open('w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    # Hold the lock for the entire client session, not just installation. A
+    # second instance must not update the same depots or launch another client.
+    with (shared.directory('locks')/'steam.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if client_running() and not args.update and not args.channel:
+                send_client_command(root, steam_arguments or ['steam://open/main'])
+                return 0
+            raise RuntimeError('Steam is starting or running in another instance. Close it there first.')
+        if client_running():
+            if args.update or args.channel:
+                raise RuntimeError('Close Steam before updating or changing its channel')
+            if previous != root and (previous/'steamrtarm64/steam').is_file():
+                raise RuntimeError('Close the instance-local Steam client before using shared Steam')
+            send_client_command(root, steam_arguments or ['steam://open/main'])
+            return 0
+        if subprocess.run(['pgrep', '-f', re.escape(str(root/'steamrtarm64/steam'))],
+                          stdout=subprocess.DEVNULL).returncode == 0:
+            raise RuntimeError('Shared Steam is still running in another session. Close it first.')
+        if previous != root:
+            share_client(root, previous)
+        links(root, previous)
         if not args.update and not args.channel:
             seed_client(root)
         if args.update or args.channel or not (root/'steamrtarm64/steam').is_file():
             install(root, args.channel or CHANNELS[0])
-    return launch(root, steam_arguments)
+        return launch(root, steam_arguments)
 
 
 if __name__ == '__main__':
