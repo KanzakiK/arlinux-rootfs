@@ -116,11 +116,41 @@ set -eu
 ''', 'device-build': b'1\n'})
 
 
+def validate_snapshot(snapshot: Path) -> None:
+    """Reject incomplete or outdated package snapshots before compression."""
+    required = {'usr/share/arlinux/offline-desktop', 'usr/share/arlinux/packages.tsv',
+                'usr/bin/thunar', 'usr/bin/mousepad'}
+    providers = {'mesa-libgallium', 'libgbm1', 'libgl1-mesa-dri', 'libglx-mesa0', 'libegl-mesa0'}
+    seen, installed = set(), set()
+    with tarfile.open(snapshot, 'r|') as source:
+        for member in source:
+            name = member.name.removeprefix('./').rstrip('/')
+            if name == 'opt/OpenCode' or name.startswith('opt/OpenCode/'):
+                raise ValueError('OpenCode must be installed on demand')
+            seen.add(name)
+            if name == 'usr/share/arlinux/offline-desktop':
+                if source.extractfile(member).read() != b'1\n':
+                    raise ValueError('Device preparation did not finish')
+            elif name == 'var/lib/dpkg/status':
+                for block in source.extractfile(member).read().decode().split('\n\n'):
+                    fields = dict(line.split(': ', 1) for line in block.splitlines()
+                                  if ': ' in line and not line.startswith(' '))
+                    if (fields.get('Status') == 'install ok installed'
+                            and '+arlinux.' in fields.get('Version', '')):
+                        installed.add(fields.get('Package'))
+    if not required <= seen:
+        raise ValueError('Incomplete build snapshot: ' + ', '.join(sorted(required - seen)))
+    if not providers <= installed:
+        raise ValueError('Build snapshot is missing ARLinux Mesa packages: ' +
+                         ', '.join(sorted(providers - installed)))
+
+
 def seal(seed: Path, snapshot: Path, output: Path) -> None:
+    validate_snapshot(snapshot)
     # Start with an unconfigured seed so no preparation entry point can ship.
     with zipfile.ZipFile(seed) as archive:
-        if 'device-build' in archive.namelist():
-            raise ValueError('Seal against the original seed, not the preparation ZIP')
+        if {'device-build', 'offline-desktop'} & set(archive.namelist()):
+            raise ValueError('Seal against the original seed, not a preparation or offline ZIP')
         final_first_boot = archive.read('guest/first-boot.sh')
         # A prepared snapshot owns distro packages, not framework code. Keep
         # runtime entry points from this build's seed so reusing an offline
@@ -165,7 +195,6 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                 'usr/lib/arlinux/')
     allowed = {'etc', 'usr', 'opt', 'var', 'bin', 'sbin', 'lib', 'lib64'}
     seen = set()
-    mesa_packages = set()
     with tempfile.TemporaryDirectory(prefix='arlinux-seal-') as temp:
         compressed = Path(temp) / 'rootfs.tar.zst'
         with compressed.open('wb') as dest:
@@ -197,12 +226,6 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                             member.size = len(data)
                         elif name == 'var/lib/dpkg/status':
                             data = body.read()
-                            for block in data.decode().split('\n\n'):
-                                fields = dict(line.split(': ', 1) for line in block.splitlines()
-                                              if ': ' in line and not line.startswith(' '))
-                                if (fields.get('Status') == 'install ok installed'
-                                        and '+arlinux.' in fields.get('Version', '')):
-                                    mesa_packages.add(fields.get('Package'))
                             body = io.BytesIO(data)
                         elif name == 'usr/share/arlinux/offline-desktop':
                             if body.read() != b'1\n':
@@ -232,10 +255,6 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                     'usr/bin/arlinux-opencode', 'usr/bin/thunar', 'usr/bin/mousepad'}
         if not required <= seen:
             raise ValueError('Incomplete device desktop: ' + ', '.join(sorted(required - seen)))
-        providers = {'mesa-libgallium', 'libgbm1', 'libgl1-mesa-dri', 'libglx-mesa0', 'libegl-mesa0'}
-        if not providers <= mesa_packages:
-            raise ValueError('Device desktop is missing ARLinux Mesa provider packages: ' +
-                             ', '.join(sorted(providers - mesa_packages)))
         with compressed.open('rb') as stream:
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         rewrite(seed, output, {'rootfs.tar.zst': compressed,

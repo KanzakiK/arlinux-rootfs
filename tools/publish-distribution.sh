@@ -3,8 +3,10 @@
 set -euo pipefail
 
 repo="${ARLINUX_ROOTFS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-id="${1:?usage: publish-distribution.sh DISTRIBUTION TAG}"
-tag="${2:?usage: publish-distribution.sh DISTRIBUTION TAG}"
+id="${1:?usage: publish-distribution.sh DISTRIBUTION TAG BUNDLE.zip}"
+tag="${2:?usage: publish-distribution.sh DISTRIBUTION TAG BUNDLE.zip}"
+bundle="$(realpath "${3:?Specify the exact tested ZIP; publication never rebuilds it}")"
+[[ -f "$bundle" ]] || { echo "Missing bundle: $bundle" >&2; exit 2; }
 [[ "$id" =~ ^[a-z][a-z0-9-]{0,63}$ ]] || { echo "Invalid distribution ID: $id" >&2; exit 2; }
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][a-zA-Z0-9.-]+)?$ ]] || {
     echo "Use a version tag such as v0.1.0" >&2; exit 2;
@@ -35,14 +37,24 @@ if gh release view "$tag" -R "$github_repo" >/dev/null 2>&1; then
     exit 2
 fi
 
-(cd "$repo" && ./build.sh build "$id" && ./build.sh verify "out/$id.zip")
-bundle="$repo/out/$id.zip"
+(cd "$repo" && ./build.sh verify "$bundle")
+python3 - "$bundle" "$id" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    manifest = json.loads(archive.read('manifest.json'))
+    if manifest['distributionId'] != sys.argv[2] or 'device-build' in archive.namelist():
+        raise SystemExit('Expected the tested distribution bundle, not a preparation image')
+PY
 checksum="$(sha256sum "$bundle" | cut -d' ' -f1)"
 size="$(stat -c %s "$bundle")"
 protocol="$(python3 -c 'import json,sys,zipfile; print(json.loads(zipfile.ZipFile(sys.argv[1]).read("manifest.json"))["protocol"])' "$bundle")"
 framework_commit="$(git -C "$repo" rev-parse HEAD)"
-notes="$(printf 'Import this ZIP bundle into ARLinux 0.1.4 or later. The repository source archive is not the installable rootfs bundle. The bundle works with both the release and development Android package IDs.\n\n- Bundle protocol: %s\n- Distribution commit: `%s`\n- arlinux-rootfs commit: `%s`\n- Bundle size: %s bytes\n- SHA-256 (`%s.zip`): `%s`\n' "$protocol" "$commit" "$framework_commit" "$size" "$id" "$checksum")"
-gh release create "$tag" "$bundle" -R "$github_repo" \
+notes="$(printf 'Import this ZIP into an ARLinux version supporting the bundle protocol below. The repository source archive is not an installable bundle. Release and development APKs use the same bundle.\n\n- Bundle protocol: %s\n- Distribution commit at publication: `%s`\n- Framework commit at publication: `%s`\n- Bundle size: %s bytes\n- SHA-256 (`%s.zip`): `%s`\n' "$protocol" "$commit" "$framework_commit" "$size" "$id" "$checksum")"
+# Use a canonical asset name without renaming or rebuilding the tested ZIP.
+stage="$(mktemp -d)"
+trap 'rm -f "$stage/$id.zip"; rmdir "$stage"' EXIT
+ln -s "$bundle" "$stage/$id.zip"
+gh release create "$tag" "$stage/$id.zip" -R "$github_repo" \
     --target "$commit" --title "$name $tag" --notes "$notes"
 gh release view "$tag" -R "$github_repo" --json assets \
     --jq ".assets[] | select(.name == \"$id.zip\") | .url"

@@ -49,13 +49,18 @@ For an offline-ready Debian desktop, install packages natively in a disposable
 Android build instance instead of emulating ARM64 on the build host:
 
 ```sh
-./build.sh build debian
-cp out/debian.zip out/debian-seed.zip
-python3 tools/device-desktop.py prepare out/debian-seed.zip out/debian-prepare.zip
-# Import debian-prepare.zip into a NEW build-only instance. Allow its package
-# installer to finish, stop all its processes, and export ONLY its rootfs as tar.
-python3 tools/device-desktop.py seal out/debian-seed.zip device-rootfs.tar out/debian.zip
+./build.sh prepare debian
+# Import build/offline/debian/prepare.zip into a NEW build-only instance.
+# Let preparation finish, stop it, and export ONLY its rootfs as:
+# build/offline/debian/rootfs.tar
+./build.sh offline debian build/offline/debian/rootfs.tar
 ```
+
+Use the same commands with `yibu` for the built-in workspace. Preparation files
+stay under `build/offline/<id>/`; the final installable ZIP is `out/<id>.zip`.
+The snapshot argument is explicit: no file glob or experimental filename selects
+it. Package snapshots may be reused, but run `offline` after runtime changes;
+it rebuilds current assets and replaces framework code during sealing.
 
 The preparation ZIP explicitly invokes Debian's `guest/build-desktop.sh`.
 The final ZIP restores the local-only `guest/first-boot.sh`. Sealing removes
@@ -284,10 +289,11 @@ Before publishing a distribution:
 
 Publish the verified `out/<id>.zip` as an asset of the distribution
 repository's GitHub Release. GitHub's automatically generated source archive
-is not an installable bundle. `tools/publish-distribution.sh <id> <tag>` is the
-reference maintainer workflow: it requires committed inputs, builds and
-verifies the bundle, records the framework and distribution commits plus the
-SHA-256, and creates the release using GitHub CLI. The rootfs framework does
+is not an installable bundle. Run
+`tools/publish-distribution.sh <id> <tag> out/<id>.zip` after testing the ZIP.
+It requires committed inputs, verifies and uploads the exact supplied bundle
+without rebuilding it, and records its SHA-256 and the checkout commits at
+publication. The rootfs framework does
 not host bundles for individual distributions.
 
 `arlinux-lxqt` is maintained as the external-reference test: it is developed as

@@ -165,9 +165,10 @@ Public reference implementations are:
 - [arlinux-lxqt](https://github.com/taowen/arlinux-lxqt)
 
 Maintainers can publish one distribution from a clean checkout with
-`tools/publish-distribution.sh <id> <tag>` after authenticating `gh`. It builds
-and verifies the bundle, then creates a release in that distribution's GitHub
-repository with the ZIP and its SHA-256 in the release notes.
+`tools/publish-distribution.sh <id> <tag> out/<id>.zip` after testing the ZIP
+and authenticating `gh`. It verifies and uploads that exact bundle without
+rebuilding it, then creates a release in the distribution's GitHub repository
+with the ZIP and its SHA-256 in the release notes.
 
 ## Documentation
 

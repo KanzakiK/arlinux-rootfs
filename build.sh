@@ -25,6 +25,26 @@ select_products() {
 }
 
 case "$command" in
+  prepare|offline)
+    id="${1:?Specify one Debian-based distribution}"
+    case "$id" in debian|yibu) ;; *) echo 'Offline preparation supports debian and yibu' >&2; exit 2 ;; esac
+    select_products "$id"
+    work="build/offline/$id"
+    snapshot="${2:-}"
+    if [[ "$command" == offline && ! -f "$snapshot" ]]; then
+      echo 'offline requires an explicit build-only rootfs TAR snapshot' >&2
+      exit 2
+    fi
+    git submodule update --init --recursive
+    ./tools/build/linux-assets.sh "$id"
+    mkdir -p "$work"
+    python3 tools/bundle.py pack "distributions/$id" "$work/seed.zip"
+    if [[ "$command" == prepare ]]; then
+      python3 tools/device-desktop.py prepare "$work/seed.zip" "$work/prepare.zip"
+    else
+      python3 tools/device-desktop.py seal "$work/seed.zip" "$snapshot" "out/$id.zip"
+    fi
+    ;;
   build)
     select_products "$@"
     git submodule update --init --recursive
@@ -47,5 +67,5 @@ case "$command" in
     [[ $# -gt 0 ]] || { echo 'verify requires at least one bundle' >&2; exit 2; }
     for bundle in "$@"; do python3 tools/bundle.py verify "$bundle"; done
     ;;
-  *) echo "usage: $0 {build [DISTRIBUTION...]|doctor|list|validate DIRECTORY...|verify BUNDLE...}" >&2; exit 2 ;;
+  *) echo "usage: $0 {build [ID...]|prepare ID|offline ID SNAPSHOT.tar|doctor|list|validate DIRECTORY...|verify BUNDLE...}" >&2; exit 2 ;;
 esac
