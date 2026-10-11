@@ -26,5 +26,9 @@
 	url = https://github.com/taowen/arlinux-yibu.git
 [submodule "third_party/proton"]
 	path = third_party/proton
-	url = https://github.com/taowen/proton-ge-custom.git
-	branch = codex/arlinux-ge
+	url = https://github.com/taowen/arlinux-proton.git
+	branch = arlinux
+[submodule "third_party/wine"]
+	path = third_party/wine
+	url = https://github.com/taowen/wine.git
+	branch = arlinux

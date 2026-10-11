@@ -32,7 +32,7 @@ def ensure_runtime():
         raise ValueError('Invalid Windows runtime download manifest')
     version, expected, url = fields
     if (len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected)
-            or not url.startswith('https://github.com/taowen/proton-ge-custom/releases/download/')):
+            or not url.startswith('https://github.com/taowen/wine/releases/download/')):
         raise ValueError('Invalid Windows runtime download source or checksum')
     print(f'Preparing shared {version}. The first installation needs internet access.', flush=True)
     archive = shared.download(url, expected, '.tar.gz')

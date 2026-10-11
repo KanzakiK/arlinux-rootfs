@@ -1,3 +1,2 @@
-# Standalone Wine 11.19 replaces the GE-Proton desktop runtime.
-# Add VERSION<TAB>SHA256<TAB>URL after the verified bundle is published.
-# Local builds are installed with arlinux-windows --install BUNDLE --sha256 SHA256.
+# VERSION<TAB>SHA256<TAB>URL; pinned standalone runtime, separate from Steam.
+Wine 11.19 ARLinux r1	2f73bf9220feb15e4c454ed2979a2aee15ba544427e1fd17dca806e24dbabab4	https://github.com/taowen/wine/releases/download/wine-11.19-arlinux.1/arlinux-wine-11.19-gpu-occlusion.tar.gz

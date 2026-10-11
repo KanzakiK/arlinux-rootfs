@@ -214,6 +214,30 @@ It **does not provide namespace isolation**. Other compatibility selections and
 the Linux FEX graphics-provider path remain separate. Steam continues to own
 game installation, prefixes, launch arguments and compatibility selection.
 
+## Standalone Windows applications
+
+`arlinux-windows PROGRAM.exe` uses a separate native ARM64 Wine 11.19 runtime,
+with FEX CPU modules for x86/x64 applications and DXVK for Direct3D. It does not
+use or replace Steam's Proton tools. Application compatibility is experimental.
+
+The first launch downloads the pinned archive from the
+[ARLinux Wine release](https://github.com/taowen/wine/releases).
+`windows-downloads.tsv` records its HTTPS URL and SHA-256. The launcher verifies
+the archive before installing an immutable runtime under
+`/arlinux-shared/windows/runtimes/<sha256>`; each instance keeps its own Wine
+prefixes and installed applications. A manual install uses
+`arlinux-windows --install BUNDLE --sha256 SHA256`.
+
+The public [Wine fork](https://github.com/taowen/wine/tree/arlinux),
+[FEX fork](https://github.com/taowen/FEX/tree/arlinux), and
+[DXVK fork](https://github.com/taowen/dxvk/tree/arlinux) contain the integration
+sources. Every binary release includes the corresponding source archives.
+Build Wine with `tools/build/wine-standalone.sh third_party/wine LLVM_MINGW_BIN OUTPUT`,
+then build FEX and DXVK with `tools/build/fex-windows.sh` and
+`tools/build/dxvk-windows.sh`. `tools/package-wine.py --help` lists the complete
+runtime packaging inputs. Build tools run on Linux; the runtime is downloaded
+on demand rather than bundled into the APK.
+
 ## Hosted Android applications
 
 The host installs `/usr/bin/arlinux-app`. `arlinux-app PACKAGE [HTTP_URL]`

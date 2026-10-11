@@ -9,9 +9,9 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source_dir="$(realpath "$1")"
 export PATH="$(realpath "$2"):$PATH"
 destination="$(realpath -m "$3")"
-revision=455e3509b98a6919fd4ad1def4803e08c41c03b2
+revision=30e6c7d5add27d2a4437ab319a72048ba244ec5e
 [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$revision" ]] || {
-    echo 'Wine source must match the pinned Wine 11.19 revision.' >&2
+    echo 'Wine source must match the pinned ARLinux Wine 11.19 revision.' >&2
     exit 2
 }
 [[ ! -e "$destination" ]] || { echo 'Output directory already exists.' >&2; exit 2; }
@@ -20,17 +20,6 @@ stage="$(mktemp -d "$repo/build/wine-standalone/build.XXXXXXXX")"
 mkdir "$stage/source" "$stage/tools" "$stage/core"
 echo "Build directory: $stage"
 git -C "$source_dir" archive HEAD | tar -xf - -C "$stage/source"
-for number in 0001 0010 0013 0016 0021; do
-    patches=("$repo/third_party/proton/patches/arlinux/$number"-*.patch)
-    [[ ${#patches[@]} == 1 && -f "${patches[0]}" ]] || {
-        echo "Expected one patch for $number." >&2; exit 2;
-    }
-    patch -d "$stage/source" -p1 --batch --forward --fuzz=0 < "${patches[0]}"
-done
-for name in anonymous parameterized metadata gdiplus memory-table image-cache actual-relocation; do
-    patch -d "$stage/source" -p1 --batch --forward --fuzz=0 \
-        < "$repo/third_party/proton/patches/arlinux/wine-11.19/$name.patch"
-done
 (cd "$stage/source" && perl tools/make_requests)
 native_triplet="$(gcc -dumpmachine)"
 export PKG_CONFIG_LIBDIR="/usr/lib/$native_triplet/pkgconfig:/usr/share/pkgconfig"
@@ -57,7 +46,7 @@ make -C "$stage/core" -j"${JOBS:-8}" > "$stage/build.log" 2>&1
 make -C "$stage/core" install DESTDIR="$stage/install" > "$stage/install.log" 2>&1
 mkdir "$stage/output"
 mv "$stage/install/usr/local" "$stage/output/files"
-printf '%s\n' "$revision" > "$stage/output/wine-commit"
+git -C "$source_dir" rev-parse HEAD > "$stage/output/wine-commit"
 cp "$stage/source/VERSION" "$stage/output/wine-version"
 tar -czf "$stage/output/wine-source.tar.gz" -C "$stage" source
 mkdir -p "$(dirname "$destination")"
