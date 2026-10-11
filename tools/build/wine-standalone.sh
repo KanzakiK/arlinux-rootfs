@@ -27,7 +27,7 @@ for number in 0001 0010 0013 0016 0021; do
     }
     patch -d "$stage/source" -p1 --batch --forward --fuzz=0 < "${patches[0]}"
 done
-for name in anonymous parameterized metadata gdiplus memory-table image-cache; do
+for name in anonymous parameterized metadata gdiplus memory-table image-cache actual-relocation; do
     patch -d "$stage/source" -p1 --batch --forward --fuzz=0 \
         < "$repo/third_party/proton/patches/arlinux/wine-11.19/$name.patch"
 done
