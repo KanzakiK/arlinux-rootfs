@@ -80,7 +80,14 @@ def main():
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 status = process.wait()
-    metadata.update(exit_code=status, timed_out=timed_out, finished=time.time())
+    # The observer normally detaches after its time budget. Its zero exit code
+    # is not evidence that the application exited successfully (or worked).
+    lines = (report/'debugger.log').read_text(errors='replace').splitlines()
+    application_exits = [int(line.partition('=')[2]) for line in lines
+                         if line.startswith('process_exit=')]
+    metadata.update(exit_code=status, timed_out=timed_out, finished=time.time(),
+                    application_exit_code=application_exits[-1] if application_exits else None,
+                    detached='detach=1' in lines)
     (report/'report.json').write_text(json.dumps(metadata, indent=2)+'\n')
     print(json.dumps({'report': str(report), 'exit_code': status, 'timed_out': timed_out}))
     return 124 if timed_out else status
