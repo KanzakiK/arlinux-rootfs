@@ -15,6 +15,7 @@ gpu_id="$({
     printf '%s\n' "$mesa_revision"
     printf '%s\n' "$mesa_changes"
     git -C "$repo/third_party/libhybris" rev-parse HEAD
+    git -C "$repo/third_party/libhybris" diff --binary HEAD | sha256sum
     git -C "$repo/third_party/android-headers" rev-parse HEAD
     (cd "$repo" && {
         sha256sum tools/build/linux-gpu.sh tools/build/linux-aarch64.ini
@@ -71,6 +72,10 @@ build_hybris() {
     rm -rf "$hybris_stage"
     mkdir -p "$source" "$headers" "$install"
     git -C "$repo/third_party/libhybris" archive HEAD | tar -xf - -C "$source"
+    # Prevent discovery of the parent repository: otherwise apply silently
+    # skips patch paths outside this staging directory's repository prefix.
+    git -C "$repo/third_party/libhybris" diff --binary HEAD |
+        GIT_CEILING_DIRECTORIES="$hybris_stage" git -C "$source" apply --allow-empty
     git -C "$repo/third_party/android-headers" archive HEAD | tar -xf - -C "$headers"
     pushd "$source/hybris" >/dev/null
     export PKG_CONFIG_PATH="$repo/graphics-protocols"
