@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Paint.NET
+Comment=Download Paint.NET on first use, then open the image editor (experimental)
+Comment[zh_CN]=首次使用下载 Paint.NET，之后打开图像编辑器（实验性）
+Exec=arlinux-windows-app paintnet --desktop
+Icon=/usr/share/pixmaps/arlinux-paintnet.png
+Terminal=true
+Categories=Graphics;RasterGraphics;
+StartupNotify=false

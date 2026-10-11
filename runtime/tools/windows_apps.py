@@ -1,0 +1,230 @@
+"""On-demand Windows apps. Each app owns its prefix; Wine/FEX remain shared.
+
+Downloads come from the vendors, never from a copied development prefix.
+Power BI's WebView2 sandbox is disabled in its dedicated Wine prefix only:
+Wine lacks the required Windows sandbox interception thunks. Android app
+isolation is not equivalent to browser sandboxing. First installation requires
+explicit consent. Both applications are experimental on ARLinux.
+"""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
+
+import windows
+
+MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
+LICENSES = {
+    'paintnet': 'https://www.getpaint.net/license.html',
+    'powerbi': 'https://powerbi.microsoft.com/desktop-eula/',
+}
+
+
+def download(name, cache):
+    row = next(line.split('\t') for line in MANIFEST.read_text().splitlines()
+               if line.startswith(name + '\t'))
+    _, expected, url = row
+    if (not re.fullmatch('[0-9a-f]{64}', expected) or not url.startswith('https://')):
+        raise ValueError('Invalid Windows application download manifest')
+    target = cache / (expected + ('.zip' if name == 'paintnet' else '.exe'))
+    if not target.is_file() or windows.digest(target) != expected:
+        print(f'Downloading {name}…', flush=True)
+        partial = target.with_suffix('.part')
+        try:
+            subprocess.run(['curl', '-fL', '--retry', '3', '--connect-timeout', '20',
+                            '--speed-limit', '1024', '--speed-time', '60',
+                            '-o', str(partial), url], check=True)
+            if windows.digest(partial) != expected:
+                raise ValueError(f'{name}: download checksum mismatch')
+            partial.replace(target)
+        finally:
+            partial.unlink(missing_ok=True)
+    return target
+
+
+def unpack_zip(archive, destination):
+    """Normalize vendor Windows ZIP paths without allowing traversal or links."""
+    with zipfile.ZipFile(archive) as source:
+        for entry in source.infolist():
+            name = entry.filename.replace('\\', '/')
+            target = (destination / name).resolve()
+            if (not target.is_relative_to(destination.resolve()) or ':' in name
+                    or (entry.external_attr >> 16) & 0o170000 == 0o120000):
+                raise ValueError(f'Unsafe ZIP entry: {name}')
+            if entry.is_dir() or name.endswith('/'):
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with source.open(entry) as data, target.open('wb') as output:
+                    shutil.copyfileobj(data, output)
+
+
+def consent(app, accepted):
+    print(f'First installation needs internet access and several GB of storage.\n'
+          f'License: {LICENSES[app]}', flush=True)
+    if app == 'powerbi':
+        print('Also installs Microsoft .NET and WebView2 under their licenses.\n'
+              'WebView2 browser sandboxing is disabled inside this Wine prefix.\n'
+              'Use trusted reports and data sources only.', flush=True)
+    else:
+        print('The vendor Wine build is experimental and expires after 12 weeks.', flush=True)
+    if not accepted and (not sys.stdin.isatty() or
+                         input('Accept the licenses and continue? [y/N] ').strip().lower() != 'y'):
+        raise RuntimeError('Installation cancelled; no application license was accepted')
+
+
+def install_powerbi(root, prefix, cache):
+    env = windows.environment(root, prefix)
+    system = prefix / 'pfx/drive_c/windows/system32'
+
+    def run(exe, *args, **kwargs):
+        result = subprocess.run([env['WINELOADER'], str(exe), *args],
+                                env={**env, **kwargs.get('environment', {})},
+                                text=True, capture_output=kwargs.get('capture', False))
+        # Windows installers return 3010 for successful installation requiring
+        # reboot; Wine's Unix exit status carries its low byte.
+        if result.returncode not in (0, 3010 & 255):
+            result.check_returncode()
+        return result
+
+    reg, cfg = system / 'reg.exe', system / 'winecfg.exe'
+    # Remove Wine Mono through its registered uninstaller, not fabricated keys.
+    listing = run(system / 'uninstaller.exe', '--list', capture=True)
+    for line in listing.stdout.splitlines():
+        match = re.fullmatch(r'(\{[0-9a-fA-F-]{36}\})\|\|\|Wine Mono(?: .*)?', line.strip())
+        if match:
+            run(system / 'uninstaller.exe', '--remove', match[1])
+    release = subprocess.run([env['WINELOADER'], str(reg), 'query',
+                              r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
+                              '/v', 'Release', '/reg:64'], env=env, capture_output=True, text=True)
+    match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
+    # Wine's default registry advertises .NET 4.8 even without Microsoft's CLR.
+    # A version key alone is therefore not an installed dependency check.
+    native_clr = prefix / 'pfx/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll'
+    if not native_clr.is_file() or not match or int(match[1], 16) < 528040:
+        print('Installing Microsoft .NET 4.0 and 4.8…', flush=True)
+        try:
+            if not native_clr.is_file():
+                run(cfg, '/v', 'winxp')
+                run(download('dotnet40', cache), '/q', '/norestart', '/log', r'C:\dotnet40.log',
+                    environment={'WINEDLLOVERRIDES': 'fusion=b'})
+            run(cfg, '/v', 'win7')
+            run(download('dotnet48', cache), '/q', '/norestart', '/log', r'C:\dotnet48.log',
+                environment={'WINEDLLOVERRIDES': 'fusion=b'})
+        finally:
+            run(cfg, '/v', 'win10')
+        release = run(reg, 'query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
+                      '/v', 'Release', '/reg:64', capture=True)
+        match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
+        if not native_clr.is_file() or not match or int(match[1], 16) < 528040:
+            raise RuntimeError('Microsoft .NET 4.8 installation did not complete')
+    webview = prefix / 'pfx/drive_c/Program Files (x86)/Microsoft/EdgeWebView/Application'
+    if not list(webview.glob('*/msedgewebview2.exe')):
+        run(download('webview2', cache), '/silent', '/install')
+    run(download('powerbi', cache), '-quiet', '-norestart', 'ACCEPT_EULA=1', 'ENABLECXP=0')
+    executable = prefix / 'pfx/drive_c/Program Files/Microsoft Power BI Desktop/bin/PBIDesktop.exe'
+    if not executable.is_file():
+        raise RuntimeError('Power BI installer did not create PBIDesktop.exe; see installer logs in the prefix')
+    # Official WebView2 policy; limited to this application's isolated prefix.
+    run(reg, 'add', r'HKLM\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments',
+        '/v', 'PBIDesktop.exe', '/t', 'REG_SZ', '/d', '--no-sandbox', '/f', '/reg:64')
+    return executable
+
+
+def prepare(app, accepted=False):
+    home = windows.storage() / 'apps' / app
+    home.mkdir(parents=True, exist_ok=True)
+    cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'arlinux/windows-apps' / app
+    cache.mkdir(parents=True, exist_ok=True)
+    prefix = home / 'wine'
+    pointer = home / 'installed.json'
+    with (home / 'install.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if pointer.is_file():
+            entry = json.loads(pointer.read_text())
+            executable = (home / entry['executable']).resolve(strict=True)
+            if not executable.is_relative_to(home.resolve()):
+                raise ValueError('Invalid installed app path')
+            return executable, prefix, cache
+        consent(app, accepted)
+        root = windows.ensure_runtime()
+        windows.initialize(root, prefix, windows.environment(root, prefix))
+        if app == 'paintnet':
+            env = windows.environment(root, prefix)
+            system = prefix / 'pfx/drive_c/windows/system32'
+            # Match the vendor setup: Windows 11 and ClearType, with the
+            # runtime's version-matched DXVK already installed by initialize.
+            subprocess.run([env['WINELOADER'], str(system / 'winecfg.exe'), '/v', 'win11'],
+                           env=env, check=True)
+            subprocess.run([env['WINELOADER'], str(system / 'reg.exe'), 'add',
+                            r'HKCU\Control Panel\Desktop', '/v', 'FontSmoothingType',
+                            '/t', 'REG_DWORD', '/d', '2', '/f'], env=env, check=True)
+            # Atomic extraction leaves retryable downloads, not half-ready apps.
+            application = prefix / 'pfx/drive_c/Program Files/Paint.NET'
+            if not (application / 'paintdotnet.exe').is_file():
+                with tempfile.TemporaryDirectory(prefix='extract-', dir=home) as temporary:
+                    stage = Path(temporary) / 'application'
+                    stage.mkdir()
+                    unpack_zip(download(app, cache), stage)
+                    if not (stage / 'paintdotnet.exe').is_file():
+                        raise RuntimeError('Paint.NET executable missing from official archive')
+                    application.parent.mkdir(parents=True, exist_ok=True)
+                    stage.rename(application)
+            executable = application / 'paintdotnet.exe'
+        else:
+            executable = install_powerbi(root, prefix, cache)
+        temporary = pointer.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'executable': str(executable.relative_to(home))}) + '\n')
+        temporary.replace(pointer)
+        for package in cache.glob('*'):
+            if package.suffix in ('.zip', '.exe', '.part'):
+                package.unlink()
+        return executable, prefix, cache
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('app', choices=LICENSES)
+    parser.add_argument('--desktop', action='store_true')
+    parser.add_argument('--accept-license', action='store_true', help='Explicit consent for unattended installation')
+    args = parser.parse_args()
+    executable, prefix, cache = prepare(args.app, args.accept_license)
+    root = windows.ensure_runtime()
+    env = windows.environment(root, prefix)
+    windows.initialize(root, prefix, env)
+    if args.app == 'paintnet':
+        # These are the vendor paintdotnet.sh overrides, not modified binaries.
+        env['WINEDLLOVERRIDES'] += ';mshtml=;d3dcompiler_47=n'
+    with (cache / 'desktop.log').open('ab') as log:
+        child = subprocess.Popen([env['WINELOADER'], str(executable)], cwd=executable.parent,
+                         env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                         start_new_session=True)
+        try:
+            code = child.wait(timeout=2)
+            if code:
+                raise RuntimeError(f'Application exited ({code}); see {cache / "desktop.log"}')
+        except subprocess.TimeoutExpired:
+            pass
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        status = main()
+    except (OSError, ValueError, RuntimeError, KeyError, StopIteration,
+            zipfile.BadZipFile, subprocess.CalledProcessError) as error:
+        print(f'Windows app: {error}\nClick the app again to retry.', file=sys.stderr)
+        status = 1
+    if status and '--desktop' in sys.argv and sys.stdin.isatty():
+        try:
+            input('\nPress Enter to close this window. ')
+        except (EOFError, KeyboardInterrupt):
+            pass
+    sys.exit(status)

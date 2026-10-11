@@ -127,7 +127,7 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
         # package snapshot cannot silently ship old Steam/Proton helpers.
         managed = {}
         wrappers = {'usr/local/bin/bwrap', 'usr/bin/arlinux-steam',
-                    'usr/bin/arlinux-windows', 'usr/bin/arlinux-opencode'}
+                    'usr/bin/arlinux-windows', 'usr/bin/arlinux-windows-app', 'usr/bin/arlinux-opencode'}
         seed_rootfs = subprocess.run(['zstd', '-dc'], input=archive.read('rootfs.tar.zst'),
                                     stdout=subprocess.PIPE, check=True)
         with tarfile.open(fileobj=io.BytesIO(seed_rootfs.stdout)) as tar:

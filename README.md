@@ -94,6 +94,31 @@ published yet; install a local build with
 is published, its version, checksum and URL go into
 `runtime/tools/windows-downloads.tsv` for automatic first-use installation.
 
+Apps includes **Paint.NET** and **Power BI Desktop** entries with their vendor
+icons. First use downloads verified official installers and prepares a separate
+Wine prefix for each app; subsequent clicks open the installed app. The same
+entries are available as `arlinux-windows-app paintnet` and
+`arlinux-windows-app powerbi`. Nothing is preinstalled in the APK. Until the new
+Wine bundle is published, install it with the command above before using these
+entries. Downloads and installer logs remain visible in the preparation terminal;
+failed preparation can be retried by clicking the entry again.
+
+Paint.NET uses the vendor's experimental Wine package, which expires 12 weeks
+after its build date; refresh its pinned download when updating the distribution.
+Power BI installs Microsoft .NET 4.0/4.8 and ARM64 WebView2. Installation asks for
+license consent. Its dedicated Wine prefix disables WebView2 browser sandboxing
+using an application-specific official policy: Wine does not yet implement the
+Windows sandbox interception thunks. This is **not browser process isolation**;
+use trusted reports and data sources. Neither app modifies Steam's game prefixes.
+
+Current validation: Paint.NET has opened successfully from a newly prepared
+prefix. Power BI's official installer completes, but a newly prepared prefix
+still reports a CLR resource-loading failure on launch; existing development
+prefixes are not evidence that unattended first-use installation is ready.
+Do not advertise either placeholder as a compatibility guarantee. The icons
+are extracted from the official application executables; their brands belong
+to their respective owners.
+
 To build the runtime, use one complete Wine source build; never replace selected
 DLLs from an older Wine archive:
 

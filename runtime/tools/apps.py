@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Linux and hosted Android desktop entries in one searchable app drawer."""
+"""Linux, Windows and hosted Android entries in one searchable app drawer."""
 import os
 
 # Select the native display before PyGObject initializes GDK.
@@ -18,7 +18,7 @@ HIDDEN = {
     "foot-server.desktop", "footclient.desktop", "thunar-bulk-rename.desktop", "thunar-settings.desktop",
     "org.xfce.mousepad-settings.desktop", "sniff.desktop",
 }
-SECTIONS = (("linux", "Linux apps"), ("android", "Android apps"))
+SECTIONS = (("linux", "Linux apps"), ("windows", "Windows apps"), ("android", "Android apps"))
 CSS = b"""
 window { background: #13161b; color: #eaf0f6; }
 .title { font-size: 22px; font-weight: 700; }
@@ -39,6 +39,8 @@ flowboxchild:selected, flowboxchild:active { background: #26313a; }
 
 def kind(app):
     command = app.get_commandline() or ""
+    if app.get_id() in ("arlinux-paintnet.desktop", "arlinux-powerbi.desktop"):
+        return "windows"
     return "android" if app.get_id().startswith("arlinux-android-") or command.startswith("arlinux-app ") else "linux"
 
 
@@ -101,11 +103,11 @@ def activate(application):
     title.get_style_context().add_class("title")
     header.pack_start(title, False, False, 0)
     counts = {key: sum(kind(app) == key for app in apps) for key, _ in SECTIONS}
-    count = Gtk.Label(label=f"{counts['linux']} Linux · {counts['android']} Android", xalign=0)
+    count = Gtk.Label(label=" · ".join(f"{counts[key]} {key.title()}" for key, _ in SECTIONS), xalign=0)
     count.get_style_context().add_class("count")
     header.pack_start(count, False, False, 0)
     filters, group = {}, None
-    for key, text in (("android", "Android"), ("linux", "Linux"), ("all", "All")):
+    for key, text in (("android", "Android"), ("windows", "Windows"), ("linux", "Linux"), ("all", "All")):
         button = Gtk.RadioButton.new_with_label_from_widget(group, text)
         button.set_mode(False)
         button.get_style_context().add_class("filter")
@@ -116,7 +118,7 @@ def activate(application):
     outer.pack_start(header, False, False, 0)
 
     search = Gtk.SearchEntry()
-    search.set_placeholder_text("Search Linux and Android apps")
+    search.set_placeholder_text("Search apps")
     outer.pack_start(search, False, False, 0)
 
     scroller = Gtk.ScrolledWindow()

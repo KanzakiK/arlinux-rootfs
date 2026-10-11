@@ -165,6 +165,13 @@ PY
     python3 tools/build/install-proton-core.py "$proton_core" "$rootfs/usr/lib/arlinux/proton-core"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm755 runtime/tools/arlinux-windows "$rootfs/usr/bin/arlinux-windows"
+    install -Dm644 runtime/tools/windows_apps.py "$rootfs/usr/lib/arlinux/windows_apps.py"
+    install -Dm755 runtime/tools/arlinux-windows-app "$rootfs/usr/bin/arlinux-windows-app"
+    install -Dm644 runtime/tools/windows-app-downloads.tsv "$rootfs/usr/lib/arlinux/guest/windows-app-downloads.tsv"
+    for app in paintnet powerbi; do
+        install -Dm644 "runtime/tools/arlinux-$app.desktop" "$rootfs/usr/share/applications/arlinux-$app.desktop"
+        install -Dm644 "runtime/tools/$app.png" "$rootfs/usr/share/pixmaps/arlinux-$app.png"
+    done
     install -Dm644 runtime/tools/windows-downloads.tsv "$rootfs/usr/lib/arlinux/guest/windows-downloads.tsv"
     install -Dm755 runtime/tools/arlinux-steam "$rootfs/usr/bin/arlinux-steam"
     install -Dm644 runtime/tools/arlinux-steam.desktop "$rootfs/usr/share/applications/arlinux-steam.desktop"

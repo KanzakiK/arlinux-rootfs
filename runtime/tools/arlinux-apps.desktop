@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Apps
-Comment=Open Linux and Android applications
+Comment=Open Linux, Windows and Android applications
 Exec=python3 /usr/lib/arlinux/guest/yibu-launcher.py
 Icon=view-app-grid-symbolic
 Terminal=false
