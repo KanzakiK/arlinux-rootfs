@@ -14,6 +14,9 @@ if [[ ${#products[@]} -eq 0 ]]; then
 fi
 gpu_inputs="$(git submodule status third_party/mesa third_party/libhybris third_party/android-headers)"
 gpu_inputs+="$(git -C third_party/mesa diff --binary HEAD | sha256sum)"
+gpu_inputs+="$(git -C third_party/libhybris diff --binary HEAD | sha256sum)"
+gpu_inputs+="$(cd third_party/libhybris &&
+    git ls-files --others --exclude-standard -z | sort -z | xargs -0 -r sha256sum)"
 
 ./tools/build/doctor.sh --quiet
 proton_core="${ARLINUX_PROTON_CORE:-$repo/build/linux/proton-core}"

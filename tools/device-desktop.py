@@ -122,6 +122,32 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
         if 'device-build' in archive.namelist():
             raise ValueError('Seal against the original seed, not the preparation ZIP')
         final_first_boot = archive.read('guest/first-boot.sh')
+        # A prepared snapshot owns distro packages, not framework code. Keep
+        # runtime entry points from this build's seed so reusing an offline
+        # package snapshot cannot silently ship old Steam/Proton helpers.
+        managed = {}
+        wrappers = {'usr/local/bin/bwrap', 'usr/bin/arlinux-steam',
+                    'usr/bin/arlinux-windows', 'usr/bin/arlinux-opencode'}
+        seed_rootfs = subprocess.run(['zstd', '-dc'], input=archive.read('rootfs.tar.zst'),
+                                    stdout=subprocess.PIPE, check=True)
+        with tarfile.open(fileobj=io.BytesIO(seed_rootfs.stdout)) as tar:
+            for member in tar:
+                name = member.name.removeprefix('./').rstrip('/')
+                if (not name.startswith('usr/lib/arlinux/') and name not in wrappers
+                        and not name.startswith('usr/share/applications/arlinux-')
+                        and not name.startswith('usr/share/pixmaps/arlinux-')):
+                    continue
+                if member.isdir():
+                    continue
+                if '..' in name.split('/') or name.startswith('/'):
+                    raise ValueError('Unsafe runtime seed entry: ' + name)
+                if not (member.isfile() or member.issym() or member.islnk()):
+                    raise ValueError('Unsupported runtime seed entry: ' + name)
+                data = tar.extractfile(member).read() if member.isfile() else None
+                if name == 'usr/lib/arlinux/guest/first-boot.sh':
+                    data = final_first_boot
+                    member.size = len(data)
+                managed[name] = (member, data)
         gpu_files = set()
         for overlay in ('gpu-qualcomm.tar.zst', 'gpu-generic.tar.zst'):
             result = subprocess.run(['zstd', '-dc'], input=archive.read(overlay),
@@ -133,9 +159,10 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
         'etc/pulse/client.conf.d/arlinux.conf', 'usr/bin/arlinux-app', 'usr/bin/sudo',
         'usr/share/applications/arlinux-app.desktop',
         'usr/share/arlinux/desktop-packages-installed',
-    } | gpu_files
+    } | gpu_files | managed.keys()
     prefixes = ('var/cache/', 'var/log/', 'var/tmp/', 'var/lib/apt/lists/',
-                'var/run', 'var/lock', 'usr/lib/mesa/', 'usr/lib/hybris/')
+                'var/run', 'var/lock', 'usr/lib/mesa/', 'usr/lib/hybris/',
+                'usr/lib/arlinux/')
     allowed = {'etc', 'usr', 'opt', 'var', 'bin', 'sbin', 'lib', 'lib64'}
     seen = set()
     mesa_packages = set()
@@ -168,9 +195,6 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                             data = b''.join(line for line in body if not line.startswith(b'arlinux:'))
                             body = io.BytesIO(data)
                             member.size = len(data)
-                        elif name == 'usr/lib/arlinux/guest/first-boot.sh':
-                            body = io.BytesIO(final_first_boot)
-                            member.size = len(final_first_boot)
                         elif name == 'var/lib/dpkg/status':
                             data = body.read()
                             for block in data.decode().split('\n\n'):
@@ -185,6 +209,13 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                                 raise ValueError('Device preparation did not finish')
                             body = io.BytesIO(b'1\n')
                         target.addfile(member, body)
+                        seen.add(name)
+                    for name, (member, data) in sorted(managed.items()):
+                        member.name = './' + name
+                        member.uid = member.gid = member.mtime = 0
+                        member.uname = member.gname = ''
+                        member.pax_headers = {}
+                        target.addfile(member, io.BytesIO(data) if data is not None else None)
                         seen.add(name)
                     for name in ('etc/machine-id',):
                         member = tarfile.TarInfo('./' + name)

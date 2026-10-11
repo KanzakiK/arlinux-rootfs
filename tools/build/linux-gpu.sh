@@ -16,6 +16,8 @@ gpu_id="$({
     printf '%s\n' "$mesa_changes"
     git -C "$repo/third_party/libhybris" rev-parse HEAD
     git -C "$repo/third_party/libhybris" diff --binary HEAD | sha256sum
+    (cd "$repo/third_party/libhybris" &&
+        git ls-files --others --exclude-standard -z | sort -z | xargs -0 -r sha256sum)
     git -C "$repo/third_party/android-headers" rev-parse HEAD
     (cd "$repo" && {
         sha256sum tools/build/linux-gpu.sh tools/build/linux-aarch64.ini
@@ -76,6 +78,11 @@ build_hybris() {
     # skips patch paths outside this staging directory's repository prefix.
     git -C "$repo/third_party/libhybris" diff --binary HEAD |
         GIT_CEILING_DIRECTORIES="$hybris_stage" git -C "$source" apply --allow-empty
+    # Include new, non-ignored source files in a local development build.
+    # git diff alone cannot carry files which have not been added to the index.
+    (cd "$repo/third_party/libhybris" &&
+        git ls-files --others --exclude-standard -z | tar --null -T - -cf -) |
+        tar -xf - -C "$source"
     git -C "$repo/third_party/android-headers" archive HEAD | tar -xf - -C "$headers"
     pushd "$source/hybris" >/dev/null
     export PKG_CONFIG_PATH="$repo/graphics-protocols"
