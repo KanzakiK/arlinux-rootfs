@@ -1,7 +1,7 @@
-"""Install an ARLinux Proton bundle and run a Windows executable.
+"""Install the ARLinux Wine runtime and run a Windows executable.
 
-Proton owns Wine/FEX setup. Each executable gets a private prefix; Steam's
-installation, compatibility-tool selection and game prefixes are untouched.
+Wine owns Windows initialization; FEX provides its x86/x64 CPU modules.
+Steam's Proton installation and game prefixes are untouched.
 """
 import argparse
 import fcntl
@@ -20,10 +20,13 @@ MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
 
 
 def ensure_runtime():
-    """Download the pinned ARLinux GE release only when no runtime is installed."""
+    """Download the pinned standalone Wine release when no runtime is installed."""
     if (storage()/'current.json').is_file():
         return runtime()
-    fields = MANIFEST.read_text().strip().split('\t')
+    entries = [line for line in MANIFEST.read_text().splitlines() if line.strip() and not line.startswith('#')]
+    if not entries:
+        raise RuntimeError('The standalone Wine bundle has not been published yet. Install a built bundle using --install BUNDLE --sha256 SHA256')
+    fields = '\n'.join(entries).split('\t')
     if len(fields) != 3:
         raise ValueError('Invalid Windows runtime download manifest')
     version, expected, url = fields
@@ -51,7 +54,7 @@ def ensure_runtime():
                 partial.unlink(missing_ok=True)
         install(archive, expected)
         # The extracted runtime is already installed and verified; don't keep a
-        # second 650 MiB compressed copy in the user's instance indefinitely.
+        # second compressed copy in the user's instance indefinitely.
         archive.unlink()
     return runtime()
 
@@ -63,22 +66,29 @@ def digest(path):
 
 def validate(root):
     manifest = json.loads((root/'arlinux-runtime.json').read_text())
-    if manifest.get('format') != 1 or manifest.get('architecture') != 'aarch64':
-        raise ValueError('Unsupported Proton bundle format or architecture')
-    required = ('proton', 'files/bin-arm64/wine', 'files/bin-arm64/wineserver',
-                'files/lib/wine/aarch64-unix/ntdll.so')
+    if (manifest.get('format') != 2 or manifest.get('kind') != 'wine'
+            or manifest.get('architecture') != 'aarch64'):
+        raise ValueError('Install a standalone Wine bundle; Proton bundles are not supported')
+    required = ('files/bin/wine', 'files/bin/wineserver',
+                'files/lib/wine/aarch64-unix/ntdll.so',
+                'files/lib/wine/aarch64-windows/libarm64ecfex.dll',
+                'files/lib/wine/aarch64-windows/libwow64fex.dll',
+                'files/lib/wine/aarch64-unix/libarm64ecfex.so',
+                'files/lib/wine/aarch64-unix/libwow64fex.so',
+                'files/share/wine/wine.inf')
     files = manifest.get('files', {})
     if not isinstance(files, dict) or not all(name in files for name in required):
-        raise ValueError('Incomplete Proton bundle manifest')
+        raise ValueError('Incomplete Wine bundle manifest')
     for name, expected in files.items():
-        if not isinstance(name, str) or not isinstance(expected, str) or len(expected) != 64:
-            raise ValueError('Invalid Proton file checksum')
+        if (not isinstance(name, str) or not isinstance(expected, str) or len(expected) != 64
+                or any(c not in '0123456789abcdef' for c in expected)):
+            raise ValueError('Invalid Wine file checksum')
         path = root/name
         if not path.resolve().is_relative_to(root.resolve()):
             raise ValueError('Runtime file escapes the bundle')
         if digest(path) != expected:
-            raise ValueError(f'Proton bundle checksum mismatch: {name}')
-    for name in required[1:]:
+            raise ValueError(f'Wine bundle checksum mismatch: {name}')
+    for name in (*required[:3], *required[5:7]):
         with (root/name).open('rb') as source:
             header = source.read(20)
         if header[:6] != b'\x7fELF\x02\x01' or header[18:20] != b'\xb7\x00':
@@ -134,7 +144,57 @@ def runtime():
     # gigabytes of runtime files on every application startup.
     if not (root/'arlinux-runtime.json').is_file():
         raise RuntimeError('Installed Windows runtime is missing')
+    metadata = json.loads((root/'arlinux-runtime.json').read_text())
+    if metadata.get('format') != 2 or metadata.get('kind') != 'wine':
+        raise RuntimeError('Replace the old Proton bundle with the new Wine bundle using --install; no fallback is used')
     return root
+
+
+def environment(root, prefix):
+    """One environment for application launches and diagnostic observers."""
+    env = os.environ.copy()
+    for name in ('LD_PRELOAD', 'FEX_ROOTFS', 'FEX_ENV', 'FEX_APP_CONFIG',
+                 'FEX_APP_CONFIG_LOCATION', 'WINEPREFIX', 'WINELOADER',
+                 'WINESERVER', 'WINEDLLPATH', 'WINEARCH'):
+        env.pop(name, None)
+    env.update(WINEPREFIX=str(prefix/'pfx'), WINEARCH='win64',
+               WINELOADER=str(root/'files/bin/wine'),
+               WINESERVER=str(root/'files/bin/wineserver'),
+               WINEDLLPATH=str(root/'files/lib/wine'),
+               WINEDATADIR=str(root/'files/share/wine'),
+               FEX_APP_CONFIG_LOCATION=str(root/'files/share/fex-emu'))
+    # Preserve the user's logging preferences, IME and graphics configuration.
+    env.setdefault('WINEDEBUG', '-all')
+    # Keep application-specific settings (e.g. the official Paint.NET launcher).
+    graphics = 'dxgi,d3d11,d3d10core,d3d9,d3d8=n,b'
+    env['WINEDLLOVERRIDES'] = graphics + (';'+env['WINEDLLOVERRIDES'] if env.get('WINEDLLOVERRIDES') else '')
+    return env
+
+
+def initialize(root, prefix, env):
+    """Use Wine's own prefix updater once per runtime, never Proton's game setup."""
+    prefix.mkdir(parents=True, exist_ok=True)
+    identity = root.name
+    marker = prefix/'arlinux-wine.json'
+    with (prefix/'wine-init.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if marker.is_file() and json.loads(marker.read_text()).get('runtime') == identity:
+            return
+        print('Preparing Wine. The first launch may take a few minutes.', flush=True)
+        boot_env = dict(env)
+        # An app may select native .NET before it has been installed; wineboot
+        # is a native ARM64 Wine program and must not load that x64 dependency.
+        boot_env['WINEDLLOVERRIDES'] = 'mscoree=b'
+        subprocess.run([env['WINELOADER'], 'wineboot', '-u'], env=boot_env, check=True)
+        for arch, directory in (('aarch64', 'system32'), ('i386', 'syswow64')):
+            for dll in ('dxgi', 'd3d11', 'd3d10core', 'd3d9', 'd3d8'):
+                target = prefix/'pfx/drive_c/windows'/directory/(dll+'.dll')
+                if target.is_symlink():
+                    target.unlink()
+                shutil.copyfile(root/f'files/lib/wine/dxvk/{arch}-windows/{dll}.dll', target)
+        temporary = marker.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'runtime': identity})+'\n')
+        temporary.replace(marker)
 
 
 def launch(executable, arguments, prefix):
@@ -142,27 +202,11 @@ def launch(executable, arguments, prefix):
     if not executable.is_file():
         raise ValueError('Expected a Windows executable file')
     root = ensure_runtime()
-    home = storage()
     identity = hashlib.sha256(os.fsencode(executable)).hexdigest()[:24]
-    compat = prefix.resolve() if prefix else home/'prefixes'/identity
-    compat.mkdir(parents=True, exist_ok=True)
-    client = home/'client'
-    client.mkdir(exist_ok=True)
-    env = os.environ.copy()
-    for name in ('LD_PRELOAD', 'FEX_ROOTFS', 'FEX_ENV', 'FEX_APP_CONFIG',
-                 'FEX_APP_CONFIG_LOCATION', 'WINEPREFIX', 'WINELOADER',
-                 'WINESERVER', 'WINEDLLPATH', 'WINEARCH'):
-        env.pop(name, None)
-    env.update(STEAM_COMPAT_DATA_PATH=str(compat),
-               STEAM_COMPAT_CLIENT_INSTALL_PATH=str(client),
-               SteamAppId='0', SteamGameId='0', PROTON_USE_XALIA='0')
-    # Preserve the user's logging preferences, IME and graphics configuration.
-    env.setdefault('WINEDEBUG', '-all')
-    # Desktop installers replace system DLLs, not just game redistributables.
-    # Keep prefix files private so an install or rollback cannot change the
-    # shared runtime through Proton's builtin symlinks. Steam is unaffected.
-    env.setdefault('PROTON_DLL_COPY', '*')
-    return subprocess.call([str(root/'proton'), 'run', str(executable), *arguments],
+    prefix = prefix.resolve() if prefix else storage()/'prefixes'/identity
+    env = environment(root, prefix)
+    initialize(root, prefix, env)
+    return subprocess.call([env['WINELOADER'], str(executable), *arguments],
                            cwd=executable.parent, env=env)
 
 
@@ -170,7 +214,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--install', type=Path, metavar='BUNDLE')
     parser.add_argument('--sha256', help='Published SHA-256 of the runtime archive')
-    parser.add_argument('--prefix', type=Path, help='Optional shared Proton data directory')
+    parser.add_argument('--prefix', type=Path, help='Optional shared Wine data directory (contains pfx)')
     parser.add_argument('executable', nargs='?', type=Path)
     parser.add_argument('arguments', nargs=argparse.REMAINDER)
     args = parser.parse_args()

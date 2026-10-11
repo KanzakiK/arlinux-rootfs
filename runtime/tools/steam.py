@@ -257,6 +257,38 @@ def runtime_installed(root):
         return False
 
 
+def client_running():
+    """Like Valve's launcher, require a live PID holding Steam's IPC FIFO.
+
+    A leftover PID file alone is not evidence of a running client.
+    """
+    steam = Path.home()/'.steam'
+    try:
+        pid = int((steam/'steam.pid').read_text().strip())
+        if pid <= 0 or not stat.S_ISFIFO((steam/'steam.pipe').stat().st_mode):
+            return False
+        for fd in Path(f'/proc/{pid}/fd').iterdir():
+            try:
+                if fd.samefile(steam/'steam.pipe'):
+                    return True
+            except FileNotFoundError:
+                pass  # Descriptors can close while enumerating them.
+    except (FileNotFoundError, ValueError):
+        return False
+    return False
+
+
+def send_client_command(root, arguments):
+    from steam_fex import app_directory, IncompleteRuntime
+    try:
+        runtime = app_directory(root, '1628350')
+    except IncompleteRuntime as error:
+        raise RuntimeError('Steam is already running. Finish its first-time '
+                           'runtime downloads in the existing window.') from error
+    remote = runtime/'pressure-vessel-arm64/bin/steam-runtime-steam-remote'
+    subprocess.run([str(remote), *arguments], check=True, timeout=30)
+
+
 def bootstrap_runtime(binary, root, arguments):
     """Let Steam download its depots, then restart with the prepared provider.
 
@@ -274,7 +306,10 @@ def bootstrap_runtime(binary, root, arguments):
                 if not runtime_installed(root):
                     continue
             print('Game runtimes downloaded. Restarting Steam to prepare graphics.', flush=True)
-            subprocess.run([str(binary), '-shutdown'], check=True, timeout=30)
+            # Command forwarding belongs to Valve's launcher, not the client
+            # binary: invoking the latter here can start a second client.
+            # Sniper is now installed and supplies the native ARM64 remote.
+            send_client_command(root, ['-shutdown'])
             try:
                 result = client.wait(timeout=60)
             except subprocess.TimeoutExpired:
@@ -287,6 +322,11 @@ def launch(root, arguments):
     binary = root/'steamrtarm64/steam'
     if not binary.is_file():
         raise RuntimeError('Steam installation has no native ARM64 executable')
+    # Do not rewrite compatibility configuration or run a second client when
+    # the user clicks the launcher again. Valve owns command delivery.
+    if client_running():
+        send_client_command(root, arguments or ['steam://open/main'])
+        return 0
     ensure_dependencies()
     # GPU overlays are extracted after the rootfs is built. Refresh the native
     # cache so pressure-vessel can discover their complete ELF dependencies.

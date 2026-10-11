@@ -22,7 +22,7 @@ echo "Build directory: $stage"
 mkdir "$stage/wine" "$stage/tools" "$stage/core"
 # Export the committed source: unrelated local changes must never enter a pack.
 git -C "$source_dir" archive HEAD | tar -xf - -C "$stage/wine"
-cp "$repo/third_party/proton/patches/arlinux/0001-ntdll-map-executable-sections-before-relocations.patch" "$stage/execmod.patch"
+cp "$repo/third_party/proton/patches/arlinux/0001-ntdll-copy-private-image-sections.patch" "$stage/execmod.patch"
 patch -d "$stage/wine" -p1 --fuzz=0 < "$stage/execmod.patch"
 (cd "$stage/wine" && ./dlls/winevulkan/make_vulkan && ./tools/make_specfiles \
     && ./tools/make_requests && autoreconf -fi) > "$stage/generate.log" 2>&1

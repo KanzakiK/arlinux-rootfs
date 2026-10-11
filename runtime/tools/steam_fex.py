@@ -15,58 +15,7 @@ import subprocess
 import tempfile
 
 
-def remove_old_tool(steam):
-    """Remove only our former tool and its selections, while Steam is stopped."""
-    pidfile = Path.home()/'.steam/steam.pid'
-    if pidfile.is_file():
-        try:
-            pid = int(pidfile.read_text().strip())
-            if pid <= 0:
-                raise ValueError('Invalid Steam PID')
-            os.kill(pid, 0)
-            return
-        except ProcessLookupError:
-            pass
-        except (ValueError, PermissionError):
-            raise RuntimeError('Cannot safely determine whether Steam is running')
-    path = steam/'config/config.vdf'
-    from steam import keyvalues
-    data = keyvalues(path.read_text()) if path.exists() else {}
-    node = data
-    for name in ('InstallConfigStore', 'Software', 'Valve', 'Steam', 'CompatToolMapping'):
-        node = node.get(name, {})
-    removed = [key for key, value in node.items()
-               if isinstance(value, dict) and value.get('name') == 'arlinux-fex']
-    if removed:
-        for key in removed:
-            del node[key]
-        def dump(block, indent=0):
-            lines = []
-            for key, value in block.items():
-                prefix = '\t'*indent + json.dumps(key, ensure_ascii=False)
-                if isinstance(value, dict):
-                    lines += [prefix, '\t'*indent+'{', dump(value, indent+1), '\t'*indent+'}']
-                else:
-                    lines.append(prefix+'\t'+json.dumps(value, ensure_ascii=False))
-            return '\n'.join(lines)
-        backup = path.with_suffix('.before-official-fex')
-        if not backup.exists():
-            shutil.copy2(path, backup)
-        temporary = path.with_suffix('.arlinux-tmp')
-        temporary.write_text(dump(data)+'\n')
-        temporary.replace(path)
-    tool = steam/'compatibilitytools.d/arlinux-fex'
-    # Preserve unexpected/user-added content instead of recursively deleting it.
-    script = tool/'run'
-    if script.is_file() and '/usr/lib/arlinux/steam_fex.py' in script.read_text():
-        for name in ('run', 'toolmanifest.vdf', 'compatibilitytool.vdf'):
-            (tool/name).unlink(missing_ok=True)
-        if not any(tool.iterdir()):
-            tool.rmdir()
-
-
 def configure(steam):
-    remove_old_tool(steam)
     os.environ.setdefault('PRESSURE_VESSEL_BWRAP', '/usr/local/bin/bwrap')
     fex, root = prepare(steam)
     os.environ.setdefault('STEAM_COMPAT_GRAPHICS_PROVIDER', str(root/'graphics_provider.json'))

@@ -75,22 +75,45 @@ Steam client. It is not bundled; see [runtime tools](docs/RUNTIME-PROTOCOL.md#na
 for installation requirements and limits.
 
 `arlinux-windows` runs standalone Windows executables using a separately
-installed ARM64 GE-Proton bundle. It is not preinstalled and does not change
+installed Wine 11.19 runtime with FEX CPU translation and DXVK. It does not change
 Steam's compatibility tools or game prefixes:
 
 ```bash
 arlinux-windows /path/to/application.exe
 ```
 
-Each executable gets its own Proton data directory. Use `--prefix DIRECTORY`
+Each executable gets its own Wine data directory. Use `--prefix DIRECTORY`
 before the executable to share a prefix with an installer or another executable.
-The first launch downloads the pinned ARM64 runtime from the
-[ARLinux GE-Proton fork](https://github.com/taowen/proton-ge-custom/releases)
-and verifies its SHA-256. Later launches work offline. To install a manually
-downloaded bundle, use `arlinux-windows --install runtime.tar.gz --sha256 SHA256`.
-Windows application support is experimental. `tools/build/proton-ge.sh` packages the pinned GE binary archive with
-an Android Wine core rebuilt from the **matching, upstream-prepared GE source**;
-it also produces that modified Wine source archive. No FEX code is modified.
+The directory contains `pfx`, Wine's own prefix; initialization and application
+startup use Wine directly, not Proton's game-prefix setup. The former GE-Proton
+desktop runtime is no longer supported. There is no old-runtime fallback.
+
+Windows application support is experimental. The new standalone bundle is not
+published yet; install a local build with
+`arlinux-windows --install runtime.tar.gz --sha256 SHA256`. Once a verified asset
+is published, its version, checksum and URL go into
+`runtime/tools/windows-downloads.tsv` for automatic first-use installation.
+
+To build the runtime, use one complete Wine source build; never replace selected
+DLLs from an older Wine archive:
+
+```bash
+git clone --branch wine-11.19 https://gitlab.winehq.org/wine/wine.git build/wine
+bash tools/build/wine-standalone.sh build/wine /path/to/llvm-mingw/bin build/windows/wine
+bash tools/build/fex-windows.sh /path/to/llvm-mingw/bin build/windows/fex
+bash tools/build/dxvk-windows.sh /path/to/llvm-mingw/bin build/windows/dxvk
+python3 tools/package-wine.py --wine build/windows/wine --fex build/windows/fex \
+  --dxvk build/windows/dxvk --addons /path/to/wine-addons \
+  --output out/arlinux-wine-11.19.tar.gz
+```
+
+`wine-addons` contains the official extracted `mono/` and `gecko/` directories
+(Wine Mono 11.3.0 and Gecko 2.47.4). The packager checksums every runtime file and
+publishes the exact Wine, FEX and DXVK source archives beside the binary bundle.
+Wine uses its standard registry CPU-module selection for x86/x64 translation.
+DXVK is installed into each private prefix; app-specific DLL overrides remain
+under the application's control. For example, use the official Paint.NET Wine
+launcher settings for its bundled Microsoft shader compiler.
 
 To develop an Android app **inside** a running Debian/Yibu instance, start with
 the [Geany + Kotlin/Gradle project](examples/android-gradle/README.md), or the
