@@ -158,6 +158,10 @@ def launch(executable, arguments, prefix):
                SteamAppId='0', SteamGameId='0', PROTON_USE_XALIA='0')
     # Preserve the user's logging preferences, IME and graphics configuration.
     env.setdefault('WINEDEBUG', '-all')
+    # Desktop installers replace system DLLs, not just game redistributables.
+    # Keep prefix files private so an install or rollback cannot change the
+    # shared runtime through Proton's builtin symlinks. Steam is unaffected.
+    env.setdefault('PROTON_DLL_COPY', '*')
     return subprocess.call([str(root/'proton'), 'run', str(executable), *arguments],
                            cwd=executable.parent, env=env)
 

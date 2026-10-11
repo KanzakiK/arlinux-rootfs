@@ -49,9 +49,10 @@ mkdir "$stage/tools" "$stage/core"
 # Keep GE's ARM64EC/ARM64X builtins usable by both native ARM64 and x64 clients.
 core_modules=()
 for arch in aarch64 i386 x86_64; do
-    for module in ntdll kernel32 kernelbase windows.ui netprofm dxcore ucrtbase gdiplus; do
+    for module in ntdll kernel32 kernelbase windows.ui netprofm dxcore ucrtbase gdiplus msi; do
         core_modules+=("dlls/$module/$arch-windows/$module.dll")
     done
+    core_modules+=("programs/msiexec/$arch-windows/msiexec.exe")
 done
 core_modules+=(dlls/wow64/aarch64-windows/wow64.dll dlls/wow64/x86_64-windows/wow64.dll)
 (cd "$stage/core" && "$stage/wine/configure" --host=aarch64-linux-gnu --enable-win64 \
@@ -73,10 +74,12 @@ for arch in aarch64 i386 x86_64; do
         "$redist/files/lib/wine/$arch-windows/iphlpapi.dll"
 done
 for arch in aarch64 i386 x86_64; do
-    for module in ntdll kernel32 kernelbase windows.ui netprofm dxcore ucrtbase gdiplus; do
+    for module in ntdll kernel32 kernelbase windows.ui netprofm dxcore ucrtbase gdiplus msi; do
         install -m755 "$stage/core/dlls/$module/$arch-windows/$module.dll" \
             "$redist/files/lib/wine/$arch-windows/$module.dll"
     done
+    install -m755 "$stage/core/programs/msiexec/$arch-windows/msiexec.exe" \
+        "$redist/files/lib/wine/$arch-windows/msiexec.exe"
 done
 for arch in aarch64 x86_64; do
     install -m755 "$stage/core/dlls/wow64/$arch-windows/wow64.dll" \

@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--seconds', type=int, default=60)
     parser.add_argument('--observer', type=Path, required=True, help='ARM64 exception-observer.exe built from the GE fork')
     parser.add_argument('executable', type=Path)
+    parser.add_argument('arguments', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if not 1 <= args.seconds <= 600:
         parser.error('Use 1..600 seconds')
@@ -51,8 +52,10 @@ def main():
     env.setdefault('WINEDEBUG', '-all')
     command = [str(runtime/'proton'), 'runinprefix', str(debugger),
                str(args.seconds), 'Z:'+str(executable).replace('/', '\\')]
+    if args.arguments:
+        command.append(subprocess.list2cmdline([command[-1], *args.arguments]))
     metadata = {'runtime_sha256': current['sha256'], 'prefix': str(prefix),
-                'executable': str(executable), 'started': time.time(),
+                'executable': str(executable), 'arguments': args.arguments, 'started': time.time(),
                 'observer_sha256': hashlib.sha256(debugger.read_bytes()).hexdigest(),
                 'seconds': args.seconds}
     with executable.open('rb') as binary:
