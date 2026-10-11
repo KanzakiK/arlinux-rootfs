@@ -146,6 +146,16 @@ static void enter_view(int info_fd)
     for (size_t i = 0; i < layout_count; i++)
         if (!strcmp(layout[i].target, "/dev/shm")) supplied_shm = 1;
     if (!supplied_shm) add_layout(VIEW_BIND, "/dev/shm", "/dev/shm", 1);
+    /* Android's generated linker namespaces are part of the native driver
+     * runtime. The parent directory can deny stat/listing while this public
+     * file remains readable, so preserve the file rather than the directory. */
+    const char *linker_config = "/linkerconfig/ld.config.txt";
+    int supplied_linker_config = 0;
+    for (size_t i = 0; i < layout_count; i++)
+        if (!strcmp(layout[i].target, linker_config)) supplied_linker_config = 1;
+    struct stat linker_stat;
+    if (!supplied_linker_config && !stat(linker_config, &linker_stat) && S_ISREG(linker_stat.st_mode))
+        add_layout(VIEW_BIND, linker_config, linker_config, 0);
     struct rlimit limit;
     if (getrlimit(RLIMIT_NOFILE, &limit)) fail("getrlimit", strerror(errno));
     /* tawcroot's protected anchors start at fd 1000; Steam may lower soft to 1024. */
