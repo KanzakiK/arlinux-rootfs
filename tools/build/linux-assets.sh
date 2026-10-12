@@ -20,6 +20,11 @@ gpu_inputs+="$(cd third_party/libhybris &&
 
 ./tools/build/doctor.sh --quiet
 proton_core="${ARLINUX_PROTON_CORE:-$repo/build/linux/proton-core}"
+windows_accessibility="${ARLINUX_WINDOWS_ACCESSIBILITY:-$repo/build/windows-accessibility/windows-accessibility.exe}"
+[[ -f "$windows_accessibility" ]] || {
+    echo 'Build tools/build/windows-accessibility.sh LLVM_MINGW_BIN build/windows-accessibility first.' >&2
+    exit 2
+}
 [[ -f "$proton_core/pack.json" ]] || {
     echo 'Build the matching Wine core with tools/build/proton-core.sh into build/linux/proton-core first.' >&2
     exit 2
@@ -165,6 +170,8 @@ PY
     install -Dm644 runtime/tools/steam_proton.py "$rootfs/usr/lib/arlinux/steam_proton.py"
     python3 tools/build/install-proton-core.py "$proton_core" "$rootfs/usr/lib/arlinux/proton-core"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
+    install -Dm644 runtime/tools/windows_a11y.py "$rootfs/usr/lib/arlinux/windows_a11y.py"
+    install -Dm644 "$windows_accessibility" "$rootfs/usr/lib/arlinux/windows-accessibility.exe"
     install -Dm755 runtime/tools/arlinux-windows "$rootfs/usr/bin/arlinux-windows"
     install -Dm644 runtime/tools/windows_apps.py "$rootfs/usr/lib/arlinux/windows_apps.py"
     install -Dm755 runtime/tools/arlinux-windows-app "$rootfs/usr/bin/arlinux-windows-app"

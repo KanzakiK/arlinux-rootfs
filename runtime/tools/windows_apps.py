@@ -184,6 +184,8 @@ def main():
     root = windows.ensure_runtime()
     env = windows.environment(root, prefix)
     windows.initialize(root, prefix, env)
+    import windows_a11y
+    windows_a11y.ensure(root, prefix, 'Paint.NET' if args.app == 'paintnet' else 'Power BI Desktop', env)
     if args.app == 'paintnet':
         # These are the vendor paintdotnet.sh overrides, not modified binaries.
         env['WINEDLLOVERRIDES'] += ';mshtml=;d3dcompiler_47=n'

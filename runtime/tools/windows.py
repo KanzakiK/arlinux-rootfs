@@ -191,6 +191,8 @@ def launch(executable, arguments, prefix):
     prefix = prefix.resolve() if prefix else storage()/'prefixes'/identity
     env = environment(root, prefix)
     initialize(root, prefix, env)
+    import windows_a11y
+    windows_a11y.ensure(root, prefix, executable.stem, env)
     return subprocess.call([env['WINELOADER'], str(executable), *arguments],
                            cwd=executable.parent, env=env)
 
