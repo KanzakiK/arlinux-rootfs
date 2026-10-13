@@ -1,2 +1,2 @@
-# VERSION<TAB>SHA256<TAB>URL; pinned standalone runtime, separate from Steam.
-Wine 11.19 ARLinux r1	2f73bf9220feb15e4c454ed2979a2aee15ba544427e1fd17dca806e24dbabab4	https://github.com/taowen/wine/releases/download/wine-11.19-arlinux.1/arlinux-wine-11.19-gpu-occlusion.tar.gz
+# Version	SHA256	Bionic runtime URL
+Wine 11.19 Bionic r1	cd345a5ce8c00afab5cd9573cfc43278001617ae87ca0badc4e683ac62095517	https://github.com/taowen/wine/releases/download/wine-11.19-bionic.1/arlinux-wine-11.19-bionic-r1.tar.gz

@@ -44,22 +44,36 @@ def ensure(root, prefix, name, env):
 
 class Observer:
     def __init__(self, env):
-        self.process = subprocess.Popen([env['WINELOADER'], str(OBSERVER)], env=env,
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=sys.stderr, bufsize=0)
+        import windows
+        self.response, self.socket = windows.request(
+            windows.runtime(env['ARLINUX_WINDOWS_RUNTIME']),
+            Path(env['ARLINUX_WINDOWS_PREFIX']), OBSERVER, stdio=True)
+        self.stdin = self.socket.makefile('wb', buffering=0)
+        self.stdout = self.socket.makefile('rb', buffering=0)
         self.selector = selectors.DefaultSelector()
-        self.selector.register(self.process.stdout, selectors.EVENT_READ)
+        self.selector.register(self.stdout, selectors.EVENT_READ)
         self.buffer = bytearray()
 
+    def close(self):
+        import socket
+        try:
+            self.socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.stdin.close()
+        self.stdout.close()
+        self.socket.close()
+        self.selector.close()
+
     def call(self, command):
-        self.process.stdin.write((command + '\n').encode())
+        self.stdin.write((command + '\n').encode())
         deadline = time.monotonic() + 15
         while b'\n' not in self.buffer:
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not self.selector.select(remaining):
-                self.process.kill()
+                self.close()
                 raise RuntimeError('Windows accessibility provider timed out')
-            data = os.read(self.process.stdout.fileno(), 65536)
+            data = os.read(self.stdout.fileno(), 65536)
             if not data:
                 raise RuntimeError('Windows accessibility observer exited')
             self.buffer.extend(data)
@@ -384,7 +398,7 @@ def serve(prefix, name, lock, lock_fd=None):
     finally:
         try: dbus.Interface(registry, 'org.a11y.atspi.Socket').Unembed(adapter.ref(0), signature='(so)')
         except dbus.DBusException: pass
-        observer.process.terminate()
+        observer.close()
 
 
 if __name__ == '__main__':

@@ -44,7 +44,7 @@ separate stores. Distribution bundles must not include its contents.
 
 On-demand launchers keep SHA-256-addressed vendor installers in
 `/arlinux-shared/downloads`, with file locks and atomic publication. OpenCode
-application payloads, standalone Wine/FEX/DXVK runtimes and Steam's prepared
+application payloads, Bionic Wine/FEX/DXVK runtimes and Steam's prepared
 FEX graphics providers are also shared, keyed by content/version. Do not
 modify a published runtime while it is running.
 
@@ -57,7 +57,7 @@ An existing stopped client can be moved into an empty shared installation;
 independent existing installations are never merged or overwritten.
 
 Each instance retains its own package database and native dependencies, HOME,
-standalone Wine prefixes and documents. Game data stored outside the Steam
+Bionic Wine prefixes and documents. Game data stored outside the Steam
 library, such as Linux games' HOME configuration, remains instance-local.
 WPS and Windows
 app installers reuse shared downloads but install into their instance. Sharing
@@ -220,6 +220,19 @@ game installation, prefixes, launch arguments and compatibility selection.
 with FEX CPU modules for x86/x64 applications and DXVK for Direct3D. It does not
 use or replace Steam's Proton tools. Application compatibility is experimental.
 
+Paint.NET new installations use the official native Windows ARM64 Wine package.
+The pinned Wine build supplies the optional `SetWindowFeedbackSetting` and
+`DCompositionBoostCompositorClock` entry points used during startup and drawing.
+Input feedback and dynamic refresh-rate boosting are currently no-ops; the latter
+does not change the compositor refresh rate. Existing application installations
+are not migrated.
+
+The Wine build also supports unknown PNG EXIF/text metadata writers and PNG
+metadata serialization, including chunk CRCs, so save previews can decode their
+output again. Integer RGB and indexed formats expose an sRGB color context.
+`CreatePresentationFactory` returns `E_NOTIMPL` with a null output, allowing the
+application to use its fallback instead of an unimplemented-export exception.
+
 The first launch downloads the pinned archive from the
 [ARLinux Wine release](https://github.com/taowen/wine/releases).
 `windows-downloads.tsv` records its HTTPS URL and SHA-256. The launcher verifies
@@ -360,3 +373,20 @@ The host owns lifecycle, endpoint creation, Android resources, compositor and
 device selection. The distribution owns packages, toolkit modules, desktop
 startup and clients of these interfaces. Neither side should infer capabilities
 from a process name or add per-application command-line workarounds.
+
+### Windows applications
+
+Standalone Windows programs use Bionic Wine exclusively. Immutable bundles are
+installed at `/arlinux-shared/windows-bionic/SHA256`; `current.json` selects the
+active checksum. `bionic-runtime.json` must declare protocol 1 and libc `bionic`.
+The guest verifies archive and file checksums before atomic publication. A
+changed pinned release installs a new bundle; no glibc fallback is attempted.
+
+The guest sends newline JSON to the same-UID abstract socket
+`arlinux-windows-ANDROID_UID`. The Android host validates the runtime, executable
+and prefix, initializes Wine with builtin DLLs, installs matching DXVK and
+starts Wine with Android's linker. Prefixes remain separate from immutable
+runtime binaries. App launch results contain native log and exit-file paths.
+`stdio: true` reserves the connection for the child's stdin/stdout after the
+JSON response; stderr goes to its native log. This carries the Windows MSAA
+observer protocol without starting native Wine inside the guest.

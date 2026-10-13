@@ -11,7 +11,8 @@ output="$(realpath -m "$2")"
 "$compiler/aarch64-w64-mingw32-clang" -marm64x -shared -x c /dev/null -o /dev/null -### 2>/dev/null \
     || { echo 'LLVM-MinGW with ARM64X support (LLVM 23+) is required.' >&2; exit 2; }
 revision=6be588b2a57eb28659907834cdeb46bc5f2f69ad
-key="$(printf '%s\n' "$revision" "$compiler" \
+patch_file="$repo/tools/patches/dxvk-optional-pipeline-library.patch"
+key="$(printf '%s\n' "$revision" "$compiler" "$(sha256sum "$patch_file")" \
     "$("$compiler/aarch64-w64-mingw32-clang" --version)" | sha256sum | cut -c1-24)"
 cache="$repo/build/dxvk-windows/$key"
 mkdir -p "$cache" "$output"
@@ -20,6 +21,11 @@ if [[ ! -f "$cache/source/src/util/util_singleton.h" ]]; then
     git -C "$cache/source" checkout --detach "$revision"
     git -C "$cache/source" submodule update --init --depth 1 \
         include/vulkan include/spirv subprojects/libdisplay-info
+fi
+if patch -d "$cache/source" -p1 --batch --fuzz=0 --dry-run < "$patch_file" >/dev/null 2>&1; then
+    patch -d "$cache/source" -p1 --batch --fuzz=0 < "$patch_file"
+else
+    patch -d "$cache/source" -p1 --batch --fuzz=0 --reverse --dry-run < "$patch_file" >/dev/null
 fi
 for arch in aarch64 x86_64 i386; do
     target="$arch"

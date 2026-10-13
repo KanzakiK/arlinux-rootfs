@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Build one complete, version-matched Wine runtime for arlinux-windows.
+# Build version-matched Wine Windows modules; native binaries are built for Bionic.
 set -euo pipefail
 if [[ $# != 3 ]]; then
-    echo 'Usage: wine-standalone.sh WINE_SOURCE LLVM_MINGW_BIN OUTPUT_DIRECTORY' >&2
+    echo 'Usage: wine-pe.sh WINE_SOURCE LLVM_MINGW_BIN OUTPUT_DIRECTORY' >&2
     exit 2
 fi
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source_dir="$(realpath "$1")"
 export PATH="$(realpath "$2"):$PATH"
 destination="$(realpath -m "$3")"
-revision=30e6c7d5add27d2a4437ab319a72048ba244ec5e
+revision=afe1b2beeeb1ecdc9152c082eaee552bbe572076
 [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$revision" ]] || {
     echo 'Wine source must match the pinned ARLinux Wine 11.19 revision.' >&2
     exit 2
 }
 [[ ! -e "$destination" ]] || { echo 'Output directory already exists.' >&2; exit 2; }
-mkdir -p "$repo/build/wine-standalone"
-stage="$(mktemp -d "$repo/build/wine-standalone/build.XXXXXXXX")"
+mkdir -p "$repo/build/wine-pe"
+stage="$(mktemp -d "$repo/build/wine-pe/build.XXXXXXXX")"
 mkdir "$stage/source" "$stage/tools" "$stage/core"
 echo "Build directory: $stage"
 git -C "$source_dir" archive HEAD | tar -xf - -C "$stage/source"
@@ -32,18 +32,12 @@ pkg-config --exists freetype2 || {
         tools/widl/all tools/winebuild/all tools/winegcc/all tools/wmc/all tools/wrc/all nls/all) \
     > "$stage/tools.log" 2>&1
 export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
-(cd "$stage/core" && "$stage/source/configure" --host=aarch64-linux-gnu --enable-win64 \
+(cd "$stage/core" && "$stage/source/configure" --host=aarch64-w64-mingw32 --enable-win64 \
     --enable-archs=arm64ec,aarch64,i386,x86_64 --with-wine-tools="$stage/tools" \
-    --disable-tests --without-wayland --without-unwind) > "$stage/configure.log" 2>&1
-# Power BI's local authentication needs the real GnuTLS implementation.
-grep -q '^ac_cv_header_gnutls_gnutls_h=yes$' "$stage/core/config.log" || {
-    echo 'Install ARM64 GnuTLS development headers before building.' >&2; exit 2;
-}
-grep -q '^#define SONAME_LIBGNUTLS ' "$stage/core/include/config.h" || {
-    echo 'ARM64 GnuTLS library was not detected.' >&2; exit 2;
-}
+    --disable-tests --without-wayland --without-unwind --without-x --without-freetype --without-fontconfig --without-gnutls --without-opengl) > "$stage/configure.log" 2>&1
 make -C "$stage/core" -j"${JOBS:-8}" > "$stage/build.log" 2>&1
 make -C "$stage/core" install DESTDIR="$stage/install" > "$stage/install.log" 2>&1
+rm -rf "$stage/install/usr/local/lib/wine/aarch64-unix"
 mkdir "$stage/output"
 mv "$stage/install/usr/local" "$stage/output/files"
 git -C "$source_dir" rev-parse HEAD > "$stage/output/wine-commit"
@@ -52,4 +46,4 @@ tar -czf "$stage/output/wine-source.tar.gz" -C "$stage" source
 mkdir -p "$(dirname "$destination")"
 mv -T --no-clobber "$stage/output" "$destination"
 [[ ! -d "$stage/output" ]] || { echo 'Destination appeared during build; preserving outputs.' >&2; exit 2; }
-echo "Built complete Wine 11.19 runtime in $destination"
+echo "Built Wine 11.19 Windows modules in $destination"

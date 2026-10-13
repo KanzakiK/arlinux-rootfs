@@ -74,68 +74,31 @@ In a running ARM64 desktop, `arlinux-steam` downloads and starts Valve's native
 Steam client. It is not bundled; see [runtime tools](docs/RUNTIME-PROTOCOL.md#native-steam-client)
 for installation requirements and limits.
 
-`arlinux-windows` runs standalone Windows executables using a separately
-installed Wine 11.19 runtime with FEX CPU translation and DXVK. It does not change
-Steam's compatibility tools or game prefixes:
+`arlinux-windows` uses the shared Bionic Wine 11.19 runtime, FEX Windows CPU
+modules and DXVK. The Android host launches native Wine outside the guest
+syscall adapter. The former glibc standalone runtime is no longer supported.
 
-```bash
-arlinux-windows /path/to/application.exe
+```sh
+arlinux-windows /absolute/path/to/application.exe
+# Install a locally built, checksum-verified Bionic runtime:
+arlinux-windows --install BUNDLE.tar.gz --sha256 SHA256
 ```
 
-Each executable gets its own Wine data directory. Use `--prefix DIRECTORY`
-before the executable to share a prefix with an installer or another executable.
-The directory contains `pfx`, Wine's own prefix; initialization and application
-startup use Wine directly, not Proton's game-prefix setup. The former GE-Proton
-desktop runtime is no longer supported. There is no old-runtime fallback.
+Each executable gets an independent Bionic prefix. `--prefix DIRECTORY` selects
+its data directory, which contains `pfx`. The Paint.NET and Power BI desktop
+shortcuts use the same runtime and Android launch service. First installation
+asks for the vendor license, downloads official installers and initializes a
+new prefix. Paint.NET uses its ARM64 vendor Wine ZIP; Power BI remains an
+experimental compatibility target. Existing glibc prefixes are not reused.
 
-Windows application support is experimental. The new standalone bundle is not
-published yet; install a local build with
-`arlinux-windows --install runtime.tar.gz --sha256 SHA256`. Once a verified asset
-is published, its version, checksum and URL go into
-`runtime/tools/windows-downloads.tsv` for automatic first-use installation.
+Wine Windows modules are built with `tools/build/wine-pe.sh`, FEX PE modules
+with `tools/build/fex-windows.sh`, and the PE input with
+`tools/package-wine-pe.py`. These inputs contain no glibc native Wine backend.
+The host repository's `tools/build/wine-bionic.sh` builds the Android native
+backend and `tools/package-wine-bionic.py` packages matching Windows modules,
+Bionic libraries, Zink, system Vulkan WSI and the shared GPU compatibility layer.
+Publish the matching source archives alongside the binary runtime.
 
-Apps includes **Paint.NET** and **Power BI Desktop** entries with their vendor
-icons. First use downloads verified official installers and prepares a separate
-Wine prefix for each app; subsequent clicks open the installed app. The same
-entries are available as `arlinux-windows-app paintnet` and
-`arlinux-windows-app powerbi`. Nothing is preinstalled in the APK. Until the new
-Wine bundle is published, install it with the command above before using these
-entries. Downloads and installer logs remain visible in the preparation terminal;
-failed preparation can be retried by clicking the entry again.
-
-Paint.NET uses the vendor's experimental Wine package, which expires 12 weeks
-after its build date; refresh its pinned download when updating the distribution.
-Power BI installs Microsoft .NET 4.0/4.8 and ARM64 WebView2. Installation asks for
-license consent. Its dedicated Wine prefix disables WebView2 browser sandboxing
-using an application-specific official policy: Wine does not yet implement the
-Windows sandbox interception thunks. This is **not browser process isolation**;
-use trusted reports and data sources. Neither app modifies Steam's game prefixes.
-
-Current validation: Paint.NET has opened successfully from a newly prepared
-prefix. Power BI's official installer completes, but a newly prepared prefix
-still reports a CLR resource-loading failure on launch; existing development
-prefixes are not evidence that unattended first-use installation is ready.
-Do not advertise either placeholder as a compatibility guarantee. The icons
-are extracted from the official application executables; their brands belong
-to their respective owners.
-
-To build the runtime, use one complete Wine source build; never replace selected
-DLLs from an older Wine archive:
-
-```bash
-git clone --branch wine-11.19 https://gitlab.winehq.org/wine/wine.git build/wine
-bash tools/build/wine-standalone.sh build/wine /path/to/llvm-mingw/bin build/windows/wine
-bash tools/build/fex-windows.sh /path/to/llvm-mingw/bin build/windows/fex
-bash tools/build/dxvk-windows.sh /path/to/llvm-mingw/bin build/windows/dxvk
-python3 tools/package-wine.py --wine build/windows/wine --fex build/windows/fex \
-  --dxvk build/windows/dxvk --addons /path/to/wine-addons \
-  --output out/arlinux-wine-11.19.tar.gz
-```
-
-`wine-addons` contains the official extracted `mono/` and `gecko/` directories
-(Wine Mono 11.3.0 and Gecko 2.47.4). The packager checksums every runtime file and
-publishes the exact Wine, FEX and DXVK source archives beside the binary bundle.
-Wine uses its standard registry CPU-module selection for x86/x64 translation.
 DXVK is installed into each private prefix; app-specific DLL overrides remain
 under the application's control. For example, use the official Paint.NET Wine
 launcher settings for its bundled Microsoft shader compiler.

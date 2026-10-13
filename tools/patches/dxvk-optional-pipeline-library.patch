@@ -1,0 +1,11 @@
+--- a/src/dxvk/dxvk_device_info.cpp
++++ b/src/dxvk/dxvk_device_info.cpp
+@@ -875,7 +875,7 @@
+       ENABLE_EXT_FEATURE(khrMaintenance7, maintenance7, false),
+ 
+       /* Dependency for graphics pipeline library */
+-      ENABLE_EXT(khrPipelineLibrary, true),
++      ENABLE_EXT(khrPipelineLibrary, false),
+ 
+       /* Present wait, used for frame pacing and statistics */
+       ENABLE_EXT_FEATURE(khrPresentId, presentId, false),

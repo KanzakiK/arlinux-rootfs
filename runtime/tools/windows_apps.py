@@ -73,9 +73,9 @@ def install_powerbi(root, prefix):
     system = prefix / 'pfx/drive_c/windows/system32'
 
     def run(exe, *args, **kwargs):
-        result = subprocess.run([env['WINELOADER'], str(exe), *args],
-                                env={**env, **kwargs.get('environment', {})},
-                                text=True, capture_output=kwargs.get('capture', False))
+        result = windows.run(root, prefix, exe, args,
+                             env={**env, **kwargs.get('environment', {})},
+                             capture=kwargs.get('capture', False), timeout=3600)
         # Windows installers return 3010 for successful installation requiring
         # reboot; Wine's Unix exit status carries its low byte.
         if result.returncode not in (0, 3010 & 255):
@@ -89,9 +89,8 @@ def install_powerbi(root, prefix):
         match = re.fullmatch(r'(\{[0-9a-fA-F-]{36}\})\|\|\|Wine Mono(?: .*)?', line.strip())
         if match:
             run(system / 'uninstaller.exe', '--remove', match[1])
-    release = subprocess.run([env['WINELOADER'], str(reg), 'query',
-                              r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
-                              '/v', 'Release', '/reg:64'], env=env, capture_output=True, text=True)
+    release = run(reg, 'query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
+                  '/v', 'Release', '/reg:64', capture=True)
     match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
     # Wine's default registry advertises .NET 4.8 even without Microsoft's CLR.
     # A version key alone is therefore not an installed dependency check.
@@ -149,11 +148,9 @@ def prepare(app, accepted=False):
             system = prefix / 'pfx/drive_c/windows/system32'
             # Match the vendor setup: Windows 11 and ClearType, with the
             # runtime's version-matched DXVK already installed by initialize.
-            subprocess.run([env['WINELOADER'], str(system / 'winecfg.exe'), '/v', 'win11'],
-                           env=env, check=True)
-            subprocess.run([env['WINELOADER'], str(system / 'reg.exe'), 'add',
-                            r'HKCU\Control Panel\Desktop', '/v', 'FontSmoothingType',
-                            '/t', 'REG_DWORD', '/d', '2', '/f'], env=env, check=True)
+            windows.run(root, prefix, system / 'winecfg.exe', ['/v', 'win11'], env=env, check=True)
+            windows.run(root, prefix, system / 'reg.exe', ['add', r'HKCU\Control Panel\Desktop',
+                        '/v', 'FontSmoothingType', '/t', 'REG_DWORD', '/d', '2', '/f'], env=env, check=True)
             # Atomic extraction leaves retryable downloads, not half-ready apps.
             application = prefix / 'pfx/drive_c/Program Files/Paint.NET'
             if not (application / 'paintdotnet.exe').is_file():
@@ -188,17 +185,15 @@ def main():
     windows_a11y.ensure(root, prefix, 'Paint.NET' if args.app == 'paintnet' else 'Power BI Desktop', env)
     if args.app == 'paintnet':
         # These are the vendor paintdotnet.sh overrides, not modified binaries.
-        env['WINEDLLOVERRIDES'] += ';mshtml=;d3dcompiler_47=n'
-    with (cache / 'desktop.log').open('ab') as log:
-        child = subprocess.Popen([env['WINELOADER'], str(executable)], cwd=executable.parent,
-                         env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                         start_new_session=True)
-        try:
-            code = child.wait(timeout=2)
-            if code:
-                raise RuntimeError(f'Application exited ({code}); see {cache / "desktop.log"}')
-        except subprocess.TimeoutExpired:
-            pass
+        env['WINEDLLOVERRIDES'] = 'mshtml=;d3dcompiler_47=n'
+    response = windows.request(root, prefix, executable,
+                               overrides=env.get('WINEDLLOVERRIDES', ''))
+    (cache / 'desktop.log').write_text('Native log: '+response['log']+'\n')
+    exit_file = windows.guest_path(response['exit'])
+    import time
+    time.sleep(2)
+    if exit_file.is_file() and int(exit_file.read_text()) != 0:
+        raise RuntimeError('Application exited; see '+str(windows.guest_path(response['log'])))
     return 0
 
 

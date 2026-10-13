@@ -36,11 +36,6 @@ cmake -G Ninja -S "$source" -B "$output/$triple" \
 cmake --build "$output/$triple" --target "$module" -j"${JOBS:-8}"
 install -m755 "$output/$triple/Bin/lib$module.dll" "$output/lib$module.dll"
 done
-cmake -G Ninja -S "$source/Source/Windows/UnixLib" -B "$output/unix" \
-    -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-    -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_BUILD_TYPE=Release
-cmake --build "$output/unix" -j"${JOBS:-8}"
-install -m755 "$output/unix/libarm64ecfex.so" "$output/unix/libwow64fex.so" "$output/"
 git -C "$source" rev-parse HEAD > "$output/source-commit"
 tar -czf "$output/fex-source.tar.gz" --exclude=.git -C "$repo/third_party/proton" FEX
-sha256sum "$output/"lib*fex.* "$output/fex-source.tar.gz"
+sha256sum "$output/"lib*fex.dll "$output/fex-source.tar.gz"

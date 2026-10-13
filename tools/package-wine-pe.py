@@ -10,6 +10,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import sys
 import tarfile
 import tempfile
 
@@ -21,7 +22,7 @@ def digest(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--wine', type=Path, required=True, help='wine-standalone.sh output')
+    parser.add_argument('--wine', type=Path, required=True, help='wine-pe.sh output')
     parser.add_argument('--fex', type=Path, required=True, help='fex-windows.sh output')
     parser.add_argument('--dxvk', type=Path, required=True, help='dxvk-windows.sh output')
     parser.add_argument('--addons', type=Path, required=True, help='Directory containing wine/mono and wine/gecko')
@@ -31,15 +32,17 @@ def main():
     with tempfile.TemporaryDirectory(prefix='wine-package-', dir=args.output.parent) as temporary:
         stage = Path(temporary)
         files = stage/'files'
+        # Only the Windows modules; no glibc native backend is packaged.
         # A single complete, version-matched Wine installation is the sole base.
         shutil.copytree(args.wine/'files', files, symlinks=True)
+        shutil.rmtree(files/'lib/wine/aarch64-unix', ignore_errors=True)
         for directory in ('include', 'share/man', 'share/applications'):
             shutil.rmtree(files/directory, ignore_errors=True)
         # Import/static libraries are build-time inputs, never loaded by Wine.
         for path in (files/'lib').rglob('*.a'):
             path.unlink()
         for name in ('arm64ecfex', 'wow64fex'):
-            for arch, suffix in (('aarch64-windows', 'dll'), ('aarch64-unix', 'so')):
+            for arch, suffix in (('aarch64-windows', 'dll'),):
                 shutil.copy2(args.fex/f'lib{name}.{suffix}', files/f'lib/wine/{arch}/lib{name}.{suffix}')
         for arch in ('aarch64', 'i386', 'x86_64'):
             shutil.copytree(args.dxvk/f'{arch}-windows', files/f'lib/wine/dxvk/{arch}-windows')
@@ -60,7 +63,7 @@ def main():
         config.write_text(json.dumps({'Config': {'TSOEnabled': '1', 'X87ReducedPrecision': '1',
                                                'VectorTSOEnabled': '0', 'MemcpySetTSOEnabled': '0',
                                                'HalfBarrierTSOEnabled': '1', 'MaxInst': '500', 'Multiblock': '1'}}, indent=2)+'\n')
-        metadata = {'format': 2, 'kind': 'wine', 'architecture': 'aarch64',
+        metadata = {'format': 2, 'kind': 'wine-pe', 'architecture': 'aarch64',
                     'wine_version': (args.wine/'wine-version').read_text().strip(),
                     'wine_commit': (args.wine/'wine-commit').read_text().strip(),
                     'fex_commit': (args.fex/'source-commit').read_text().strip(),
@@ -75,10 +78,6 @@ def main():
             shutil.copy2(source, destination)
             metadata['sources'][name] = {'asset': destination.name, 'sha256': digest(destination)}
         (stage/'arlinux-runtime.json').write_text(json.dumps(metadata, indent=2)+'\n')
-        spec = importlib.util.spec_from_file_location('arlinux_windows', Path(__file__).resolve().parents[1]/'runtime/tools/windows.py')
-        windows = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(windows)
-        windows.validate(stage)
         archive = stage/'wine.tar.gz'
         with tarfile.open(archive, 'w:gz', compresslevel=3) as bundle:
             bundle.add(files, arcname='files')

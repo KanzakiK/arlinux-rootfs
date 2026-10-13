@@ -42,59 +42,39 @@ def main():
     executable = args.executable.expanduser().resolve(strict=True)
     if not executable.is_file():
         parser.error('Expected an executable file')
-    storage = Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share'))/'arlinux/windows'
-    current = json.loads((storage/'current.json').read_text())
-    if args.runtime:
-        if not re.fullmatch('[0-9a-f]{64}', args.runtime):
-            parser.error('--runtime requires an installed SHA-256')
-        current = {'sha256': args.runtime}
-    runtime = storage/'runtimes'/current['sha256']
-    runtime_metadata = json.loads((runtime/'arlinux-runtime.json').read_text())
-    if runtime_metadata.get('format') != 2 or runtime_metadata.get('kind') != 'wine':
-        parser.error('Install the new standalone Wine runtime before capturing; old Proton runtimes are not supported')
+    import sys
+    sys.path.insert(0, '/usr/lib/arlinux')
+    import windows
+    runtime = windows.runtime(args.runtime) if args.runtime else windows.ensure_runtime()
+    current = {'sha256': runtime.name}
     debugger = args.observer.expanduser().resolve(strict=True)
     if not debugger.is_file():
         parser.error('Observer executable not found')
     report = args.output.expanduser()
     report.mkdir(parents=True, mode=0o700, exist_ok=False)
     report = report.resolve()
-    spec = importlib.util.spec_from_file_location('arlinux_windows', '/usr/lib/arlinux/windows.py')
-    windows = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(windows)
     env = windows.environment(runtime, prefix)
     windows.initialize(runtime, prefix, env)
     env.update(overrides)
-    env['ARLINUX_EXCEPTION_LOG'] = 'Z:'+str(report/'debugger.log').replace('/', '\\')
-    command = [env['WINELOADER'], str(debugger),
-               str(args.seconds), 'Z:'+str(executable).replace('/', '\\')]
+    env['ARLINUX_EXCEPTION_LOG'] = 'Z:'+str(windows.host_path(report/'debugger.log')).replace('/', '\\')
+    arguments = [str(args.seconds), 'Z:'+str(windows.host_path(executable)).replace('/', '\\')]
     if args.arguments:
-        command.append(subprocess.list2cmdline([command[-1], *args.arguments]))
+        arguments.append(subprocess.list2cmdline([arguments[-1], *args.arguments]))
     metadata = {'runtime_sha256': current['sha256'], 'prefix': str(prefix),
                 'executable': str(executable), 'arguments': args.arguments, 'started': time.time(),
                 'observer_sha256': hashlib.sha256(debugger.read_bytes()).hexdigest(),
                 'seconds': args.seconds, 'environment': overrides}
     with executable.open('rb') as binary:
         metadata['executable_sha256'] = hashlib.file_digest(binary, 'sha256').hexdigest()
-    (report/'runtime.json').write_text((runtime/'arlinux-runtime.json').read_text())
+    (report/'runtime.json').write_text((runtime/'bionic-runtime.json').read_text())
     timed_out = False
-    with (report/'launcher.log').open('w') as log:
-        process = subprocess.Popen(command, cwd=executable.parent, env=env,
-                                   stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
-        try:
-            status = process.wait(timeout=args.seconds+30)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            # Only this diagnostic launch, never every process in the prefix.
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                status = process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                status = process.wait()
+    try:
+        result = windows.run(runtime, prefix, debugger, arguments, env=env,
+                             capture=True, timeout=args.seconds+60)
+        status = result.returncode
+        (report/'launcher.log').write_text(result.stdout)
+    except RuntimeError:
+        timed_out, status = True, 124
     # The observer normally detaches after its time budget. Its zero exit code
     # is not evidence that the application exited successfully (or worked).
     observer_log = report/'debugger.log'
