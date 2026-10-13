@@ -197,6 +197,12 @@ PY
     if [[ "$product" == yibu || "$product" == debian ]]; then
         mkdir -p "$rootfs/usr/lib/arlinux/mesa-packages"
         cp build/linux/mesa-debs/*.deb "$rootfs/usr/lib/arlinux/mesa-packages/"
+        if [[ "$product" == yibu ]]; then
+            mkdir -p "$rootfs/usr/lib/arlinux/spark-store-packages"
+            python3 tools/build/spark-store-deb.py \
+              "$ARLINUX_CACHE_DIR/downloads/spark-store_5.3.2_arm64.deb" \
+              "$rootfs/usr/lib/arlinux/spark-store-packages/spark-store_5.3.2+arlinux.1_arm64.deb"
+        fi
     elif [[ "$product" == arch || "$product" == omarchy ]]; then
         mkdir -p "$rootfs/usr/lib/arlinux/mesa-packages"
         cp build/linux/mesa-arch/*.pkg.tar.zst "$rootfs/usr/lib/arlinux/mesa-packages/"
