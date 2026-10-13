@@ -6,5 +6,5 @@ Comment[zh_CN]=首次使用下载 Power BI 及 Windows 依赖（实验性）
 Exec=arlinux-windows-app powerbi --desktop
 Icon=/usr/share/pixmaps/arlinux-powerbi.png
 Terminal=true
-Categories=Office;Spreadsheet;
+Categories=Windows;Office;Spreadsheet;
 StartupNotify=false

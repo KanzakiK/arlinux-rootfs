@@ -83,7 +83,12 @@ def tile(app):
 
 def activate(application):
     if application.get_windows():
-        application.get_windows()[0].present()
+        window = application.get_windows()[0]
+        # A host rail tap has no Wayland seat serial for xdg-activation.
+        # Remap the existing window so compositors focus and raise it.
+        window.hide()
+        window.show_all()
+        window.present()
         return
     provider = Gtk.CssProvider()
     provider.load_from_data(CSS)
