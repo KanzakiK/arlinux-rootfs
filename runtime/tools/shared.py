@@ -6,10 +6,12 @@ There is deliberately no per-HOME fallback: an old host must be upgraded.
 from contextlib import contextmanager
 import fcntl
 import hashlib
+import json
 from pathlib import Path
 import re
 import subprocess
 import sys
+from urllib.parse import urlparse, unquote
 
 ROOT = Path('/arlinux-shared')
 
@@ -36,6 +38,33 @@ def digest(path):
         return hashlib.file_digest(source, 'sha256').hexdigest()
 
 
+def github_asset(url, expected):
+    """Use GitHub's official asset API when its web download host is unreachable."""
+    parsed = urlparse(url)
+    match = re.fullmatch(r'/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/]+)', parsed.path)
+    if parsed.scheme != 'https' or parsed.netloc != 'github.com' or not match:
+        return None
+    owner, repo, tag, filename = match.groups()
+    endpoint = f'https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}'
+    try:
+        result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
+                                 endpoint], check=True, capture_output=True, text=True)
+        release = json.loads(result.stdout)
+        for asset in release.get('assets', []):
+            if asset.get('name') != unquote(filename):
+                continue
+            identity = asset.get('id')
+            if not isinstance(identity, int) or identity <= 0:
+                return None
+            checksum = asset.get('digest')
+            if checksum is not None and checksum != 'sha256:' + expected:
+                return None
+            return f'https://api.github.com/repos/{owner}/{repo}/releases/assets/{identity}'
+    except (subprocess.CalledProcessError, json.JSONDecodeError, AttributeError):
+        pass
+    return None
+
+
 def download(url, expected, suffix):
     """Keep one verified vendor artifact, with a cross-instance download lock."""
     urls = [url] if isinstance(url, str) else list(url)
@@ -49,17 +78,24 @@ def download(url, expected, suffix):
             return target
         partial = target.with_suffix(target.suffix + '.part')
         try:
-            for url in urls:
+            candidates = []
+            for source in urls:
+                api = github_asset(source, expected)
+                if api:
+                    candidates.append((api, ['-H', 'Accept: application/octet-stream']))
+                candidates.append((source, []))
+            for index, (source, headers) in enumerate(candidates):
                 try:
-                    subprocess.run(['curl', '-fL', '--retry', '3', '--connect-timeout', '20',
-                                    '--speed-limit', '1024', '--speed-time', '60',
-                                    '-o', str(partial), url], check=True, stdout=sys.stderr)
+                    print('Downloading verified installer…', flush=True, file=sys.stderr)
+                    subprocess.run(['curl', '-fL', '--retry', '2', '--connect-timeout', '10',
+                                    '--speed-limit', '1024', '--speed-time', '30',
+                                    *headers, '-o', str(partial), source], check=True, stdout=sys.stderr)
                     if digest(partial) != expected:
                         raise ValueError('Shared download SHA-256 mismatch')
                     partial.replace(target)
                     return target
                 except (subprocess.CalledProcessError, ValueError):
-                    if url == urls[-1]:
+                    if index == len(candidates) - 1:
                         raise
         finally:
             partial.unlink(missing_ok=True)
