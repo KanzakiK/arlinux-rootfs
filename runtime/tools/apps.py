@@ -39,7 +39,7 @@ flowboxchild:selected, flowboxchild:active { background: #26313a; }
 
 def kind(app):
     command = app.get_commandline() or ""
-    if app.get_id() in ("arlinux-paintnet.desktop", "arlinux-powerbi.desktop"):
+    if "Windows" in (app.get_categories() or "").split(";") or app.get_id() in ("arlinux-paintnet.desktop", "arlinux-powerbi.desktop"):
         return "windows"
     return "android" if app.get_id().startswith("arlinux-android-") or command.startswith("arlinux-app ") else "linux"
 
