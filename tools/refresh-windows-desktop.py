@@ -62,7 +62,8 @@ def refresh(bundle, output):
         with compressed.open('rb') as stream:
             checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
         rewrite(bundle, output, {'rootfs.tar.zst': compressed,
-                                'rootfs-seed-id': (checksum+'\n').encode()})
+                                'rootfs-seed-id': (checksum+'\n').encode(),
+                                'guest/yibu-launcher.py': root/'runtime/tools/apps.py'})
 
 
 if __name__ == '__main__':
