@@ -36,6 +36,16 @@ class AdapterTest(unittest.TestCase):
   self.assertEqual(mapping['12']['name'],'SteamLinuxRuntime_fex')
   self.assertIn('"Other" "unchanged"',updated)
   self.assertEqual(module.default_config(updated),updated)
+ def test_first_install_has_default_before_first_login(self):
+  from steam import keyvalues
+  with tempfile.TemporaryDirectory() as temp:
+   steam=Path(temp)
+   module.configure(steam)
+   config=steam/'config/config.vdf'
+   mapping=keyvalues(config.read_text())['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
+   self.assertEqual(mapping['0']['name'],module.TOOL)
+   self.assertFalse((steam/'config/config.vdf.before-arlinux-bionic').exists())
+   first=config.read_bytes();module.configure(steam);self.assertEqual(config.read_bytes(),first)
  def test_missing_mapping_and_configuration_backup(self):
   from steam import keyvalues
   original='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "Other" "unchanged" } } } }'

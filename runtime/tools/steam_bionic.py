@@ -59,21 +59,22 @@ def select_default(steam):
         except OSError:
             continue
     config = steam/'config/config.vdf'
-    if not config.is_file():
-        return  # Steam creates its config on the first login.
-    original = config.read_text()
+    existed = config.is_file()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    original = config.read_text() if existed else ('"InstallConfigStore" { '
+        '"Software" { "Valve" { "Steam" { } } } }\n')
     updated = default_config(original)
     if updated == original:
         return
     backup = config.with_name('config.vdf.before-arlinux-bionic')
-    if not backup.exists():
+    if existed and not backup.exists():
         shutil.copy2(config, backup)
     with tempfile.NamedTemporaryFile(mode='w', dir=config.parent, delete=False) as out:
         temporary = Path(out.name)
         out.write(updated)
     try:
-        temporary.chmod(config.stat().st_mode & 0o777)
-        if config.read_text() != original:
+        temporary.chmod(config.stat().st_mode & 0o777 if existed else 0o600)
+        if (existed and config.read_text() != original) or (not existed and config.exists()):
             raise RuntimeError('Steam configuration changed during setup; retry with Steam closed')
         temporary.replace(config)
     finally:
