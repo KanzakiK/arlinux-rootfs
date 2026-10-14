@@ -14,7 +14,9 @@ import re
 import shutil
 import tempfile
 
-CORE = ('files/lib/wine/aarch64-unix/ntdll.so', 'files/bin-arm64/wineserver')
+CORE = ('files/lib/wine/aarch64-unix/ntdll.so', 'files/bin-arm64/wineserver',
+        'files/lib/wine/aarch64-unix/nsiproxy.so',
+        'files/lib/wine/aarch64-windows/iphlpapi.dll')
 # Wine locates its Unix modules relative to its executable; these cannot be
 # symlinks back into the unmodified depot.
 LOADERS = ('files/bin-arm64/wine', 'files/lib/wine/aarch64-unix/wine',

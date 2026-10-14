@@ -9,10 +9,14 @@ import shutil
 
 def install(pack, destination):
     data = json.loads((pack/'pack.json').read_text())
-    expected = {'files/lib/wine/aarch64-unix/ntdll.so', 'files/bin-arm64/wineserver'}
+    expected = {'files/lib/wine/aarch64-unix/ntdll.so', 'files/bin-arm64/wineserver',
+                'files/lib/wine/aarch64-unix/nsiproxy.so',
+                'files/lib/wine/aarch64-windows/iphlpapi.dll'}
     if data.get('format') != 1 or set(data.get('files', {})) != expected:
         raise RuntimeError('Invalid Proton core pack')
-    sources = {'wine-source.tar.gz', 'execmod.patch'}
+    sources = {'wine-source.tar.gz', 'execmod.patch',
+               '0002-nsiproxy-handle-interface-enumeration-failure.patch',
+               '0003-iphlpapi-handle-empty-adapter-table.patch'}
     if set(data.get('source', {})) != sources:
         raise RuntimeError('Matching Wine source and patch are required for distribution')
     for name, checksum in (data['files'] | data['source']).items():
