@@ -20,6 +20,12 @@ import hashlib
 def configure(steam):
     os.environ.setdefault('PRESSURE_VESSEL_BWRAP', '/usr/local/bin/bwrap')
     fex, root = prepare(steam)
+    # We launch Valve's ARM64 client directly. Its normal shell launcher adds
+    # these native runtime helpers to PATH; the client starts the launcher
+    # service by name, so leaving them out disables it even with sniper installed.
+    runtime_bin = app_directory(steam, '1628350')/'pressure-vessel-arm64/bin'
+    paths = os.environ.get('PATH', os.defpath).split(os.pathsep)
+    os.environ['PATH'] = os.pathsep.join(dict.fromkeys([str(runtime_bin), *paths]))
     os.environ.setdefault('STEAM_COMPAT_GRAPHICS_PROVIDER', str(root/'graphics_provider.json'))
     os.environ.setdefault('STEAM_COMPAT_FEX_CONFIG',
                           'TSOEnabled:1,Multiblock:1,ThunksDB_GL:1,ThunksDB_Vulkan:1')
