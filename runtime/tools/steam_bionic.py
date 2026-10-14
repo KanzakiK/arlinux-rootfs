@@ -6,6 +6,8 @@ Runtime installation uses the pinned Windows manifest and immutable shared cache
 import argparse
 import json
 import os
+import re
+import shutil
 from pathlib import Path
 import sys
 import tempfile
@@ -35,6 +37,98 @@ def register(steam):
         (stage/'compatibilitytool.vdf').write_text('"compatibilitytools"\n{\n "compat_tools"\n {\n  "'+TOOL+'"\n  {\n   "install_path" "."\n   "display_name" "ARLinux Wine (Bionic, experimental)"\n   "from_oslist" "windows"\n   "to_oslist" "linux"\n  }\n }\n}\n')
         stage.rename(tool)
     return tool
+
+
+def configure(steam):
+    """Register Android-hosted Bionic Wine before Steam scans custom tools."""
+    register(steam)
+    select_default(steam)
+
+
+def select_default(steam):
+    """Select Bionic before client startup, preserving unrelated user choices."""
+    for process in Path('/proc').iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            if process.stat().st_uid != os.getuid():
+                continue
+            executable = (process/'cmdline').read_bytes().split(b'\0', 1)[0]
+            if executable == os.fsencode(steam/'steamrtarm64/steam'):
+                return
+        except OSError:
+            continue
+    config = steam/'config/config.vdf'
+    if not config.is_file():
+        return  # Steam creates its config on the first login.
+    original = config.read_text()
+    updated = default_config(original)
+    if updated == original:
+        return
+    backup = config.with_name('config.vdf.before-arlinux-bionic')
+    if not backup.exists():
+        shutil.copy2(config, backup)
+    with tempfile.NamedTemporaryFile(mode='w', dir=config.parent, delete=False) as out:
+        temporary = Path(out.name)
+        out.write(updated)
+    try:
+        temporary.chmod(config.stat().st_mode & 0o777)
+        if config.read_text() != original:
+            raise RuntimeError('Steam configuration changed during setup; retry with Steam closed')
+        temporary.replace(config)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def default_config(text):
+    """Edit only CompatToolMapping; leave all other bytes and fields untouched."""
+    from steam import keyvalues
+    keyvalues(text)
+    tokens = list(re.finditer(r'"(?:\\.|[^"\\])*"|[{}]', text))
+    stack, spans = [], {}
+    for i, token in enumerate(tokens):
+        if token.group() == '{':
+            stack.append((json.loads(tokens[i-1].group()), token.end()))
+        elif token.group() == '}':
+            path = tuple(name.lower() for name, _ in stack)
+            spans[path] = (stack[-1][1], token.start())
+            stack.pop()
+    parent = ('installconfigstore', 'software', 'valve', 'steam')
+    span = spans.get((*parent, 'compattoolmapping'))
+    if span:
+        start, end = span
+        mapping = keyvalues(text[start:end])
+    elif parent in spans:
+        start = end = spans[parent][1]
+        mapping = {}
+    else:
+        raise RuntimeError('Steam configuration has no InstallConfigStore/Software/Valve/Steam')
+    changed = False
+    for app, entry in list(mapping.items()) + ([] if '0' in mapping else [('0', {})]):
+        name = entry.get('name', '')
+        # Migrate our removed adapter and the Windows default. Keep explicit
+        # per-game Valve/third-party choices and native Linux FEX selections.
+        if name == 'arlinux-proton-arm64' or (app == '0' and
+                (not name or name.lower().startswith('proton_'))):
+            entry = dict(entry, name=TOOL)
+            entry.setdefault('config', '')
+            entry.setdefault('priority', '75' if app == '0' else '250')
+            mapping[app] = entry
+            changed = True
+    if not changed:
+        return text
+    def encode(data, indent):
+        lines = []
+        for key, value in data.items():
+            if isinstance(value, dict):
+                lines.extend([indent+json.dumps(key), indent+'{', encode(value, indent+'\t'), indent+'}'])
+            else:
+                lines.append(indent+json.dumps(key)+'\t\t'+json.dumps(value))
+        return '\n'.join(lines)
+    replacement = '\n'+encode(mapping, '\t'*5)+'\n'+'\t'*4
+    if not span:
+        replacement = '\n\t\t\t\t"CompatToolMapping"\n\t\t\t\t{'+replacement+'}\n'
+    return text[:start]+replacement+text[end:]
 
 
 def launch(verb, arguments):

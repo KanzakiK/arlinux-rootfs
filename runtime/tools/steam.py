@@ -365,10 +365,10 @@ def launch(root, arguments):
         subprocess.run(['sudo', 'ldconfig'], check=True)
     links(root)
     from steam_fex import configure
-    from steam_proton import configure as configure_proton
+    from steam_bionic import configure as configure_bionic
     os.chdir(root)
     while True:
-        configure_proton(root)
+        configure_bionic(root)
         if runtime_installed(root):
             configure(root)
             status = subprocess.run([str(binary), *arguments]).returncode

@@ -2,8 +2,9 @@
 
 `python3 /usr/lib/arlinux/steam_bionic.py register STEAM_DIRECTORY` registers
 `arlinux-wine-bionic` under `compatibilitytools.d`. Steam startup also registers
-it while configuring the ARLinux Proton adapter. This does not select it as the
-default or rewrite explicit game choices. Restart Steam to rescan tools.
+it directly, without a Proton depot or patch pack. Bionic Wine is the ARLinux
+Windows default; explicit third-party and native Linux choices are preserved.
+Previous ARLinux Proton selections migrate to Bionic. Restart Steam to rescan tools.
 
 Steam invokes `/run %verb%`; the guest adapter accepts `run` and
 `waitforexitandrun`, uses `STEAM_COMPAT_DATA_PATH/pfx`, preserves executable
@@ -18,7 +19,7 @@ cross the host boundary; guest glibc loader and graphics paths do not.
 This is experimental. Steamworks integration and real Steam Play acceptance
 remain unverified. There is no automatic WebView2 dependency installation in
 this adapter yet. No game-specific graphics policy is installed automatically.
-The adapter has not replaced the existing default Proton tool.
+The patched Steam Proton adapter and its core build/install chain were removed.
 
 Run `python3 tests/test-steam-bionic.py` to verify registration, preservation of
 unrecognized tools, argument boundaries, exit propagation and identity checks.

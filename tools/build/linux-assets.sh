@@ -19,16 +19,12 @@ gpu_inputs+="$(cd third_party/libhybris &&
     git ls-files --others --exclude-standard -z | sort -z | xargs -0 -r sha256sum)"
 
 ./tools/build/doctor.sh --quiet
-proton_core="${ARLINUX_PROTON_CORE:-$repo/build/linux/proton-core}"
 windows_accessibility="${ARLINUX_WINDOWS_ACCESSIBILITY:-$repo/build/windows-accessibility/windows-accessibility.exe}"
 [[ -f "$windows_accessibility" ]] || {
     echo 'Build tools/build/windows-accessibility.sh LLVM_MINGW_BIN build/windows-accessibility first.' >&2
     exit 2
 }
-[[ -f "$proton_core/pack.json" ]] || {
-    echo 'Build the matching Wine core with tools/build/proton-core.sh into build/linux/proton-core first.' >&2
-    exit 2
-}
+
 
 # Runtime changes do not require downloading and unpacking the distribution
 # again. Cache only the unmodified seed, before adding libc or GPU payloads.
@@ -84,8 +80,6 @@ input_id() {
                 | sort -z | xargs -0 -r sha256sum)
         git -C "distributions/$product" submodule status --recursive || true
         printf '%s\n' "$gpu_inputs"
-        sha256sum "$proton_core/pack.json" "$proton_core/files/lib/wine/aarch64-unix/ntdll.so" \
-            "$proton_core/files/bin-arm64/wineserver"
         true
     } | sha256sum | cut -d' ' -f1
 }
@@ -167,9 +161,7 @@ PY
     install -Dm644 runtime/tools/steam.py "$rootfs/usr/lib/arlinux/steam.py"
     install -Dm644 runtime/tools/shared.py "$rootfs/usr/lib/arlinux/shared.py"
     install -Dm644 runtime/tools/steam_fex.py "$rootfs/usr/lib/arlinux/steam_fex.py"
-    install -Dm644 runtime/tools/steam_proton.py "$rootfs/usr/lib/arlinux/steam_proton.py"
     install -Dm644 runtime/tools/steam_bionic.py "$rootfs/usr/lib/arlinux/steam_bionic.py"
-    python3 tools/build/install-proton-core.py "$proton_core" "$rootfs/usr/lib/arlinux/proton-core"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm644 runtime/tools/windows_a11y.py "$rootfs/usr/lib/arlinux/windows_a11y.py"
     install -Dm644 "$windows_accessibility" "$rootfs/usr/lib/arlinux/windows-accessibility.exe"

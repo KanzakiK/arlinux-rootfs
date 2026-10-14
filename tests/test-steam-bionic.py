@@ -2,6 +2,7 @@ import importlib.util,os,sys,tempfile,types,unittest
 from pathlib import Path
 from unittest.mock import patch
 root=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(root/'runtime/tools'))
 spec=importlib.util.spec_from_file_location('steam_bionic',root/'runtime/tools/steam_bionic.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class AdapterTest(unittest.TestCase):
  def test_registration_and_preservation(self):
@@ -22,4 +23,26 @@ class AdapterTest(unittest.TestCase):
     with self.assertRaises(ValueError):module.launch(verb,args)
   with patch.dict(sys.modules,windows=types.SimpleNamespace()),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'1; command'},clear=True):
    with self.assertRaises(ValueError):module.launch('run',['game'])
+ def test_default_migration_preserves_explicit_choices(self):
+  from steam import keyvalues
+  config='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "Other" "unchanged" "CompatToolMapping" { "0" { "name" "proton_11" } "2758540" { "name" "arlinux-proton-arm64" "priority" "250" } "10" { "name" "proton_11" } "11" { "name" "third-party" } "12" { "name" "SteamLinuxRuntime_fex" } } } } } }'
+  updated=module.default_config(config)
+  mapping=keyvalues(updated)['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
+  self.assertEqual(mapping['0']['name'],module.TOOL)
+  self.assertEqual(mapping['2758540']['name'],module.TOOL)
+  self.assertEqual(mapping['2758540']['priority'],'250')
+  self.assertEqual(mapping['10']['name'],'proton_11')
+  self.assertEqual(mapping['11']['name'],'third-party')
+  self.assertEqual(mapping['12']['name'],'SteamLinuxRuntime_fex')
+  self.assertIn('"Other" "unchanged"',updated)
+  self.assertEqual(module.default_config(updated),updated)
+ def test_missing_mapping_and_configuration_backup(self):
+  from steam import keyvalues
+  original='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "Other" "unchanged" } } } }'
+  with tempfile.TemporaryDirectory() as temp:
+   steam=Path(temp);(steam/'config').mkdir();config=steam/'config/config.vdf';config.write_text(original)
+   module.configure(steam)
+   self.assertEqual((steam/'config/config.vdf.before-arlinux-bionic').read_text(),original)
+   self.assertEqual(keyvalues(config.read_text())['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']['0']['name'],module.TOOL)
+   updated=config.read_bytes();module.configure(steam);self.assertEqual(config.read_bytes(),updated)
 unittest.main()
