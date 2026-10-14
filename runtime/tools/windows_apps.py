@@ -80,13 +80,20 @@ def install_powerbi(root, prefix):
         # reboot; Wine's Unix exit status carries its low byte.
         if result.returncode not in (0, 3010 & 255):
             result.check_returncode()
+        if result.returncode == (3010 & 255):
+            # Complete delayed CLR replacements before the next installer loads
+            # them. Kill this isolated prefix's processes first: wineboot would
+            # otherwise discard pending renames for DLLs still held open.
+            windows.run(root, prefix, system / 'wineboot.exe', ['-k', '-r'],
+                        env={**env, 'WINEDLLOVERRIDES': 'mscoree=b'},
+                        timeout=3600, check=True)
         return result
 
     reg, cfg = system / 'reg.exe', system / 'winecfg.exe'
     # Remove Wine Mono through its registered uninstaller, not fabricated keys.
     listing = run(system / 'uninstaller.exe', '--list', capture=True)
     for line in listing.stdout.splitlines():
-        match = re.fullmatch(r'(\{[0-9a-fA-F-]{36}\})\|\|\|Wine Mono(?: .*)?', line.strip())
+        match = re.fullmatch(r'([^|]+)\|\|\|Wine Mono(?: .*)?', line.strip())
         if match:
             run(system / 'uninstaller.exe', '--remove', match[1])
     release = run(reg, 'query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
@@ -95,13 +102,34 @@ def install_powerbi(root, prefix):
     # Wine's default registry advertises .NET 4.8 even without Microsoft's CLR.
     # A version key alone is therefore not an installed dependency check.
     native_clr = prefix / 'pfx/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll'
-    if not native_clr.is_file() or not match or int(match[1], 16) < 528040:
+    native_shims = [prefix / 'pfx/drive_c/windows' / directory / 'mscoree.dll'
+                    for directory in ('system32', 'syswow64')]
+    # .NET 4.8 is an upgrade: its success does not install the CLR activation
+    # shim when 4.0 was skipped because Wine advertised a default NDP version.
+    def microsoft_shims():
+        return all(path.is_file() and b'Wine builtin DLL' not in path.read_bytes()[:256]
+                   for path in native_shims)
+
+    if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
         print('Installing Microsoft .NET 4.0 and 4.8…', flush=True)
         try:
-            if not native_clr.is_file():
+            if not native_clr.is_file() or not microsoft_shims():
+                # Remove Wine's placeholder registration only when the real CLR
+                # is absent. Do not claim an installed Microsoft version.
+                if not native_clr.is_file():
+                    for view in ('/reg:32', '/reg:64'):
+                        key = r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4'
+                        existing = windows.run(root, prefix, reg, ['query', key, view],
+                                               env=env, capture=True)
+                        if existing.returncode == 0:
+                            run(reg, 'delete', key, '/f', view)
                 run(cfg, '/v', 'winxp')
                 run(download('dotnet40'), '/q', '/norestart', '/log', r'C:\dotnet40.log',
                     environment={'WINEDLLOVERRIDES': 'fusion=b'})
+                if not microsoft_shims():
+                    raise RuntimeError('Microsoft .NET 4.0 did not install both CLR activation shims')
+                run(reg, 'add', r'HKCU\Software\Wine\DllOverrides', '/v', 'mscoree',
+                    '/t', 'REG_SZ', '/d', 'native,builtin', '/f')
             run(cfg, '/v', 'win7')
             run(download('dotnet48'), '/q', '/norestart', '/log', r'C:\dotnet48.log',
                 environment={'WINEDLLOVERRIDES': 'fusion=b'})
@@ -110,7 +138,7 @@ def install_powerbi(root, prefix):
         release = run(reg, 'query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
                       '/v', 'Release', '/reg:64', capture=True)
         match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
-        if not native_clr.is_file() or not match or int(match[1], 16) < 528040:
+        if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
             raise RuntimeError('Microsoft .NET 4.8 installation did not complete')
     webview = prefix / 'pfx/drive_c/Program Files (x86)/Microsoft/EdgeWebView/Application'
     if not list(webview.glob('*/msedgewebview2.exe')):
