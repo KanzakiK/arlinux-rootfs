@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import platform
 import re
+import select
+import shlex
 import shutil
 import stat
 import subprocess
@@ -29,8 +31,7 @@ def share_client(root, previous):
         return
     if not (previous/'steamrtarm64/steam').is_file():
         return
-    if subprocess.run(['pgrep', '-f', re.escape(str(previous/'steamrtarm64/steam'))],
-                      stdout=subprocess.DEVNULL).returncode == 0:
+    if client_processes(previous):
         raise RuntimeError('Close the existing Steam client before moving it to shared storage')
     if root.exists():
         if any(root.iterdir()):
@@ -210,8 +211,7 @@ def links(root, previous=None):
 
 
 def install(root, channel):
-    if subprocess.run(['pgrep', '-f', re.escape(str(root/'steamrtarm64/steam'))],
-                      stdout=subprocess.DEVNULL).returncode == 0:
+    if client_processes(root):
         raise RuntimeError('Close Steam before installing or repairing it')
     # Check existing installation ownership before downloading or changing files.
     links(root)
@@ -309,44 +309,60 @@ def client_running():
     return False
 
 
+def client_processes(root):
+    """Find live client executables, excluding helpers and stale zombies."""
+    binary = os.fsencode(str(root/'steamrtarm64/steam'))
+    result = []
+    for process in Path('/proc').glob('[0-9]*'):
+        try:
+            if process.stat().st_uid != os.getuid():
+                continue
+            status = (process/'status').read_text()
+            if re.search(r'^State:\s+Z', status, re.MULTILINE):
+                continue
+            argv = (process/'cmdline').read_bytes().split(b'\0')
+            if argv[0] == binary:
+                result.append(int(process.name))
+        except (OSError, ValueError):
+            continue  # A process can exit while inspecting it.
+    return result
+
+
 def send_client_command(root, arguments):
-    from steam_fex import app_directory, IncompleteRuntime
+    # Valve's ARM64 client downloads Steam Runtime 4 itself. Command forwarding
+    # must work before the optional FEX/Sniper depots have been installed.
+    candidates = sorted((root/'steamapps/common').glob(
+        'SteamLinuxRuntime_*/pressure-vessel-arm64/bin/steam-runtime-steam-remote'))
+    for remote in candidates:
+        try:
+            with remote.open('rb') as executable:
+                header = executable.read(20)
+            if header[:5] != b'\x7fELF\x02' or header[5] != 1 or int.from_bytes(header[18:20], 'little') != 183:
+                continue
+        except OSError:
+            continue
+        subprocess.run([str(remote), *arguments], check=True, timeout=30)
+        return
+    # Steam's public remote helper uses a shell-quoted command line in this
+    # FIFO. Use the same protocol when no optional runtime depot exists yet.
+    # Reference: steam-runtime-tools, _srt_steam_command_via_pipe (utils.c).
+    if not client_running():
+        raise RuntimeError('Steam is no longer running')
+    if any(any(character in argument for character in ('\0', '\n', '\r')) for argument in arguments):
+        raise ValueError('Invalid Steam command argument')
+    payload = (shlex.join(['~/.steam/root/ubuntu12_32/steam', *arguments]) + '\n').encode()
+    fd = os.open(Path.home()/'.steam/steam.pipe', os.O_WRONLY | os.O_NONBLOCK | os.O_CLOEXEC | os.O_NOCTTY)
     try:
-        runtime = app_directory(root, '1628350')
-    except IncompleteRuntime as error:
-        raise RuntimeError('Steam is already running. Finish its first-time '
-                           'runtime downloads in the existing window.') from error
-    remote = runtime/'pressure-vessel-arm64/bin/steam-runtime-steam-remote'
-    subprocess.run([str(remote), *arguments], check=True, timeout=30)
-
-
-def bootstrap_runtime(binary, root, arguments):
-    """Let Steam download its depots, then restart with the prepared provider.
-
-    Environment changes cannot reach an already running client. This is a
-    first-install session only; ordinary game launches remain owned by Steam.
-    Never force-kill a client that declines its normal shutdown request.
-    """
-    print('First-time game setup: install FEX-Emu and Steam Linux Runtime 3.0 '
-          '(sniper) in Steam. Steam will restart once both downloads finish.', flush=True)
-    with subprocess.Popen([str(binary), *arguments]) as client:
-        while True:
-            try:
-                return client.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                if not runtime_installed(root):
-                    continue
-            print('Game runtimes downloaded. Restarting Steam to prepare graphics.', flush=True)
-            # Command forwarding belongs to Valve's launcher, not the client
-            # binary: invoking the latter here can start a second client.
-            # Sniper is now installed and supplies the native ARM64 remote.
-            send_client_command(root, ['-shutdown'])
-            try:
-                result = client.wait(timeout=60)
-            except subprocess.TimeoutExpired:
-                print('Steam is still busy. Close it normally to finish game setup.', flush=True)
-                return client.wait()
-            return 42 if result == 0 else result
+        if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+            raise RuntimeError('Steam command channel is not a FIFO')
+        if len(payload) > os.fpathconf(fd, 'PC_PIPE_BUF'):
+            raise ValueError('Steam command exceeds the atomic pipe limit')
+        if not select.select([], [fd], [], 10)[1]:
+            raise RuntimeError('Steam command service did not respond')
+        if os.write(fd, payload) != len(payload):
+            raise RuntimeError('Steam command was incomplete')
+    finally:
+        os.close(fd)
 
 
 def launch(root, arguments):
@@ -373,7 +389,7 @@ def launch(root, arguments):
             configure(root)
             status = subprocess.run([str(binary), *arguments]).returncode
         else:
-            status = bootstrap_runtime(binary, root, arguments)
+            status = subprocess.run([str(binary), *arguments]).returncode
         if status != 42:  # Valve updater or first-time runtime setup restart.
             if status < 0:
                 print(f'Steam stopped with signal {-status}. '
@@ -429,8 +445,7 @@ def main():
                 raise RuntimeError('Close the instance-local Steam client before using shared Steam')
             send_client_command(root, steam_arguments or ['steam://open/main'])
             return 0
-        if subprocess.run(['pgrep', '-f', re.escape(str(root/'steamrtarm64/steam'))],
-                          stdout=subprocess.DEVNULL).returncode == 0:
+        if client_processes(root):
             raise RuntimeError('Shared Steam is still running in another session. Close it first.')
         if previous != root:
             share_client(root, previous)
