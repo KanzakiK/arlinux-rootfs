@@ -154,6 +154,8 @@ def launch(verb, arguments):
         if name.startswith('Steam') and not value.isdecimal():
             raise ValueError('Invalid Steam game identity: '+name)
     root = windows.ensure_runtime()
+    from windows_webview import prepare_game
+    env = prepare_game(root, Path(data), arguments[0], env)
     # The Android host owns initialization, DXVK setup and native driver paths.
     result = windows.run(root, Path(data), arguments[0], arguments[1:], env=env,
                          timeout=7*24*60*60)

@@ -14,7 +14,7 @@ class AdapterTest(unittest.TestCase):
  def test_launch_arguments_identity_and_exit(self):
   calls=[]
   fake=types.SimpleNamespace(ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append((a,k)) or types.SimpleNamespace(returncode=101)))
-  with patch.dict(sys.modules,windows=fake),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/arlinux-shared/steam/compatdata/2758540','SteamAppId':'2758540','LD_LIBRARY_PATH':'/wrong/libc'},clear=True):
+  with patch.dict(sys.modules,windows=fake,windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/arlinux-shared/steam/compatdata/2758540','SteamAppId':'2758540','LD_LIBRARY_PATH':'/wrong/libc'},clear=True):
    self.assertEqual(module.launch('waitforexitandrun',['/games/我的小鲨鱼.exe','argument with spaces']),101)
   self.assertEqual(calls[0][0][2:],('/games/我的小鲨鱼.exe',['argument with spaces']));self.assertEqual(calls[0][1]['env'],{'SteamAppId':'2758540'})
  def test_invalid_operations_and_prefix(self):
