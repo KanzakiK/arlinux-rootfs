@@ -205,7 +205,9 @@ def initialize(root, prefix, env=None):
 
 def run(root, prefix, executable, arguments=(), env=None, check=False, capture=False, timeout=600):
     env = env or {}
-    diagnostics = {name: env[name] for name in ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG') if name in env}
+    diagnostics = {name: env[name] for name in ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG',
+        'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
+        'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER', 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS') if name in env}
     response = request(root, prefix, executable, arguments, env.get('WINEDLLOVERRIDES', ''), diagnostics=diagnostics)
     deadline = time.monotonic()+timeout
     exit_path = guest_path(response['exit'])

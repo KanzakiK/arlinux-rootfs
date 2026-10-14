@@ -32,6 +32,8 @@ def configure(steam):
     Steam still owns depot installation. Only a verified pack may become the
     default Windows tool; explicit third-party tools and Linux FEX stay intact.
     """
+    from steam_bionic import register as register_bionic
+    register_bionic(steam)
     from steam_fex import app_directory, IncompleteRuntime
     try:
         stock = app_directory(steam, '4628740')
