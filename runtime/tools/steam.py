@@ -118,7 +118,7 @@ def dependencies():
     """Use the distribution package manager, never a private library bundle."""
     if shutil.which('apt-get'):
         subprocess.run(['sudo', 'apt-get', 'update'], check=True)
-        packages = ['ca-certificates', 'curl', 'libgtk2.0-0t64',
+        packages = ['ca-certificates', 'curl', 'xdg-user-dirs', 'libgtk2.0-0t64',
                     'libpipewire-0.3-0t64', 'libnm0', 'lsof', 'libnss3',
                     'libxss1', 'libasound2t64', 'libpulse0', 'libsdl2-2.0-0', 'libopenal1']
         subprocess.run(['sudo', 'apt-get', 'install', '-y', '--no-install-recommends',
@@ -130,7 +130,7 @@ def dependencies():
             raise RuntimeError('This Arch desktop needs GTK2 installed before Steam; '
                                'automatic dependency setup is currently tested on Debian/Yibu/LXQt')
         subprocess.run(['sudo', 'pacman', '-S', '--needed', '--noconfirm',
-                        'ca-certificates', 'curl', 'pipewire', 'libnm',
+                        'ca-certificates', 'curl', 'xdg-user-dirs', 'pipewire', 'libnm',
                         'lsof', 'nss', 'libxss', 'alsa-lib', 'libpulse', 'sdl2-compat', 'openal'], check=True)
     else:
         raise RuntimeError('Install Steam dependencies with your package manager: '
@@ -148,7 +148,7 @@ def ensure_dependencies():
             ctypes.CDLL(name)
         except OSError:
             missing.append(name)
-    missing += [name for name in ('curl', 'lsof') if not shutil.which(name)]
+    missing += [name for name in ('curl', 'lsof', 'xdg-user-dir') if not shutil.which(name)]
     if missing:
         print('Installing Steam dependencies: ' + ', '.join(missing), flush=True)
         dependencies()
@@ -382,20 +382,22 @@ def launch(root, arguments):
     links(root)
     from steam_fex import configure
     from steam_bionic import configure as configure_bionic
+    from steam_proxy import session as proxy_session
     os.chdir(root)
-    while True:
-        configure_bionic(root)
-        if runtime_installed(root):
-            configure(root)
-            status = subprocess.run([str(binary), *arguments]).returncode
-        else:
-            status = subprocess.run([str(binary), *arguments]).returncode
-        if status != 42:  # Valve updater or first-time runtime setup restart.
-            if status < 0:
-                print(f'Steam stopped with signal {-status}. '
-                      f'Client logs: {root / "logs"}', file=sys.stderr)
-                return 128 - status
-            return status
+    with proxy_session():
+        while True:
+            configure_bionic(root)
+            if runtime_installed(root):
+                configure(root)
+                status = subprocess.run([str(binary), *arguments]).returncode
+            else:
+                status = subprocess.run([str(binary), *arguments]).returncode
+            if status != 42:  # Valve updater or first-time runtime setup restart.
+                if status < 0:
+                    print(f'Steam stopped with signal {-status}. '
+                          f'Client logs: {root / "logs"}', file=sys.stderr)
+                    return 128 - status
+                return status
 
 
 def require_robust_futex():

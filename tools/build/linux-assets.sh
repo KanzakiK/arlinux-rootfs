@@ -162,6 +162,7 @@ PY
     install -Dm644 runtime/tools/shared.py "$rootfs/usr/lib/arlinux/shared.py"
     install -Dm644 runtime/tools/steam_fex.py "$rootfs/usr/lib/arlinux/steam_fex.py"
     install -Dm644 runtime/tools/steam_bionic.py "$rootfs/usr/lib/arlinux/steam_bionic.py"
+    install -Dm644 runtime/tools/steam_proxy.py "$rootfs/usr/lib/arlinux/steam_proxy.py"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm644 runtime/tools/windows_webview.py "$rootfs/usr/lib/arlinux/windows_webview.py"
     install -Dm644 runtime/tools/windows_a11y.py "$rootfs/usr/lib/arlinux/windows_a11y.py"
