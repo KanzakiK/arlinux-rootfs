@@ -33,6 +33,44 @@ class DownloadTests(unittest.TestCase):
             request.side_effect = probe
             self.assertEqual(shared.ranked_sources(urls), [urls[1], urls[0], urls[2]])
 
+    def test_interrupted_transfer_resumes_on_next_official_cdn(self):
+        data = b'first half and second half'
+        checksum = hashlib.sha256(data).hexdigest()
+        urls = steam.client_sources(steam.CDN + 'client.zip')[:2]
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(shared, 'ROOT', Path(directory)), \
+             patch.object(shared, 'ranked_sources', side_effect=lambda sources: sources), \
+             patch.object(shared.subprocess, 'run') as request:
+            def fetch(command, **kwargs):
+                self.assertEqual(command[command.index('--continue-at') + 1], '-')
+                partial = Path(command[command.index('-o') + 1])
+                if command[-1] == urls[0]:
+                    partial.write_bytes(data[:10])
+                    raise subprocess.CalledProcessError(56, 'curl')
+                self.assertEqual(partial.read_bytes(), data[:10])
+                with partial.open('ab') as output:
+                    output.write(data[10:])
+            request.side_effect = fetch
+            self.assertEqual(shared.download(urls, checksum, '.zip').read_bytes(), data)
+            self.assertEqual(request.call_count, 2)
+
+    def test_range_unsupported_retries_same_source_without_partial(self):
+        data = b'verified package'
+        checksum = hashlib.sha256(data).hexdigest()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(shared, 'ROOT', Path(directory)), \
+             patch.object(shared.subprocess, 'run') as request:
+            def fetch(command, **kwargs):
+                partial = Path(command[command.index('-o') + 1])
+                if request.call_count == 1:
+                    partial.write_bytes(b'partial')
+                    raise subprocess.CalledProcessError(33, 'curl')
+                self.assertFalse(partial.exists())
+                partial.write_bytes(data)
+            request.side_effect = fetch
+            self.assertEqual(shared.download('https://official.example/client.zip', checksum, '.zip').read_bytes(), data)
+            self.assertEqual(request.call_count, 2)
+
     def test_corrupt_cdn_payload_does_not_enter_cache(self):
         data = b'valid Valve package'
         checksum = hashlib.sha256(data).hexdigest()
@@ -42,8 +80,9 @@ class DownloadTests(unittest.TestCase):
              patch.object(shared, 'ranked_sources', side_effect=lambda sources: sources), \
              patch.object(shared.subprocess, 'run') as request:
             def fetch(command, **kwargs):
-                Path(command[command.index('-o') + 1]).write_bytes(
-                    b'bad CDN response' if command[-1] == urls[0] else data)
+                partial = Path(command[command.index('-o') + 1])
+                self.assertFalse(partial.exists())
+                partial.write_bytes(b'bad CDN response' if command[-1] == urls[0] else data)
             request.side_effect = fetch
             target = shared.download(urls, checksum, '.zip')
             self.assertEqual(target.read_bytes(), data)

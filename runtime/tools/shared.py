@@ -120,10 +120,22 @@ def download(url, expected, suffix):
             for index, (source, headers) in enumerate(candidates):
                 try:
                     print('Downloading verified installer…', flush=True, file=sys.stderr)
-                    subprocess.run(['curl', '-fL', '--retry', '2', '--connect-timeout', '10',
-                                    '--speed-limit', '1024', '--speed-time', '30',
-                                    *headers, '-o', str(partial), source], check=True, stdout=sys.stderr)
+                    for attempt in range(2):
+                        try:
+                            subprocess.run(['curl', '-fL', '--retry', '2', '--connect-timeout', '10',
+                                            '--speed-limit', '1024', '--speed-time', '30',
+                                            '--continue-at', '-', *headers, '-o', str(partial), source],
+                                           check=True, stdout=sys.stderr)
+                            break
+                        except subprocess.CalledProcessError as error:
+                            # Some official mirrors do not support byte ranges.
+                            if attempt == 0 and error.returncode in (33, 36):
+                                partial.unlink(missing_ok=True)
+                                continue
+                            raise
                     if digest(partial) != expected:
+                        # Never append a different CDN's bytes to a corrupt response.
+                        partial.unlink(missing_ok=True)
                         raise ValueError('Shared download SHA-256 mismatch')
                     partial.replace(target)
                     return target
