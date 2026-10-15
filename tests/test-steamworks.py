@@ -19,7 +19,7 @@ class SteamworksTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             payload = base/'payload'
-            for name in ['aarch64-windows/steam.exe', 'aarch64-unix/lsteamclient.so',
+            for name in ['aarch64-windows/steam.exe', 'aarch64-unix/lsteamclient.so', 'aarch64-windows/lsteamclient.dll',
                          'i386-windows/lsteamclient.dll', 'x86_64-windows/lsteamclient.dll']:
                 file = payload/name
                 file.parent.mkdir(parents=True, exist_ok=True)

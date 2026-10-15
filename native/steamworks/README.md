@@ -38,3 +38,11 @@ and the game's SteamAPI_Init. It never prints account identifiers or tokens.
 Running any Steamworks probe changes Steam's running-app list; close it and
 restart Steam normally before first-Play acceptance. The probe does not substitute
 for a fresh-instance game and GPU test.
+
+The payload builds i386, x86_64 and ARM64EC frontends. The ARM64EC DLL must
+be installed at `aarch64-windows/lsteamclient.dll` beside the ARM64 launcher.
+Bionic Wine redirects 64-bit builtin module loading there; an x86_64 facade
+alone does not initialize the ARM64 Unix bridge handle. Missing this module
+can abort 64-bit SteamAPI initialization (observed with Helltaker). Both
+runtime validation and offline bundling require it. The 32-bit and x86_64
+facades remain available for their respective game imports.

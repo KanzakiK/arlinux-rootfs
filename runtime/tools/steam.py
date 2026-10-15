@@ -294,13 +294,41 @@ def install(root, channel):
 
 
 def runtime_installed(root):
-    from steam_fex import app_directory, IncompleteRuntime
+    from steam_fex import app_directory, graphics_runtime, IncompleteRuntime
     try:
         app_directory(root, '3127680')
-        runtime = app_directory(root, '1628350')
-        return any(runtime.glob('sniper_platform_*/usr-mtree.txt.gz'))
+        graphics_runtime(root)
+        return True
     except IncompleteRuntime:
         return False
+
+
+def bootstrap_runtime(binary, root, arguments):
+    """Restart the first session after Steam installs its native game depots.
+
+    The graphics provider environment must be set before the client starts.
+    Let Valve finish its downloads and close normally; never kill a busy client.
+    """
+    with subprocess.Popen([str(binary), *arguments]) as client:
+        while True:
+            try:
+                return client.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                if not runtime_installed(root):
+                    continue
+            print('Game runtimes downloaded. Restarting Steam to prepare graphics.', flush=True)
+            try:
+                send_client_command(root, ['-shutdown'])
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                print(f'Steam restart request failed: {error}. Close Steam normally '
+                      'to finish game setup.', flush=True)
+                return client.wait()
+            try:
+                status = client.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                print('Steam is still busy. Close it normally to finish game setup.', flush=True)
+                return client.wait()
+            return 42 if status == 0 else status
 
 
 def client_running():
@@ -389,6 +417,10 @@ def launch(root, arguments):
     if client_running():
         send_client_command(root, arguments or ['steam://open/main'])
         return 0
+    # Steam's dual-stack CDN connections can stall on Android even after its
+    # IPv6 connectivity probe succeeds. Use Valve's IPv4 mode for this client
+    # session so game/runtime/shader downloads do not block the first Play.
+    arguments = ['-noipv6', *[arg for arg in arguments if arg != '-noipv6']]
     ensure_dependencies()
     # GPU overlays are extracted after the rootfs is built. Refresh the native
     # cache so pressure-vessel can discover their complete ELF dependencies.
@@ -406,7 +438,7 @@ def launch(root, arguments):
                 configure(root)
                 status = subprocess.run([str(binary), *arguments]).returncode
             else:
-                status = subprocess.run([str(binary), *arguments]).returncode
+                status = bootstrap_runtime(binary, root, arguments)
             if status != 42:  # Valve updater or first-time runtime setup restart.
                 if status < 0:
                     print(f'Steam stopped with signal {-status}. '

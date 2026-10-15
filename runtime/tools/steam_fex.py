@@ -23,7 +23,7 @@ def configure(steam):
     # We launch Valve's ARM64 client directly. Its normal shell launcher adds
     # these native runtime helpers to PATH; the client starts the launcher
     # service by name, so leaving them out disables it even with sniper installed.
-    runtime_bin = app_directory(steam, '1628350')/'pressure-vessel-arm64/bin'
+    runtime_bin = graphics_runtime(steam)[0]/'pressure-vessel-arm64/bin'
     paths = os.environ.get('PATH', os.defpath).split(os.pathsep)
     os.environ['PATH'] = os.pathsep.join(dict.fromkeys([str(runtime_bin), *paths]))
     os.environ.setdefault('STEAM_COMPAT_GRAPHICS_PROVIDER', str(root/'graphics_provider.json'))
@@ -51,6 +51,20 @@ def configure(steam):
 
 class IncompleteRuntime(RuntimeError):
     pass
+
+
+def graphics_runtime(steam):
+    """Use a complete Valve runtime, including Scout's Soldier container."""
+    for appid, name in (('1628350', 'sniper'), ('1391110', 'soldier')):
+        try:
+            runtime = app_directory(steam, appid)
+        except IncompleteRuntime:
+            continue
+        platforms = [p for p in runtime.glob(name+'_platform_*')
+                     if (p/'usr-mtree.txt.gz').is_file()]
+        if platforms:
+            return runtime, max(platforms, key=lambda p: tuple(map(int, re.findall(r'\d+', p.name))))
+    raise IncompleteRuntime('Install a complete Steam Linux Runtime (Sniper or Soldier) through Steam')
 
 
 def app_directory(steam, appid):
@@ -175,11 +189,7 @@ def install_base(packages, root):
 
 def prepare(steam):
     fex = app_directory(steam, '3127680')
-    sniper = app_directory(steam, '1628350')
-    platforms = [p for p in sniper.glob('sniper_platform_*') if (p/'usr-mtree.txt.gz').is_file()]
-    if not platforms:
-        raise IncompleteRuntime('Steam Linux Runtime 3.0 (sniper) is incomplete; verify its files in Steam')
-    platform = max(platforms, key=lambda p: tuple(map(int, re.findall(r'\d+', p.name))))
+    _, platform = graphics_runtime(steam)
     cache = shared.directory('steam-fex')
     # Never overwrite thunks in a provider used by another instance's process.
     identity = hashlib.sha256()

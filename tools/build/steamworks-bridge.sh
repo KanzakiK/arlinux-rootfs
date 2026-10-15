@@ -53,15 +53,22 @@ find "$src" -maxdepth 1 \( -name 'cppISteam*.cpp' -o -name 'unix*.cpp' \) -print
 # Wine resolves the Unix counterpart using the basename loaded by Steam API.
 cp "$output/aarch64-unix/lsteamclient.so" "$output/aarch64-unix/steamclient.so"
 cp "$output/aarch64-unix/lsteamclient.so" "$output/aarch64-unix/steamclient64.so"
-for arch in i686 x86_64; do
+# ARM64 Wine redirects x64 builtins to aarch64-windows. Without the
+# ARM64EC frontend the copied x64 facade has no Unix library handle.
+for arch in i686 x86_64 arm64ec; do
     folder=${arch/i686/i386}-windows
+    imports=$folder
+    if [[ $arch == arm64ec ]]; then
+        folder=aarch64-windows
+        imports=aarch64-windows
+    fi
     mkdir -p "$output/$folder"
     "$wine_tools/tools/winegcc/winegcc" --target=$arch-windows \
       --winebuild="$wine_tools/tools/winebuild/winebuild" \
       -O2 -Wno-pragma-pack -shared -Wl,--wine-builtin -D__WINESRC__ -D__WINE_PE_BUILD \
       -DSTEAM_API_EXPORTS -Dprivate=public -Dprotected=public -DLSTEAM_BRIDGE_PROXY \
       -I"$wine/include" -I"$wine/include/msvcrt" -I"$wine_build/include" -I"$src" \
-      -L"${WINE_IMPORT_LIBS:?Set WINE_IMPORT_LIBS to the matching PE lib/wine directory}/$folder" \
+      -L"${WINE_IMPORT_LIBS:?Set WINE_IMPORT_LIBS to the matching PE lib/wine directory}/$imports" \
       -o "$output/$folder/lsteamclient.dll" "$src"/*.c "$src/lsteamclient.spec" -luser32 -lws2_32
 done
 aarch64-w64-mingw32-clang -O2 -municode "$repo/native/steamworks/steam-launch.c" \

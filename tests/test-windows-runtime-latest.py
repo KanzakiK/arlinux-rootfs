@@ -11,6 +11,14 @@ import windows
 
 
 class LatestRuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.selection = Path(self.directory.name)/'rootfs/var/lib/arlinux/windows-runtime-latest.json'
+        selector = patch.object(windows, 'LATEST_SELECTION', self.selection)
+        selector.start()
+        self.addCleanup(selector.stop)
+
     def test_clean_store_resolves_current_release_instead_of_apk_pin(self):
         old, current = 'a' * 64, 'b' * 64
         with tempfile.TemporaryDirectory() as directory:
@@ -38,6 +46,8 @@ class LatestRuntimeTests(unittest.TestCase):
                     windows.latest_runtime()
 
     def test_installed_latest_does_not_query_network_on_every_launch(self):
+        self.selection.parent.mkdir(parents=True)
+        self.selection.write_text(json.dumps({'sha256': 'b' * 64}))
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / 'windows-downloads.tsv'
             manifest.write_text('Wine Bionic latest\t' + 'a' * 64 +
@@ -47,6 +57,44 @@ class LatestRuntimeTests(unittest.TestCase):
                  patch.object(windows, 'latest_runtime') as request:
                 windows.ensure_runtime()
                 request.assert_not_called()
+
+    def test_fresh_rootfs_replaces_stale_shared_runtime(self):
+        old, current = 'a' * 64, 'b' * 64
+        manifest = Path(self.directory.name)/'windows-downloads.tsv'
+        manifest.write_text(f'Wine Bionic latest\t{old}\thttps://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz\n')
+        with patch.object(windows, 'MANIFEST', manifest), \
+             patch.object(windows, 'runtime', side_effect=[Path('/runtime')/old, Path('/runtime')/current]), \
+             patch.object(windows, 'latest_runtime', return_value=(current, 'https://api.github.com/repos/taowen/wine/releases/assets/42')) as resolve, \
+             patch.object(windows.shared, 'download', return_value=Path('/archive')), \
+             patch.object(windows, 'install') as install:
+            self.assertEqual(windows.ensure_runtime(), Path('/runtime')/current)
+            resolve.assert_called_once()
+            install.assert_called_once_with(Path('/archive'), current)
+            self.assertEqual(json.loads(self.selection.read_text()), {'sha256': current})
+
+    def test_selected_instance_does_not_follow_other_instances_shared_pointer(self):
+        selected = 'b' * 64
+        self.selection.parent.mkdir(parents=True)
+        self.selection.write_text(json.dumps({'sha256': selected}))
+        manifest = Path(self.directory.name)/'windows-downloads.tsv'
+        manifest.write_text('Wine Bionic latest\t'+'a'*64+'\thttps://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz\n')
+        with patch.object(windows, 'MANIFEST', manifest), \
+             patch.object(windows, 'runtime', return_value=Path('/runtime')/selected) as runtime, \
+             patch.object(windows, 'latest_runtime') as resolve:
+            self.assertEqual(windows.ensure_runtime(), Path('/runtime')/selected)
+            runtime.assert_called_once_with(selected)
+            resolve.assert_not_called()
+
+    def test_network_failure_on_fresh_rootfs_never_accepts_stale_shared_runtime(self):
+        manifest = Path(self.directory.name)/'windows-downloads.tsv'
+        manifest.write_text('Wine Bionic latest\t'+'a'*64+'\thttps://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz\n')
+        with patch.object(windows, 'MANIFEST', manifest), \
+             patch.object(windows, 'latest_runtime', side_effect=RuntimeError('offline')), \
+             patch.object(windows, 'runtime') as runtime:
+            with self.assertRaisesRegex(RuntimeError, 'offline'):
+                windows.ensure_runtime()
+            runtime.assert_not_called()
+            self.assertFalse(self.selection.exists())
 
     def test_asset_api_download_requests_binary_and_checks_digest(self):
         data = b'tested runtime archive'

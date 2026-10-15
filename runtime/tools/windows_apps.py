@@ -158,6 +158,17 @@ def install_powerbi(root, prefix):
     return executable
 
 
+def ensure_powerbi_authentication():
+    # Offline reports also authenticate against the local Analysis Services.
+    # Android's Bionic Wine host invokes this helper through the guest launcher.
+    if shutil.which('ntlm_auth'):
+        return
+    print('Installing local authentication support…', flush=True)
+    subprocess.run(['sudo', 'apt-get', 'update'], check=True)
+    subprocess.run(['sudo', 'apt-get', 'install', '-y', '--no-install-recommends',
+                    'winbind'], check=True)
+
+
 def prepare(app, accepted=False):
     home = windows.storage() / 'apps' / app
     home.mkdir(parents=True, exist_ok=True)
@@ -172,8 +183,12 @@ def prepare(app, accepted=False):
             executable = (home / entry['executable']).resolve(strict=True)
             if not executable.is_relative_to(home.resolve()):
                 raise ValueError('Invalid installed app path')
+            if app == 'powerbi':
+                ensure_powerbi_authentication()
             return executable, prefix, cache
         consent(app, accepted)
+        if app == 'powerbi':
+            ensure_powerbi_authentication()
         root = windows.ensure_runtime()
         windows.initialize(root, prefix, windows.environment(root, prefix))
         if app == 'paintnet':

@@ -23,7 +23,8 @@ def session(runtime, prefix, environment):
     if not library.is_file():
         raise RuntimeError('Native ARM64 Steam client library is missing')
     required = ['lsteambridge-server', 'aarch64-windows/steam.exe',
-                'aarch64-unix/lsteamclient.so', 'i386-windows/lsteamclient.dll',
+                'aarch64-unix/lsteamclient.so', 'aarch64-windows/lsteamclient.dll',
+                'i386-windows/lsteamclient.dll',
                 'x86_64-windows/lsteamclient.dll']
     if any(not (PAYLOAD/name).is_file() for name in required):
         raise RuntimeError('The Bionic Steamworks bridge is not installed')

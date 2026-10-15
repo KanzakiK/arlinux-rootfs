@@ -14,6 +14,7 @@ import time
 import shared
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
+LATEST_SELECTION = Path('/var/lib/arlinux/windows-runtime-latest.json')
 
 
 def digest(path):
@@ -117,19 +118,38 @@ def ensure_runtime():
     version, expected, url = rows[0]
     if not re.fullmatch('[0-9a-f]{64}', expected) or not url.startswith('https://github.com/taowen/wine/releases/download/'):
         raise ValueError('Invalid Bionic runtime source')
+    latest = '/releases/download/latest/' in url
+    if latest:
+        # Shared binaries can outlive an instance. Resolve latest once for each
+        # freshly installed rootfs, rather than treating any shared pointer as
+        # current. The selection lives in rootfs because reinstall retains home.
+        try:
+            selected = json.loads(LATEST_SELECTION.read_text())['sha256']
+            return runtime(selected)
+        except FileNotFoundError:
+            pass
+        expected, url = latest_runtime()
     try:
         active = runtime()
-        if '/releases/download/latest/' in url or active.name == expected:
+        if active.name == expected:
+            if latest:
+                validate(active)
+                remember_latest(expected)
             return active
     except FileNotFoundError:
         pass
-    if '/releases/download/latest/' in url:
-        # Reinstall clears the runtime store: resolve today's release rather
-        # than downloading the checksum baked into an older APK.
-        expected, url = latest_runtime()
     print(f'Preparing shared {version}…', flush=True)
     install(shared.download(url, expected, '.tar.gz'), expected)
+    if latest:
+        remember_latest(expected)
     return runtime()
+
+
+def remember_latest(identity):
+    LATEST_SELECTION.parent.mkdir(parents=True, exist_ok=True)
+    temporary = LATEST_SELECTION.with_suffix('.tmp')
+    temporary.write_text(json.dumps({'sha256': identity})+'\n')
+    temporary.replace(LATEST_SELECTION)
 
 
 def latest_runtime():

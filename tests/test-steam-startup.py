@@ -1,10 +1,44 @@
 import importlib.util, os, sys, tempfile, unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root/'runtime/tools'))
 import steam
 class StartupTest(unittest.TestCase):
+ def test_launch_prepares_graphics_after_first_session_restart(self):
+  import contextlib,steam_bionic,steam_fex,steam_proxy
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);binary=root/'steamrtarm64/steam';binary.parent.mkdir();binary.touch()
+   previous=Path.cwd()
+   try:
+    with patch.object(steam,'client_running',return_value=False),patch.object(steam,'ensure_dependencies'),patch.object(steam,'links'),patch.object(steam_bionic,'configure'),patch.object(steam_proxy,'session',side_effect=contextlib.nullcontext),patch.object(steam,'runtime_installed',side_effect=[False,True]),patch.object(steam,'bootstrap_runtime',return_value=42) as first,patch.object(steam_fex,'configure') as graphics,patch.object(steam.subprocess,'run') as run:
+     run.return_value.returncode=0
+     self.assertEqual(steam.launch(root,['-gamepadui']),0)
+     first.assert_called_once_with(binary,root,['-noipv6','-gamepadui'])
+     graphics.assert_called_once_with(root)
+     self.assertEqual(run.call_args.args[0],[str(binary),'-noipv6','-gamepadui'])
+   finally:os.chdir(previous)
+ def test_first_game_depots_trigger_one_normal_restart(self):
+  client=MagicMock();client.wait.side_effect=[steam.subprocess.TimeoutExpired('steam',5),steam.subprocess.TimeoutExpired('steam',5),0]
+  with patch.object(steam.subprocess,'Popen') as launch, patch.object(steam,'runtime_installed',side_effect=[False,True]), patch.object(steam,'send_client_command') as send:
+   launch.return_value.__enter__.return_value=client
+   self.assertEqual(steam.bootstrap_runtime(Path('/steam/client'),Path('/steam'),['-gamepadui']),42)
+   send.assert_called_once_with(Path('/steam'),['-shutdown'])
+   launch.assert_called_once_with(['/steam/client','-gamepadui'])
+   client.terminate.assert_not_called();client.kill.assert_not_called()
+ def test_exit_or_updater_restart_does_not_request_shutdown(self):
+  for status in (0,42,1):
+   client=MagicMock();client.wait.return_value=status
+   with patch.object(steam.subprocess,'Popen') as launch, patch.object(steam,'send_client_command') as send:
+    launch.return_value.__enter__.return_value=client
+    self.assertEqual(steam.bootstrap_runtime(Path('/steam/client'),Path('/steam'),[]),status)
+    send.assert_not_called()
+ def test_busy_client_is_never_force_killed(self):
+  client=MagicMock();client.wait.side_effect=[steam.subprocess.TimeoutExpired('steam',5),steam.subprocess.TimeoutExpired('steam',60),0]
+  with patch.object(steam.subprocess,'Popen') as launch, patch.object(steam,'runtime_installed',return_value=True), patch.object(steam,'send_client_command') as send:
+   launch.return_value.__enter__.return_value=client
+   self.assertEqual(steam.bootstrap_runtime(Path('/steam/client'),Path('/steam'),[]),0)
+   send.assert_called_once();client.terminate.assert_not_called();client.kill.assert_not_called()
  def test_helpers_wrappers_and_zombies_do_not_block_client_start(self):
   with tempfile.TemporaryDirectory() as temp:
    proc=Path(temp)/'proc';proc.mkdir();client=Path('/shared/steam')

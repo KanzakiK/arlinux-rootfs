@@ -34,6 +34,15 @@ class AdapterTest(unittest.TestCase):
   with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,environment,clear=True):
    self.assertEqual(module.launch('waitforexitandrun',['/games/Hell Clock.exe']),0)
   self.assertEqual(calls[0]['env'],{'SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1'})
+ def test_expendabros_uses_d3d11_and_preserves_explicit_renderer(self):
+  calls=[]
+  fake=types.SimpleNamespace(ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append(a) or types.SimpleNamespace(returncode=0)))
+  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'312990'},clear=True):
+   for args in (['/games/Expendabros.exe'],['/games/Expendabros.exe','-force-opengl'],['/games/Other.exe']):
+    self.assertEqual(module.launch('run',args),0)
+  self.assertEqual(calls[0][3],['/games/Expendabros.exe','-force-d3d11'])
+  self.assertEqual(calls[1][3],['/games/Expendabros.exe','-force-opengl'])
+  self.assertEqual(calls[2][3],['/games/Other.exe'])
  def test_invalid_operations_and_prefix(self):
   with patch.dict(sys.modules,windows=types.SimpleNamespace()),patch.dict(os.environ,{},clear=True):
    for verb,args in [('bogus',['game']),('run',[]),('run',['game'])]:
@@ -53,6 +62,14 @@ class AdapterTest(unittest.TestCase):
   self.assertEqual(mapping['12']['name'],'SteamLinuxRuntime_fex')
   self.assertIn('"Other" "unchanged"',updated)
   self.assertEqual(module.default_config(updated),updated)
+ def test_helltaker_default_preserves_explicit_native_choice(self):
+  from steam import keyvalues
+  base='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "CompatToolMapping" { %s } } } } }'
+  for entry,expected in [('',module.TOOL),('"1289310" { "name" "SteamLinuxRuntime_fex" }','SteamLinuxRuntime_fex')]:
+   updated=module.default_config(base%entry)
+   mapping=keyvalues(updated)['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
+   self.assertEqual(mapping['1289310']['name'],expected)
+   self.assertEqual(module.default_config(updated),updated)
  def test_first_install_has_default_before_first_login(self):
   from steam import keyvalues
   with tempfile.TemporaryDirectory() as temp:
