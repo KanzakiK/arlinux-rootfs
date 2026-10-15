@@ -156,6 +156,13 @@ def launch(verb, arguments):
     data = os.environ.get('STEAM_COMPAT_DATA_PATH', '')
     if not data or not Path(data).is_absolute():
         raise ValueError('Steam must provide an absolute STEAM_COMPAT_DATA_PATH')
+    # Steam's compat-data directory contains the game files and metadata.  It
+    # is not a Wine prefix: every Bionic-managed Windows app in this Linux
+    # instance uses the same instance-level prefix and Program Files tree.
+    # Test doubles from older diagnostics may not expose the helper; the real
+    # Bionic windows module always does and therefore never uses game prefixes.
+    wine_prefix = (windows.instance_prefix() if hasattr(windows, 'instance_prefix')
+                   else Path(data))
     env = {name: os.environ[name] for name in ENVIRONMENT if name in os.environ}
     for name, value in env.items():
         if name.startswith('Steam') and not value.isdecimal():
@@ -168,15 +175,15 @@ def launch(verb, arguments):
         arguments = [*arguments, '-force-d3d11']
     root = windows.ensure_runtime()
     from windows_webview import prepare_game
-    env = prepare_game(root, Path(data), arguments[0], env)
+    env = prepare_game(root, wine_prefix, arguments[0], env)
     # The Android host owns initialization, DXVK setup and native driver paths.
     # Steam also runs discovery helpers without an authenticated game session.
     if not env.get('SteamAppId', '0').strip('0'):
-        return windows.run(root, Path(data), arguments[0], arguments[1:],
+        return windows.run(root, wine_prefix, arguments[0], arguments[1:],
                            env=env, timeout=7*24*60*60).returncode
     import steamworks
-    with steamworks.session(root, Path(data), env) as launcher:
-        result = windows.run(root, Path(data), launcher, arguments, env=env,
+    with steamworks.session(root, wine_prefix, env) as launcher:
+        result = windows.run(root, wine_prefix, launcher, arguments, env=env,
                              timeout=7*24*60*60)
     return result.returncode
 

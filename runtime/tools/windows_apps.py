@@ -1,7 +1,7 @@
-"""On-demand Windows apps. Each app owns its prefix; Wine/FEX remain shared.
+"""On-demand Windows apps sharing the instance Bionic Wine prefix.
 
 Downloads come from the vendors, never from a copied development prefix.
-Power BI's WebView2 sandbox is disabled in its dedicated Wine prefix only:
+Power BI's WebView2 sandbox is disabled in the shared instance Wine prefix:
 Wine lacks the required Windows sandbox interception thunks. Android app
 isolation is not equivalent to browser sandboxing. First installation requires
 explicit consent. Both applications are experimental on ARLinux.
@@ -19,6 +19,7 @@ import tempfile
 import zipfile
 
 import windows
+import windows_webview
 import shared
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
@@ -145,18 +146,6 @@ def install_powerbi(root, prefix):
         match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
         if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
             raise RuntimeError('Microsoft .NET 4.8 installation did not complete')
-    webview_roots = (prefix / 'pfx/drive_c/Program Files (x86)/Microsoft/EdgeWebView/Application', prefix / 'pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application')
-    def has_webview():
-        return any(list(root.glob('*/msedgewebview2.exe')) for root in webview_roots)
-    if not has_webview():
-        try:
-            run(download('webview2'), '/silent', '/install')
-        except subprocess.CalledProcessError as error:
-            # The ARM64 standalone installer returns 2 after completing its
-            # machine-wide registration under Wine. Accept it only when the
-            # runtime is actually present; all other failures stay fatal.
-            if error.returncode != 2 or not has_webview():
-                raise
     run(download('powerbi'), '-quiet', '-norestart', 'ACCEPT_EULA=1', 'ENABLECXP=0')
     executable = prefix / 'pfx/drive_c/Program Files/Microsoft Power BI Desktop/bin/PBIDesktop.exe'
     if not executable.is_file():
@@ -168,6 +157,16 @@ def install_powerbi(root, prefix):
     # Accessibility typelib instead of an imported UIAutomation mapping.
     run(reg.parent / 'regsvr32.exe', '/s', 'oleacc.dll')
     return executable
+
+
+def powerbi_environment(prefix):
+    """Return WebView2 settings required for every Power BI launch."""
+    browser = windows_webview.install_into_prefix(prefix)
+    return {
+        'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER':
+            'Z:' + str(windows.host_path(browser)).replace('/', '\\'),
+        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': windows_webview.FLAGS,
+    }
 
 
 def ensure_powerbi_authentication():
@@ -186,7 +185,7 @@ def prepare(app, accepted=False):
     home.mkdir(parents=True, exist_ok=True)
     cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'arlinux/windows-apps' / app
     cache.mkdir(parents=True, exist_ok=True)
-    prefix = home / 'wine'
+    prefix = windows.instance_prefix() if hasattr(windows, 'instance_prefix') else home / 'wine'
     pointer = home / 'installed.json'
     with (home / 'install.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -240,6 +239,8 @@ def main():
     executable, prefix, cache = prepare(args.app, args.accept_license)
     root = windows.ensure_runtime()
     env = windows.environment(root, prefix)
+    if args.app == 'powerbi':
+        env.update(powerbi_environment(prefix))
     windows.initialize(root, prefix, env)
     import windows_a11y
     windows_a11y.ensure(root, prefix, 'Paint.NET' if args.app == 'paintnet' else 'Power BI Desktop', env)

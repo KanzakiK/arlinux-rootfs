@@ -26,6 +26,32 @@ def storage():
     return Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share'))/'arlinux/windows-bionic'
 
 
+def instance_prefix():
+    """Return the single Wine prefix owned by this Linux instance.
+
+    Steam games and Windows launcher apps deliberately share this prefix.  The
+    game install roots remain separate, but all Wine state and ``C:\\Program
+    Files`` contents live in this one instance-level tree.
+    """
+    base = storage()
+    prefix = base/'prefix'
+    if not prefix.exists():
+        legacy = []
+        legacy_root = base/'prefixes'
+        if legacy_root.is_dir():
+            legacy.extend(path for path in legacy_root.iterdir() if path.is_dir())
+        apps_root = base/'apps'
+        if apps_root.is_dir():
+            legacy.extend(path/'wine' for path in apps_root.iterdir()
+                          if (path/'wine').is_dir())
+        if len(legacy) == 1:
+            legacy[0].rename(prefix)
+        elif len(legacy) > 1:
+            raise RuntimeError('Multiple legacy Wine prefixes found; remove duplicates before using Bionic Wine')
+    prefix.mkdir(parents=True, exist_ok=True)
+    return prefix
+
+
 def runtime_storage():
     return shared.directory('windows-bionic')
 
@@ -270,8 +296,9 @@ def run(root, prefix, executable, arguments=(), env=None, check=False, capture=F
 def launch(executable, arguments=(), prefix=None):
     executable = executable.resolve(strict=True)
     root = ensure_runtime()
-    identity = hashlib.sha256(os.fsencode(executable)).hexdigest()[:24]
-    prefix = prefix.resolve() if prefix else storage()/'prefixes'/identity
+    if prefix is not None and prefix.resolve() != instance_prefix().resolve():
+        raise ValueError('Bionic Wine uses one instance prefix')
+    prefix = instance_prefix()
     env = environment(root, prefix)
     import windows_a11y
     initialize(root, prefix, env)

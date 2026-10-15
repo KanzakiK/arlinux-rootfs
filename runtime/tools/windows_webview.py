@@ -1,7 +1,7 @@
-"""Prepare the pinned WebView2 dependency for supported Steam games.
+"""Prepare the pinned WebView2 dependency for Bionic Wine.
 
-Only immutable vendor files are shared; registry settings remain in each game's
-fresh Wine prefix. The GPU remains enabled through ANGLE Vulkan.
+The immutable vendor files are shared and copied into the one instance Wine
+prefix. Registry settings and GPU flags are applied there through ANGLE Vulkan.
 """
 import json
 from pathlib import Path, PureWindowsPath
@@ -74,13 +74,36 @@ def ensure_runtime():
         return verified_browser(destination, expected)
 
 
+def install_into_prefix(prefix):
+    """Expose the one pinned browser runtime through the instance prefix.
+
+    The immutable download remains outside Wine, while Windows applications
+    see one canonical ``C:\\Program Files\\Microsoft\\EdgeWebView`` tree.
+    """
+    browser = ensure_runtime()
+    # Keep the helper easy to unit-test with a mocked immutable store.  The
+    # real ensure_runtime() always returns an existing verified directory.
+    if not browser.is_dir():
+        return browser
+    destination = (prefix/'pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application'
+                   /browser.name)
+    executable = destination/'msedgewebview2.exe'
+    if not executable.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.parent/(f'.{browser.name}.tmp')
+        shutil.rmtree(temporary, ignore_errors=True)
+        shutil.copytree(browser, temporary)
+        temporary.replace(destination)
+    return destination
+
+
 def prepare_game(root, prefix, executable, environment):
     """Apply only the tested title profile; ordinary games do not download Edge."""
     env = dict(environment)
     name = PureWindowsPath(str(executable)).name
     if env.get('SteamAppId') != '2758540' or name.lower() != '我的小鲨鱼.exe':
         return env
-    browser = ensure_runtime()
+    browser = install_into_prefix(prefix)
     # Elevated WebView hosts ignore environment browser switches. Use the
     # documented per-host machine policy, confined to this game's Wine prefix.
     windows.run(root, prefix, 'reg.exe', ['add',
