@@ -18,6 +18,8 @@ DOMAINS = (
     'api.steampowered.com', 'store.akamai.steamstatic.com',
     'community.akamai.steamstatic.com', 'cdn.akamai.steamstatic.com',
     'avatars.akamai.steamstatic.com',
+    'client-update.steamstatic.com', 'client-update.fastly.steamstatic.com',
+    'client-update.akamai.steamstatic.com', 'cdn.steamstatic.com',
 )
 UPSTREAMS = ('steamuserimages-a.akamaihd.net.edgesuite.net',
              'steamstore-a.akamaihd.net.edgesuite.net',
@@ -55,8 +57,8 @@ def hosts_text(text, activate):
     text = strip_section(text, BEGIN, END)
     if not activate:
         return text
-    # Retain direct GitHub/client-download CDN selections. Remove only names
-    # served by this relay, so public downloads keep their original TLS path.
+    # Retain GitHub DNS selections. Client updates use this relay only during
+    # a Steam session; the first bootstrap still uses direct official CDNs.
     lines = []
     managed = False
     for line in text.splitlines(keepends=True):
@@ -121,6 +123,12 @@ def certificates(directory):
     if valid:
         valid = subprocess.run(['openssl', 'x509', '-in', str(cert), '-checkend', '86400', '-noout'],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if valid:
+        # Renew certificates when a release expands the served domain list.
+        valid = all(subprocess.run(['openssl', 'x509', '-in', str(cert), '-noout',
+                                   '-checkhost', domain], stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL).returncode == 0
+                    for domain in DOMAINS)
     if valid:
         return ca, cert
     previous = os.umask(0o077)

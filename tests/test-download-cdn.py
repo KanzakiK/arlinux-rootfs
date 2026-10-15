@@ -52,6 +52,27 @@ class DownloadTests(unittest.TestCase):
                     output.write(data[10:])
             request.side_effect = fetch
             self.assertEqual(shared.download(urls, checksum, '.zip').read_bytes(), data)
+            self.assertEqual(request.call_count, 3)
+
+    def test_disconnect_retries_fastest_source_before_fallback(self):
+        data = b'verified resumed package'
+        checksum = hashlib.sha256(data).hexdigest()
+        urls = steam.client_sources(steam.CDN + 'client.zip')[:2]
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(shared, 'ROOT', Path(directory)), \
+             patch.object(shared, 'ranked_sources', side_effect=lambda sources: sources), \
+             patch.object(shared.subprocess, 'run') as request:
+            def fetch(command, **kwargs):
+                self.assertEqual(command[-1], urls[0])
+                partial = Path(command[command.index('-o') + 1])
+                if request.call_count == 1:
+                    partial.write_bytes(data[:8])
+                    raise subprocess.CalledProcessError(56, 'curl')
+                self.assertEqual(partial.read_bytes(), data[:8])
+                with partial.open('ab') as output:
+                    output.write(data[8:])
+            request.side_effect = fetch
+            self.assertEqual(shared.download(urls, checksum, '.zip').read_bytes(), data)
             self.assertEqual(request.call_count, 2)
 
     def test_range_unsupported_retries_same_source_without_partial(self):

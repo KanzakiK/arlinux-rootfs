@@ -132,6 +132,9 @@ def download(url, expected, suffix):
                             if attempt == 0 and error.returncode in (33, 36):
                                 partial.unlink(missing_ok=True)
                                 continue
+                            if attempt == 0 and error.returncode in (18, 28, 52, 55, 56):
+                                # A transient disconnect does not mean the fastest CDN is down.
+                                continue
                             raise
                     if digest(partial) != expected:
                         # Never append a different CDN's bytes to a corrupt response.
