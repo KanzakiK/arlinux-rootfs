@@ -125,8 +125,8 @@ def certificates(directory):
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     if valid:
         # Renew certificates when a release expands the served domain list.
-        valid = all(subprocess.run(['openssl', 'x509', '-in', str(cert), '-noout',
-                                   '-checkhost', domain], stdout=subprocess.DEVNULL,
+        valid = all(subprocess.run(['openssl', 'verify', '-CAfile', str(ca),
+                                   '-verify_hostname', domain, str(cert)], stdout=subprocess.DEVNULL,
                                   stderr=subprocess.DEVNULL).returncode == 0
                     for domain in DOMAINS)
     if valid:
