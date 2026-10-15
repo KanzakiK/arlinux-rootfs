@@ -21,6 +21,8 @@ import zipfile
 import shared
 
 CDN = 'https://client-update.fastly.steamstatic.com/'
+CLIENT_CDNS = (CDN, 'https://client-update.akamai.steamstatic.com/',
+               'https://client-update.steamstatic.com/')
 CHANNELS = ('stable', 'publicbeta')
 PREINSTALLED = Path('/opt/arlinux/steam-client')
 
@@ -109,9 +111,22 @@ def digest(path):
 
 
 def fetch(url, destination):
-    subprocess.run(['curl', '--fail', '--location', '--silent', '--show-error', '--retry', '3',
-                    '--connect-timeout', '20', '--speed-limit', '1024',
-                    '--speed-time', '60', '--output', str(destination), url], check=True)
+    sources = client_sources(url)
+    for index, source in enumerate(sources):
+        try:
+            subprocess.run(['curl', '--fail', '--location', '--silent', '--show-error', '--retry', '1',
+                            '--connect-timeout', '5', '--max-time', '30', '--speed-limit', '1024',
+                            '--speed-time', '10', '--output', str(destination), source], check=True)
+            return
+        except subprocess.CalledProcessError:
+            if index == len(sources) - 1:
+                raise
+
+
+def client_sources(url):
+    if url.startswith(CDN):
+        return [base + url[len(CDN):] for base in CLIENT_CDNS]
+    return [url]
 
 
 def dependencies():
@@ -238,7 +253,7 @@ def install(root, channel):
             if not re.fullmatch(r'[A-Za-z0-9_.-]+', filename) or not re.fullmatch(r'[0-9a-f]{64}', expected):
                 raise RuntimeError('Invalid Steam component name or checksum')
             print(f'Steam build {version}: {name} ({index}/{len(parts)})', flush=True)
-            package = shared.download(CDN + filename, expected, '.zip')
+            package = shared.download(client_sources(CDN + filename), expected, '.zip')
             extract(package, stage)
         binary = stage/'steamrtarm64/steam'
         with binary.open('rb') as source:

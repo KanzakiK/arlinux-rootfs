@@ -119,13 +119,35 @@ def ensure_runtime():
         raise ValueError('Invalid Bionic runtime source')
     try:
         active = runtime()
-        if active.name == expected:
+        if '/releases/download/latest/' in url or active.name == expected:
             return active
     except FileNotFoundError:
         pass
+    if '/releases/download/latest/' in url:
+        # Reinstall clears the runtime store: resolve today's release rather
+        # than downloading the checksum baked into an older APK.
+        expected, url = latest_runtime()
     print(f'Preparing shared {version}…', flush=True)
     install(shared.download(url, expected, '.tar.gz'), expected)
     return runtime()
+
+
+def latest_runtime():
+    endpoint = 'https://api.github.com/repos/taowen/wine/releases/tags/latest'
+    result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
+                             endpoint], check=True, capture_output=True, text=True)
+    release = json.loads(result.stdout)
+    for asset in release.get('assets', []):
+        if asset.get('name') != 'arlinux-wine-bionic.tar.gz':
+            continue
+        checksum = asset.get('digest', '')
+        identity = asset.get('id')
+        if (not isinstance(checksum, str) or not re.fullmatch('sha256:[0-9a-f]{64}', checksum)
+                or type(identity) is not int or identity <= 0 or asset.get('state') != 'uploaded'):
+            raise ValueError('Invalid latest Bionic Wine release asset')
+        # The immutable asset ID also avoids resolving a different upload halfway through.
+        return checksum[7:], f'https://api.github.com/repos/taowen/wine/releases/assets/{identity}'
+    raise ValueError('Latest Bionic Wine release has no runtime asset')
 
 
 def host_path(path):

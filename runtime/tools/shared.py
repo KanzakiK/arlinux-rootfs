@@ -4,6 +4,7 @@ The Android host exposes its private files/shared directory at /arlinux-shared.
 There is deliberately no per-HOME fallback: an old host must be upgraded.
 """
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
@@ -65,6 +66,35 @@ def github_asset(url, expected):
     return None
 
 
+def ranked_sources(urls):
+    """Compare bounded real transfers across official mirrors, never log signed URLs."""
+    language = Path('/etc/arlinux-steam-language')
+    if len(urls) < 2 or not language.is_file() or language.read_text().strip() != 'zh':
+        return urls
+
+    def probe(url):
+        try:
+            result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '2', '--max-time', '4',
+                '--range', '0-262143', '--output', '/dev/null', '--write-out',
+                '%{http_code} %{size_download} %{speed_download}', url],
+                capture_output=True, text=True, timeout=5)
+            status, size, speed = result.stdout.strip().split()
+            # curl 28 is expected if a server ignores Range and streams the whole file.
+            if result.returncode in (0, 28) and status in ('200', '206') and float(size) >= 16384:
+                return float(speed)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+        return 0
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        rates = list(pool.map(probe, urls))
+    ordered = sorted(zip(urls, rates), key=lambda item: -item[1])
+    if ordered[0][1]:
+        print('Selected official download CDN: ' + urlparse(ordered[0][0]).hostname,
+              flush=True, file=sys.stderr)
+    return [url for url, speed in ordered]
+
+
 def download(url, expected, suffix):
     """Keep one verified vendor artifact, with a cross-instance download lock."""
     urls = [url] if isinstance(url, str) else list(url)
@@ -79,7 +109,10 @@ def download(url, expected, suffix):
         partial = target.with_suffix(target.suffix + '.part')
         try:
             candidates = []
-            for source in urls:
+            for source in ranked_sources(urls):
+                if re.fullmatch(r'https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/[1-9][0-9]*', source):
+                    candidates.append((source, ['-H', 'Accept: application/octet-stream']))
+                    continue
                 api = github_asset(source, expected)
                 if api:
                     candidates.append((api, ['-H', 'Accept: application/octet-stream']))

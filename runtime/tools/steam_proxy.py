@@ -17,8 +17,7 @@ DOMAINS = (
     'store.steampowered.com', 'steamcommunity.com', 'www.steamcommunity.com',
     'api.steampowered.com', 'store.akamai.steamstatic.com',
     'community.akamai.steamstatic.com', 'cdn.akamai.steamstatic.com',
-    'avatars.akamai.steamstatic.com', 'client-update.akamai.steamstatic.com',
-    'client-update.fastly.steamstatic.com',
+    'avatars.akamai.steamstatic.com',
 )
 UPSTREAMS = ('steamuserimages-a.akamaihd.net.edgesuite.net',
              'steamstore-a.akamaihd.net.edgesuite.net',
@@ -56,9 +55,19 @@ def hosts_text(text, activate):
     text = strip_section(text, BEGIN, END)
     if not activate:
         return text
-    # The Android DNS optimizer owns this other section. Once the relay is
-    # active its Steam entries must not compete with direct CDN addresses.
-    text = strip_section(text, '# BEGIN ARLinux Steam DNS', '# END ARLinux Steam DNS')
+    # Retain direct GitHub/client-download CDN selections. Remove only names
+    # served by this relay, so public downloads keep their original TLS path.
+    lines = []
+    managed = False
+    for line in text.splitlines(keepends=True):
+        if line.strip() == '# BEGIN ARLinux Steam DNS': managed = True
+        elif line.strip() == '# END ARLinux Steam DNS': managed = False
+        elif managed:
+            fields = line.split('#', 1)[0].split()
+            if len(fields) > 1 and all(name in DOMAINS for name in fields[1:]):
+                continue
+        lines.append(line)
+    text = ''.join(lines)
     existing = {name.lower() for line in text.splitlines()
                 for name in line.split('#', 1)[0].split()[1:]}
     entries = [f'{ADDRESS} {domain}\n' for domain in DOMAINS if domain not in existing]
