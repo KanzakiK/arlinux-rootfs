@@ -4,10 +4,12 @@ Keep the HTTP Steam Host while using a verified Akamai TLS name upstream.
 Certificates and services are never shared between Linux instances.
 """
 from contextlib import contextmanager
+import hashlib
 import os
 from pathlib import Path
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -26,7 +28,15 @@ UPSTREAMS = ('steamuserimages-a.akamaihd.net.edgesuite.net',
              'eaassets-a.akamaihd.net.edgesuite.net',
              'steamcommunity-a.akamaihd.net.edgesuite.net')
 SNI = 'officecdn-microsoft-com.akamaized.net'
-ADDRESS = '127.0.0.2'
+def instance_address(home=None):
+    # Android apps and Linux instances share the host loopback namespace.
+    # Include the package and instance path so Debug/Release cannot share a relay.
+    identity = str(Path.home() if home is None else home).encode()
+    octets = hashlib.sha256(identity).digest()[:3]
+    return '127.' + '.'.join(str(part) for part in octets)
+
+
+ADDRESS = instance_address()
 BEGIN = '# BEGIN ARLinux Steam proxy'
 END = '# END ARLinux Steam proxy'
 CA_NAME = 'ARLinux instance Steam proxy'
@@ -237,13 +247,15 @@ def session():
                 return
     try:
         deadline = time.monotonic() + 5
+        tls = ssl.create_default_context(cafile=str(ca))
         while True:
             if service.poll() is not None:
                 raise RuntimeError('Steam HTTPS relay failed to start')
             try:
-                with socket.create_connection((ADDRESS, 443), timeout=.2):
-                    break
-            except OSError:
+                with socket.create_connection((ADDRESS, 443), timeout=.5) as connection:
+                    with tls.wrap_socket(connection, server_hostname=DOMAINS[0]):
+                        break
+            except (OSError, ssl.SSLError):
                 if time.monotonic() > deadline:
                     raise RuntimeError('Steam HTTPS relay did not open its listener')
                 time.sleep(.1)
