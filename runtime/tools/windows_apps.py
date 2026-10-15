@@ -145,8 +145,8 @@ def install_powerbi(root, prefix):
         match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
         if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
             raise RuntimeError('Microsoft .NET 4.8 installation did not complete')
-    webview = prefix / 'pfx/drive_c/Program Files (x86)/Microsoft/EdgeWebView/Application'
-    if not list(webview.glob('*/msedgewebview2.exe')):
+    webview_roots = (prefix / 'pfx/drive_c/Program Files (x86)/Microsoft/EdgeWebView/Application', prefix / 'pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application')
+    if not any(list(root.glob('*/msedgewebview2.exe')) for root in webview_roots):
         run(download('webview2'), '/silent', '/install')
     run(download('powerbi'), '-quiet', '-norestart', 'ACCEPT_EULA=1', 'ENABLECXP=0')
     executable = prefix / 'pfx/drive_c/Program Files/Microsoft Power BI Desktop/bin/PBIDesktop.exe'
