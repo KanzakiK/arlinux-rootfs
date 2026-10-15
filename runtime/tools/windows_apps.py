@@ -96,8 +96,13 @@ def install_powerbi(root, prefix):
         match = re.fullmatch(r'([^|]+)\|\|\|Wine Mono(?: .*)?', line.strip())
         if match:
             run(system / 'uninstaller.exe', '--remove', match[1])
-    release = run(reg, 'query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
-                  '/v', 'Release', '/reg:64', capture=True)
+    # A missing key is expected before installation or after an interrupted
+    # install. Probe it without treating reg.exe's not-found status as fatal.
+    release = windows.run(root, prefix, reg,
+                          ['query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
+                           '/v', 'Release', '/reg:64'], env=env, capture=True, timeout=3600)
+    if release.returncode not in (0, 1):
+        release.check_returncode()
     match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
     # Wine's default registry advertises .NET 4.8 even without Microsoft's CLR.
     # A version key alone is therefore not an installed dependency check.
