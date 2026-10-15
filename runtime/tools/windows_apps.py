@@ -155,6 +155,9 @@ def install_powerbi(root, prefix):
     # Official WebView2 policy; limited to this application's isolated prefix.
     run(reg, 'add', r'HKLM\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments',
         '/v', 'PBIDesktop.exe', '/t', 'REG_SZ', '/d', '--no-sandbox', '/f', '/reg:64')
+    # Re-register oleacc after installers so IAccessible marshaling uses the
+    # Accessibility typelib instead of an imported UIAutomation mapping.
+    run(reg.parent / 'regsvr32.exe', '/s', 'oleacc.dll')
     return executable
 
 
