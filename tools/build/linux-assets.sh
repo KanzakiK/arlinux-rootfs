@@ -26,6 +26,19 @@ windows_accessibility="${ARLINUX_WINDOWS_ACCESSIBILITY:-$repo/build/windows-acce
 }
 
 
+steamworks="${ARLINUX_STEAMWORKS_PAYLOAD:-$repo/build/steamworks-payload}"
+steamworks_files=(lsteambridge-server aarch64-windows/steam.exe
+    aarch64-unix/lsteamclient.so aarch64-unix/steamclient.so aarch64-unix/steamclient64.so
+    i386-windows/lsteamclient.dll x86_64-windows/lsteamclient.dll
+    LICENSE.bridge LICENSE.lsteamclient upstream-revision)
+for entry in "${steamworks_files[@]}"; do
+    [[ -f "$steamworks/$entry" && ! -L "$steamworks/$entry" ]] || {
+        echo "Missing Steamworks payload $entry; build tools/build/steamworks-bridge.sh first." >&2
+        exit 2
+    }
+done
+
+
 # Runtime changes do not require downloading and unpacking the distribution
 # again. Cache only the unmodified seed, before adding libc or GPU payloads.
 seed_rootfs() (
@@ -63,7 +76,7 @@ seed_rootfs() (
 
 input_id() {
     local product="$1"
-    local inputs=(runtime graphics-protocols examples tools/build tools/arlinux-app-data)
+    local inputs=(runtime native/steamworks graphics-protocols examples tools/build tools/arlinux-app-data)
     {
         git ls-files -s -- "${inputs[@]}"
         git diff --binary -- "${inputs[@]}"
@@ -79,6 +92,7 @@ input_id() {
                 guest tools product.json profile.json rootfs.lock.json \
                 | sort -z | xargs -0 -r sha256sum)
         git -C "distributions/$product" submodule status --recursive || true
+        (cd "$steamworks"; sha256sum "${steamworks_files[@]}")
         printf '%s\n' "$gpu_inputs"
         true
     } | sha256sum | cut -d' ' -f1
@@ -162,6 +176,12 @@ PY
     install -Dm644 runtime/tools/shared.py "$rootfs/usr/lib/arlinux/shared.py"
     install -Dm644 runtime/tools/steam_fex.py "$rootfs/usr/lib/arlinux/steam_fex.py"
     install -Dm644 runtime/tools/steam_bionic.py "$rootfs/usr/lib/arlinux/steam_bionic.py"
+    install -Dm644 runtime/tools/steamworks.py "$rootfs/usr/lib/arlinux/steamworks.py"
+    for entry in "${steamworks_files[@]}"; do
+        mode=644
+        case "$entry" in *.so|*.exe|lsteambridge-server) mode=755 ;; esac
+        install -Dm"$mode" "$steamworks/$entry" "$rootfs/usr/lib/arlinux/steamworks/$entry"
+    done
     install -Dm644 runtime/tools/steam_proxy.py "$rootfs/usr/lib/arlinux/steam_proxy.py"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm644 runtime/tools/windows_webview.py "$rootfs/usr/lib/arlinux/windows_webview.py"

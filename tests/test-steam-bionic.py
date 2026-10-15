@@ -1,10 +1,20 @@
 import importlib.util,os,sys,tempfile,types,unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root/'runtime/tools'))
 spec=importlib.util.spec_from_file_location('steam_bionic',root/'runtime/tools/steam_bionic.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class AdapterTest(unittest.TestCase):
+ def test_discovery_helpers_do_not_open_steamworks_session(self):
+  for identity in [None, '0', '000']:
+   calls=[]
+   fake=types.SimpleNamespace(ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append((a,k)) or types.SimpleNamespace(returncode=0)))
+   environment={'STEAM_COMPAT_DATA_PATH':'/compat'}
+   if identity is not None:environment['SteamAppId']=identity
+   with patch.dict(sys.modules,windows=fake,steamworks=None,windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,environment,clear=True):
+    self.assertEqual(module.launch('run',['/helper.exe','--probe']),0)
+   self.assertEqual(calls[0][0][2:],('/helper.exe',['--probe']))
  def test_registration_and_preservation(self):
   with tempfile.TemporaryDirectory() as temp:
    steam=Path(temp);tool=module.register(steam);self.assertEqual(module.register(steam),tool)
@@ -14,9 +24,16 @@ class AdapterTest(unittest.TestCase):
  def test_launch_arguments_identity_and_exit(self):
   calls=[]
   fake=types.SimpleNamespace(ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append((a,k)) or types.SimpleNamespace(returncode=101)))
-  with patch.dict(sys.modules,windows=fake,windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/arlinux-shared/steam/compatdata/2758540','SteamAppId':'2758540','LD_LIBRARY_PATH':'/wrong/libc'},clear=True):
+  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/arlinux-shared/steam/compatdata/2758540','SteamAppId':'2758540','LD_LIBRARY_PATH':'/wrong/libc'},clear=True):
    self.assertEqual(module.launch('waitforexitandrun',['/games/我的小鲨鱼.exe','argument with spaces']),101)
-  self.assertEqual(calls[0][0][2:],('/games/我的小鲨鱼.exe',['argument with spaces']));self.assertEqual(calls[0][1]['env'],{'SteamAppId':'2758540'})
+  self.assertEqual(calls[0][0][2:],('/launcher.exe',['/games/我的小鲨鱼.exe','argument with spaces']));self.assertEqual(calls[0][1]['env'],{'SteamAppId':'2758540'})
+ def test_diagnostics_reach_host_without_guest_driver_paths(self):
+  calls=[]
+  fake=types.SimpleNamespace(ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append(k) or types.SimpleNamespace(returncode=0)))
+  environment={'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1','LD_LIBRARY_PATH':'/guest/glibc','VK_ICD_FILENAMES':'/guest/icd.json','WINEDLLOVERRIDES':'d3d11=b'}
+  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,environment,clear=True):
+   self.assertEqual(module.launch('waitforexitandrun',['/games/Hell Clock.exe']),0)
+  self.assertEqual(calls[0]['env'],{'SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1'})
  def test_invalid_operations_and_prefix(self):
   with patch.dict(sys.modules,windows=types.SimpleNamespace()),patch.dict(os.environ,{},clear=True):
    for verb,args in [('bogus',['game']),('run',[]),('run',['game'])]:

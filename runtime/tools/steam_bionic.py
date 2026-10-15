@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 TOOL = 'arlinux-wine-bionic'
-ENVIRONMENT = ('SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
+ENVIRONMENT = ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG', 'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
                'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER',
                'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS')
 
@@ -158,8 +158,14 @@ def launch(verb, arguments):
     from windows_webview import prepare_game
     env = prepare_game(root, Path(data), arguments[0], env)
     # The Android host owns initialization, DXVK setup and native driver paths.
-    result = windows.run(root, Path(data), arguments[0], arguments[1:], env=env,
-                         timeout=7*24*60*60)
+    # Steam also runs discovery helpers without an authenticated game session.
+    if not env.get('SteamAppId', '0').strip('0'):
+        return windows.run(root, Path(data), arguments[0], arguments[1:],
+                           env=env, timeout=7*24*60*60).returncode
+    import steamworks
+    with steamworks.session(root, Path(data), env) as launcher:
+        result = windows.run(root, Path(data), launcher, arguments, env=env,
+                             timeout=7*24*60*60)
     return result.returncode
 
 
