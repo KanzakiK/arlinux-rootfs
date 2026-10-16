@@ -423,7 +423,7 @@ def launch(root, arguments):
     links(root)
     from steam_fex import configure
     from steam_bionic import configure as configure_bionic
-    from steam_proxy import prepare, activate, write_hosts, ADDRESS
+    from steam_proxy import prepare, activate, ADDRESS
     configure_bionic(root)
     ready = runtime_installed(root)
     if ready:
@@ -445,14 +445,17 @@ def launch(root, arguments):
             if not block or len(response) > 65536:
                 raise RuntimeError('Steam host service did not acknowledge preparation')
             response.extend(block)
-        if not json.loads(response)['ok']:
+        acknowledgement = json.loads(response)
+        if not acknowledgement['ok']:
             raise RuntimeError('Steam host service could not prepare the session')
-    if relay:
+    if relay and acknowledgement.get('relay', False):
         try:
-            activate()
+            endpoint = activate()
+            arguments.append("-cef-http-proxy=" + endpoint)
         except Exception:
-            write_hosts(False)
-            raise
+            print('Steam HTTPS acceleration unavailable; using direct connections.', flush=True)
+    elif relay:
+        print('Steam HTTPS acceleration unavailable; using direct connections.', flush=True)
     os.chdir(root)
     os.execv(str(binary), [str(binary), *arguments])
 

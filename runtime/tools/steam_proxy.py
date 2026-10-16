@@ -10,8 +10,6 @@ import shutil
 import socket
 import ssl
 import subprocess
-import tempfile
-import time
 
 DOMAINS = (
     'store.steampowered.com', 'steamcommunity.com', 'www.steamcommunity.com',
@@ -21,11 +19,6 @@ DOMAINS = (
     'client-update.steamstatic.com', 'client-update.fastly.steamstatic.com',
     'client-update.akamai.steamstatic.com', 'cdn.steamstatic.com',
 )
-UPSTREAMS = ('steamuserimages-a.akamaihd.net.edgesuite.net',
-             'steamstore-a.akamaihd.net.edgesuite.net',
-             'eaassets-a.akamaihd.net.edgesuite.net',
-             'steamcommunity-a.akamaihd.net.edgesuite.net')
-SNI = 'officecdn-microsoft-com.akamaized.net'
 def instance_address(home=None):
     # Android apps and Linux instances share the host loopback namespace.
     # Include the package and instance path so Debug/Release cannot share a relay.
@@ -35,8 +28,6 @@ def instance_address(home=None):
 
 
 ADDRESS = instance_address()
-BEGIN = '# BEGIN ARLinux Steam proxy'
-END = '# END ARLinux Steam proxy'
 CA_NAME = 'ARLinux instance Steam proxy'
 TRUST = Path('/usr/local/share/ca-certificates/arlinux-steam-proxy.crt')
 
@@ -44,64 +35,6 @@ TRUST = Path('/usr/local/share/ca-certificates/arlinux-steam-proxy.crt')
 def enabled():
     language = Path('/etc/arlinux-steam-language')
     return language.is_file() and language.read_text().strip() == 'zh'
-
-
-def strip_section(text, begin, end):
-    lines = text.splitlines(keepends=True)
-    output = []
-    i = 0
-    while i < len(lines):
-        if lines[i].strip() == begin:
-            closing = next((j for j in range(i + 1, len(lines)) if lines[j].strip() == end), None)
-            if closing is not None:
-                i = closing + 1
-                continue
-        output.append(lines[i])
-        i += 1
-    return ''.join(output)
-
-
-def hosts_text(text, activate):
-    text = strip_section(text, BEGIN, END)
-    if not activate:
-        return text
-    # Retain GitHub DNS selections. Client updates use this relay only during
-    # a Steam session; the first bootstrap still uses direct official CDNs.
-    lines = []
-    managed = False
-    for line in text.splitlines(keepends=True):
-        if line.strip() == '# BEGIN ARLinux Steam DNS': managed = True
-        elif line.strip() == '# END ARLinux Steam DNS': managed = False
-        elif managed:
-            fields = line.split('#', 1)[0].split()
-            if len(fields) > 1 and all(name in DOMAINS for name in fields[1:]):
-                continue
-        lines.append(line)
-    text = ''.join(lines)
-    existing = {name.lower() for line in text.splitlines()
-                for name in line.split('#', 1)[0].split()[1:]}
-    entries = [f'{ADDRESS} {domain}\n' for domain in DOMAINS if domain not in existing]
-    if not entries:
-        return text
-    return text + ('' if text.endswith('\n') else '\n') + BEGIN + '\n' + ''.join(entries) + END + '\n'
-
-
-def write_hosts(activate):
-    hosts = Path('/etc/hosts')
-    if hosts.is_symlink():
-        raise RuntimeError('Steam relay will not replace a redirected hosts file')
-    before = hosts.read_text()
-    after = hosts_text(before, activate)
-    if after == before:
-        return
-    with tempfile.NamedTemporaryFile(dir=hosts.parent, prefix='.steam-proxy-', delete=False) as output:
-        temporary = Path(output.name)
-        output.write(after.encode())
-    try:
-        temporary.chmod(hosts.stat().st_mode & 0o777)
-        temporary.replace(hosts)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def dependencies():
@@ -176,7 +109,6 @@ def trust(ca):
 
 def prepare():
     """Prepare certificates and guest trust; Android serves TLS and HTTP."""
-    write_hosts(False)
     if not enabled():
         return False
     dependencies()
@@ -187,16 +119,24 @@ def prepare():
 
 
 def activate():
+    """Verify CONNECT and instance TLS before exposing proxy configuration."""
     ca = Path.home()/'.local/share/arlinux/steam-proxy/ca.crt'
-    deadline = time.monotonic() + 5
-    tls = ssl.create_default_context(cafile=str(ca))
-    while True:
-        try:
-            with socket.create_connection((ADDRESS, 443), timeout=.5) as connection:
-                with tls.wrap_socket(connection, server_hostname=DOMAINS[0]):
-                    break
-        except (OSError, ssl.SSLError):
-            if time.monotonic() > deadline:
-                raise RuntimeError('Steam HTTPS relay did not open its listener')
-            time.sleep(.1)
-    write_hosts(True)
+    context = ssl.create_default_context(cafile=str(ca))
+    with socket.create_connection((ADDRESS, 18443), timeout=5) as connection:
+        connection.sendall(b'CONNECT store.steampowered.com:443 HTTP/1.1\r\nHost: store.steampowered.com:443\r\n\r\n')
+        response = bytearray()
+        while not response.endswith(b'\r\n\r\n'):
+            block = connection.recv(1)
+            if not block or len(response) >= 8192:
+                raise RuntimeError('Steam HTTP proxy handshake failed')
+            response.extend(block)
+        if not response.startswith(b'HTTP/1.1 200 '):
+            raise RuntimeError('Steam HTTP proxy rejected CONNECT')
+        with context.wrap_socket(connection, server_hostname=DOMAINS[0]):
+            pass
+    endpoint = f'http://{ADDRESS}:18443'
+    os.environ['http_proxy'] = endpoint
+    os.environ['https_proxy'] = endpoint
+    os.environ['HTTP_PROXY'] = endpoint
+    os.environ['HTTPS_PROXY'] = endpoint
+    return endpoint
