@@ -431,6 +431,7 @@ def launch(root, arguments):
     relay = prepare()
     import socket
     request = json.dumps({'home': str(Path.home()), 'arguments': arguments,
+                          'preparingPid': os.getpid(),
                           'prepareRuntime': not ready, 'relay': relay,
                           'address': ADDRESS}).encode() + b'\n'
     # The host service is global to this Android package and guest lifecycle.
@@ -456,6 +457,12 @@ def launch(root, arguments):
             print('Steam HTTPS acceleration unavailable; using direct connections.', flush=True)
     elif relay:
         print('Steam HTTPS acceleration unavailable; using direct connections.', flush=True)
+    # Prepare the Windows compatibility runtime during Steam installation/startup,
+    # before handing control to Valve. Play must not fetch Wine for the first time.
+    import windows
+    print('Preparing Steam Windows compatibility runtime…', flush=True)
+    windows.ensure_runtime()
+    print('Steam Windows compatibility runtime ready.', flush=True)
     os.chdir(root)
     os.execv(str(binary), [str(binary), *arguments])
 
