@@ -1,4 +1,4 @@
-/* 
+/*
  * Gamepad support for Winlator
  *
  * Copyright 2026 BrunoSX
@@ -109,7 +109,7 @@ static NTSTATUS gamepad_haptics_stop(struct unix_device *iface)
 
     if (!impl->vibration) return STATUS_NOT_SUPPORTED;
 
-    return STATUS_NOT_SUPPORTED;   
+    return STATUS_NOT_SUPPORTED;
 }
 
 static NTSTATUS gamepad_physical_device_control(struct unix_device *iface, USAGE control)

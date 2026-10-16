@@ -86,6 +86,7 @@ patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-arm64-ap
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-local-focus.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-dragdrop-owner.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-wow64-images.patch"
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-opengl-unavailable.patch"
 (cd "$source_dir/dlls/winevulkan" && python3 make_vulkan)
 cp "$fex_source/Source/Windows/UnixLib/"{FEXUnixLib.cpp,FEXUnixLib.h} "$stage/fex/"
 patch -d "$stage/fex" -p1 --batch --fuzz=0 < "$repo/tools/patches/fex-bionic-unixlib.patch"
