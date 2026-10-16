@@ -60,10 +60,22 @@ class PackageTests(unittest.TestCase):
             directory.mkdir(parents=True)
             for name in ('dcomp', 'd3d12', 'd3d12core'):
                 (directory/(name+'.dll')).write_bytes(b'MZ')
+            for name in ('winex11.drv', 'winepulse.drv'):
+                (directory/name).write_bytes(b'MZ')
+        data = pe/'files/share/wine'
+        (data/'fonts').mkdir(parents=True)
+        (data/'wine.inf').write_text('registry')
+        (data/'fonts/fixture.ttf').write_bytes(b'font')
         return pe
 
     def test_complete_component_build_accepted(self):
         self.assertIn('arlinux-dcomp.json', package.verify_components(self.components()))
+
+    def test_missing_window_driver_rejected(self):
+        pe = self.components()
+        (pe/'files/lib/wine/aarch64-windows/winex11.drv').unlink()
+        with self.assertRaisesRegex(RuntimeError, 'aarch64/winex11.drv'):
+            package.verify_components(pe)
 
     def test_old_pe_package_without_dcomp_rejected(self):
         pe = self.components()

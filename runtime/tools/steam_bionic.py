@@ -110,7 +110,7 @@ def default_config(text):
         # Migrate our removed adapter and the Windows default. Keep explicit
         # per-game Valve/third-party choices and native Linux FEX selections.
         if name == 'arlinux-proton-arm64' or (app == '0' and
-                (not name or name.lower().startswith('proton_'))):
+                (not name or name.lower() == 'native' or name.lower().startswith('proton_'))):
             entry = dict(entry, name=TOOL)
             entry.setdefault('config', '')
             entry.setdefault('priority', '75' if app == '0' else '250')

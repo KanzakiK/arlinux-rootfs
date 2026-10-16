@@ -3,6 +3,7 @@ import hashlib
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -44,6 +45,28 @@ class LatestRuntimeTests(unittest.TestCase):
                 request.return_value.stdout = json.dumps({'assets': [asset]})
                 with self.assertRaises(ValueError):
                     windows.latest_runtime()
+
+    def test_api_rate_limit_uses_web_asset_digest(self):
+        checksum = 'c' * 64
+        html = ('<a href="/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz">runtime</a>'
+                '<clipboard-copy aria-label="Copy to clipboard digest for arlinux-wine-bionic.tar.gz" '
+                'value="sha256:' + checksum + '"></clipboard-copy>')
+        with patch.object(windows.subprocess, 'run', side_effect=[
+                subprocess.CalledProcessError(22, ['curl']),
+                subprocess.CompletedProcess(['curl'], 0, stdout=html)]) as request:
+            self.assertEqual(windows.latest_runtime(), (checksum,
+                'https://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz'))
+            self.assertIn('https://github.com/taowen/wine/releases/expanded_assets/latest',
+                          request.call_args.args[0])
+
+    def test_web_fallback_rejects_missing_wrong_or_ambiguous_digest(self):
+        for html in ('', '<clipboard-copy value="sha256:' + 'a'*64 + '">',
+                     '<a href="/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz">'
+                     '<clipboard-copy aria-label="Copy to clipboard digest for arlinux-wine-bionic.tar.gz" value="bad">'):
+            with patch.object(windows.subprocess, 'run') as request:
+                request.return_value.stdout = html
+                with self.assertRaises(ValueError):
+                    windows.latest_runtime_web()
 
     def test_installed_latest_does_not_query_network_on_every_launch(self):
         self.selection.parent.mkdir(parents=True)

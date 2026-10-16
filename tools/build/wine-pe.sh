@@ -82,9 +82,18 @@ pkg-config --exists freetype2 || {
 export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
 (cd "$stage/core" && if [[ ! -f Makefile ]]; then "$stage/source/configure" --host=aarch64-w64-mingw32 --enable-win64 \
     --enable-archs=arm64ec,aarch64,i386,x86_64 --with-wine-tools="$stage/tools" \
-    --disable-tests --without-wayland --without-unwind --without-x --without-freetype --without-fontconfig --without-gnutls --without-opengl; fi) > "$stage/configure.log" 2>&1
+    --disable-tests --enable-winex11.drv --without-wayland --without-unwind --without-x --without-freetype --without-fontconfig --without-gnutls --without-opengl; fi) > "$stage/configure.log" 2>&1
 make -C "$stage/core" -j"${JOBS:-8}" > "$stage/build.log" 2>&1
 make -C "$stage/core" install DESTDIR="$stage/install" > "$stage/install.log" 2>&1
+# PE-only configure omits native loader data and font installation rules.
+# Generate these with matching native tools, preserving the same source version.
+make -C "$stage/tools" -j"${JOBS:-8}" loader/wine.inf fonts/all > "$stage/data.log" 2>&1
+mkdir -p "$stage/install/usr/local/share/wine/fonts"
+install -m644 "$stage/tools/loader/wine.inf" "$stage/install/usr/local/share/wine/wine.inf"
+find "$stage/tools/fonts" -maxdepth 1 -type f \( -name '*.fon' -o -name '*.ttf' \) \
+    -exec install -m644 -t "$stage/install/usr/local/share/wine/fonts" {} +
+find "$stage/source/fonts" -maxdepth 1 -type f -name '*.ttf' \
+    -exec install -m644 -t "$stage/install/usr/local/share/wine/fonts" {} +
 if [[ -d "$stage/install/usr/local/lib/wine/aarch64-unix" ]]; then
     rm -r -- "$stage/install/usr/local/lib/wine/aarch64-unix"
 fi

@@ -62,10 +62,21 @@ class AdapterTest(unittest.TestCase):
   self.assertEqual(mapping['12']['name'],'SteamLinuxRuntime_fex')
   self.assertIn('"Other" "unchanged"',updated)
   self.assertEqual(module.default_config(updated),updated)
+ def test_native_windows_default_uses_bionic_without_changing_game_choices(self):
+  from steam import keyvalues
+  base='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "CompatToolMapping" { "0" { "name" "%s" } "2758540" { "name" "native" } "10" { "name" "third-party" } } } } } }'
+  for name in ('native','Native','NATIVE'):
+   with self.subTest(name=name):
+    updated=module.default_config(base%name)
+    mapping=keyvalues(updated)['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
+    self.assertEqual(mapping['0']['name'],module.TOOL)
+    self.assertEqual(mapping['2758540']['name'],'native')
+    self.assertEqual(mapping['10']['name'],'third-party')
+    self.assertEqual(module.default_config(updated),updated)
  def test_helltaker_default_preserves_explicit_native_choice(self):
   from steam import keyvalues
   base='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "CompatToolMapping" { %s } } } } }'
-  for entry,expected in [('',module.TOOL),('"1289310" { "name" "SteamLinuxRuntime_fex" }','SteamLinuxRuntime_fex')]:
+  for entry,expected in [('',module.TOOL),('"0" { "name" "native" }',module.TOOL),('"1289310" { "name" "SteamLinuxRuntime_fex" }','SteamLinuxRuntime_fex')]:
    updated=module.default_config(base%entry)
    mapping=keyvalues(updated)['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
    self.assertEqual(mapping['1289310']['name'],expected)

@@ -50,6 +50,13 @@ def verify_components(pe_runtime):
         for dll in ('dcomp', 'd3d12', 'd3d12core'):
             if not (pe_runtime / 'files/lib/wine' / (arch + '-windows') / (dll + '.dll')).is_file():
                 raise RuntimeError('Missing required Wine PE module: ' + arch + '/' + dll)
+    for arch in ('aarch64', 'i386', 'x86_64'):
+        for driver in ('winex11.drv',):
+            if not (pe_runtime / 'files/lib/wine' / (arch + '-windows') / driver).is_file():
+                raise RuntimeError('Missing required Wine PE driver: ' + arch + '/' + driver)
+    data = pe_runtime / 'files/share/wine'
+    if not (data / 'wine.inf').is_file() or not any((data / 'fonts').glob('*.ttf')):
+        raise RuntimeError('Missing required Wine registry template or fonts')
     return records
 
 
@@ -191,6 +198,7 @@ def main():
     hashes = {}
 
     def install(src, target):
+        target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
             raise RuntimeError('Duplicate native binary: ' + str(target))
         shutil.copyfile(src, target)

@@ -2,6 +2,7 @@
 import argparse
 import fcntl
 import hashlib
+from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
@@ -166,8 +167,11 @@ def remember_latest(identity):
 
 def latest_runtime():
     endpoint = 'https://api.github.com/repos/taowen/wine/releases/tags/latest'
-    result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
-                             endpoint], check=True, capture_output=True, text=True)
+    try:
+        result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
+                                 endpoint], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
+        return latest_runtime_web()
     release = json.loads(result.stdout)
     for asset in release.get('assets', []):
         if asset.get('name') != 'arlinux-wine-bionic.tar.gz':
@@ -180,6 +184,36 @@ def latest_runtime():
         # The immutable asset ID also avoids resolving a different upload halfway through.
         return checksum[7:], f'https://api.github.com/repos/taowen/wine/releases/assets/{identity}'
     raise ValueError('Latest Bionic Wine release has no runtime asset')
+
+
+def latest_runtime_web():
+    """Resolve GitHub's published digest when the public API is rate limited.
+
+    Never accept the APK's old pin or infer a digest from a downloaded archive.
+    A replacement between this lookup and download fails SHA-256 verification.
+    """
+    class Assets(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.digests = []
+            self.runtime_link = False
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == 'a' and attrs.get('href') == '/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz':
+                self.runtime_link = True
+            if tag == 'clipboard-copy' and attrs.get('aria-label') == 'Copy to clipboard digest for arlinux-wine-bionic.tar.gz':
+                self.digests.append(attrs.get('value', ''))
+
+    result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
+        'https://github.com/taowen/wine/releases/expanded_assets/latest'],
+        check=True, capture_output=True, text=True)
+    assets = Assets()
+    assets.feed(result.stdout)
+    if (not assets.runtime_link or len(assets.digests) != 1 or
+            not re.fullmatch('sha256:[0-9a-f]{64}', assets.digests[0])):
+        raise ValueError('Latest Bionic Wine release has no verified runtime digest')
+    return assets.digests[0][7:], 'https://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz'
 
 
 def host_path(path):

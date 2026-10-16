@@ -22,6 +22,8 @@ import windows
 import windows_webview
 import shared
 
+POWERBI_WEBVIEW_FLAGS = '--no-sandbox --use-angle=d3d11'
+
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 LICENSES = {
     'paintnet': 'https://www.getpaint.net/license.html',
@@ -67,6 +69,22 @@ def consent(app, accepted):
     if not accepted and (not sys.stdin.isatty() or
                          input('Accept the licenses and continue? [y/N] ').strip().lower() != 'y'):
         raise RuntimeError('Installation cancelled; no application license was accepted')
+
+
+def restore_powerbi_accessibility(root, prefix):
+    """Restore the hybrid Wine UIA DLL overwritten by the x64 vendor setup.
+
+    ARM64 WebView2 cannot load the vendor's x64-only system DLL. Wine's
+    ARM64X builtin also serves Power BI's emulated x64 clients.
+    """
+    source = root / 'files/lib/wine/aarch64-windows/uiautomationcore.dll'
+    data = source.read_bytes()
+    if b'Wine builtin DLL' not in data[:256]:
+        raise RuntimeError('Matching Wine UIAutomationCore builtin is missing')
+    destination = prefix / 'pfx/drive_c/windows/system32/uiautomationcore.dll'
+    temporary = destination.with_suffix('.arlinux-tmp')
+    temporary.write_bytes(data)
+    temporary.replace(destination)
 
 
 def install_powerbi(root, prefix):
@@ -150,9 +168,11 @@ def install_powerbi(root, prefix):
     executable = prefix / 'pfx/drive_c/Program Files/Microsoft Power BI Desktop/bin/PBIDesktop.exe'
     if not executable.is_file():
         raise RuntimeError('Power BI installer did not create PBIDesktop.exe; see installer logs in the prefix')
-    # Official WebView2 policy; limited to this application's isolated prefix.
+    restore_powerbi_accessibility(root, prefix)
+    # Elevated WebView hosts read the per-application policy instead of flags
+    # supplied only through environment variables.
     run(reg, 'add', r'HKLM\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments',
-        '/v', 'PBIDesktop.exe', '/t', 'REG_SZ', '/d', '--no-sandbox', '/f', '/reg:64')
+        '/v', 'PBIDesktop.exe', '/t', 'REG_SZ', '/d', POWERBI_WEBVIEW_FLAGS, '/f', '/reg:64')
     # Re-register oleacc after installers so IAccessible marshaling uses the
     # Accessibility typelib instead of an imported UIAutomation mapping.
     run(reg.parent / 'regsvr32.exe', '/s', 'oleacc.dll')
@@ -165,7 +185,7 @@ def powerbi_environment(prefix):
     return {
         'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER':
             'Z:' + str(windows.host_path(browser)).replace('/', '\\'),
-        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': windows_webview.FLAGS,
+        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': POWERBI_WEBVIEW_FLAGS,
     }
 
 
@@ -187,12 +207,13 @@ def prepare(app, accepted=False):
     cache.mkdir(parents=True, exist_ok=True)
     prefix = windows.instance_prefix() if hasattr(windows, 'instance_prefix') else home / 'wine'
     pointer = home / 'installed.json'
+    pointer_root = windows.storage() if hasattr(windows, 'instance_prefix') else home
     with (home / 'install.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if pointer.is_file():
             entry = json.loads(pointer.read_text())
-            executable = (home / entry['executable']).resolve(strict=True)
-            if not executable.is_relative_to(home.resolve()):
+            executable = (pointer_root / entry['executable']).resolve(strict=True)
+            if not executable.is_relative_to(pointer_root.resolve()):
                 raise ValueError('Invalid installed app path')
             if app == 'powerbi':
                 ensure_powerbi_authentication()
@@ -225,7 +246,7 @@ def prepare(app, accepted=False):
         else:
             executable = install_powerbi(root, prefix)
         temporary = pointer.with_suffix('.tmp')
-        temporary.write_text(json.dumps({'executable': str(executable.relative_to(home))}) + '\n')
+        temporary.write_text(json.dumps({'executable': str(executable.relative_to(pointer_root))}) + '\n')
         temporary.replace(pointer)
         return executable, prefix, cache
 
@@ -248,7 +269,10 @@ def main():
         # These are the vendor paintdotnet.sh overrides, not modified binaries.
         env['WINEDLLOVERRIDES'] = 'mshtml=;d3dcompiler_47=n'
     response = windows.request(root, prefix, executable,
-                               overrides=env.get('WINEDLLOVERRIDES', ''))
+                               overrides=env.get('WINEDLLOVERRIDES', ''),
+                               diagnostics={key: env[key] for key in (
+                                   'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER',
+                                   'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS') if key in env})
     (cache / 'desktop.log').write_text('Native log: '+response['log']+'\n')
     exit_file = windows.guest_path(response['exit'])
     import time

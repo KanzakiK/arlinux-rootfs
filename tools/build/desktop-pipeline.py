@@ -20,7 +20,8 @@ def digest(path):
 def inventory(path):
     path = Path(path)
     if path.is_symlink():
-        return {'link': os.readlink(path), 'target': inventory(path.resolve(strict=True))}
+        target = path.resolve(strict=False)
+        return {'link': os.readlink(path), 'target': inventory(target) if target.exists() else None}
     if path.is_file():
         return {'sha256': digest(path), 'mode': path.stat().st_mode & 0o777}
     if not path.is_dir():

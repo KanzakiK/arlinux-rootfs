@@ -24,6 +24,7 @@ class RetryTests(unittest.TestCase):
         self.write('repo/tools/build/wine-pe.sh', SCRIPT.read_text())
         self.write('source/dlls/combase/parameterized.c', 'fixture')
         self.write('source/VERSION', 'Wine fixture')
+        self.write('source/fonts/fixture.ttf', 'source font')
         self.write('source/tools/make_requests', '')
         self.write('source/configure', '''#!/bin/sh
 printf '%s\\n' "$PWD" >> "$FIXTURE_ROOT/configures"
@@ -52,6 +53,10 @@ esac
 if [ "$1" = --version ]; then echo fixture-make; exit; fi
 if [ "$1" = -C ]; then cd "$2"; shift 2; fi
 case "$PWD:$*" in
+  */tools:*loader/wine.inf*)
+    mkdir -p loader fonts
+    echo registry > loader/wine.inf
+    echo bitmap > fonts/fixture.fon ;;
   */core:*install*)
     for arg do case "$arg" in DESTDIR=*) dest=${arg#DESTDIR=} ;; esac; done
     mkdir -p "$dest/usr/local/lib/wine/aarch64-windows"
@@ -86,6 +91,8 @@ esac
         self.assertEqual(third.returncode, 0, third.stderr)
         self.assertEqual(len((self.root/'configures').read_text().splitlines()), 2)
         self.assertTrue((self.root/'second-output/files/lib/wine/aarch64-windows/dcomp.dll').is_file())
+        for name in ('wine.inf', 'fonts/fixture.fon', 'fonts/fixture.ttf'):
+            self.assertTrue((self.root/'second-output/files/share/wine'/name).is_file(), name)
 
     def test_concurrent_build_with_same_inputs_is_rejected(self):
         result = self.build('first')
