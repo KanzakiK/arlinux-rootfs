@@ -46,3 +46,11 @@ alone does not initialize the ARM64 Unix bridge handle. Missing this module
 can abort 64-bit SteamAPI initialization (observed with Helltaker). Both
 runtime validation and offline bundling require it. The 32-bit and x86_64
 facades remain available for their respective game imports.
+
+`user023-web-ticket.patch` preserves the legacy SteamUser interface and adds
+SteamUser023's inserted GetAuthTicketForWebApi slot. Authentication requests go
+to native SteamUser023 and callback 168 travels over the existing callback RPC;
+no ticket or success result is fabricated. This fixes Electron steamworks.js
+0.3.2 games timing out during login after SteamAPI_Init succeeds. Diagnostic
+validation on X300 reached Revenge on Gold Diggers' complete main menu; final
+fresh-instance Steam Play/gameplay acceptance is still required.

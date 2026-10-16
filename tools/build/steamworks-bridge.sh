@@ -30,6 +30,11 @@ if [[ ! -f $src/bridge_proxy.inc ]]; then
 fi
 git -C "${src%/lsteamclient}" sparse-checkout set --no-cone \
     '/lsteamclient/*' '!/lsteamclient/steamworks_sdk_*/' '/lsteamclient/steamworks_sdk_154/*'
+# Modern SteamUser023 inserts the Web API authentication method. Keep legacy
+# layouts and forward genuine ticket/callback traffic to native Steam.
+if ! grep -q 'LSTEAM_BRIDGE_WEB_API_TICKET' "$up/steam-bridge/protocol.h"; then
+    patch -d "$up" -p1 < "$repo/native/steamworks/user023-web-ticket.patch"
+fi
 # The standalone frontend has no separate Valve DLL data section to borrow.
 if ! grep -q 'static DECLSPEC_ALIGN(16) BYTE bridge_arena' "$src/steamclient_main.c"; then
     patch -d "$src" -p1 < "$repo/native/steamworks/frontend-arena.patch"
