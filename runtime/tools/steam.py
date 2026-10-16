@@ -25,6 +25,30 @@ CLIENT_CDNS = (CDN, 'https://client-update.akamai.steamstatic.com/',
                'https://client-update.steamstatic.com/')
 CHANNELS = ('stable', 'publicbeta')
 PREINSTALLED = Path('/opt/arlinux/steam-client')
+CLIENT_MANIFEST = 'steam_client_linuxarm64.manifest'
+LEGACY_MANIFEST = 'arlinux-stable.manifest'
+INSTALLED_MANIFEST = 'steam_client_linuxarm64.installed'
+
+
+def normalize_client_manifests(root):
+    """Migrate the old channel marker to Valve's pending-manifest name."""
+    package = root/'package'
+    legacy = package/LEGACY_MANIFEST
+    current = package/CLIENT_MANIFEST
+    if legacy.is_file():
+        package.mkdir(parents=True, exist_ok=True)
+        if current.exists() or current.is_symlink():
+            legacy.unlink()
+        else:
+            legacy.replace(current)
+
+
+def client_bootstrap_ready(root):
+    return (root/'steamrtarm64/steam').is_file()
+
+
+def client_install_recorded(root):
+    return (root/'package'/INSTALLED_MANIFEST).is_file()
 
 
 def share_client(root, previous):
@@ -287,9 +311,11 @@ def install(root, channel):
             (root/'package/beta').unlink(missing_ok=True)
         else:
             (root/'package/beta').write_text(channel + '\n')
-        # Only Valve's updater writes its installed-file manifest. An update
-        # channel listing is not an installation record.
-        shutil.copyfile(listing, root/f'package/arlinux-{channel}.manifest')
+        # Keep a pending channel listing under Valve's own name. Do not write
+        # an arlinux-* manifest: the ARM64 bootstrap can mistake it for its
+        # installed-file record and skip the real client download.
+        if channel == 'stable':
+            shutil.copyfile(listing, root/f'package/{CLIENT_MANIFEST}')
     print(f'Steam ARM64 bootstrap build {version} ready; starting Valve updater.', flush=True)
 
 
@@ -498,10 +524,17 @@ def main():
             raise RuntimeError('Shared Steam is still running in another session. Close it first.')
         if previous != root:
             share_client(root, previous)
+        normalize_client_manifests(root)
         links(root, previous)
         if not args.update and not args.channel:
             seed_client(root)
-        if args.update or args.channel or not (root/'steamrtarm64/steam').is_file():
+            normalize_client_manifests(root)
+        # A bootstrap executable alone is not a completed installation.
+        # Re-download it when no Valve install record or pending manifest is
+        # present; otherwise let Valve's updater finish missing depots.
+        pending = (root/'package'/CLIENT_MANIFEST).is_file()
+        if (args.update or args.channel or not client_bootstrap_ready(root)
+                or (not client_install_recorded(root) and not pending)):
             install(root, args.channel or CHANNELS[0])
         return launch(root, steam_arguments)
 
