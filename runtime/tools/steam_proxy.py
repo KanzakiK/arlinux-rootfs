@@ -135,8 +135,9 @@ def activate():
         with context.wrap_socket(connection, server_hostname=DOMAINS[0]):
             pass
     endpoint = f'http://{ADDRESS}:18443'
-    os.environ['http_proxy'] = endpoint
+    # SteamPipe's regional HTTP CDNs must remain direct.
+    os.environ.pop('http_proxy', None)
     os.environ['https_proxy'] = endpoint
-    os.environ['HTTP_PROXY'] = endpoint
+    os.environ.pop('HTTP_PROXY', None)
     os.environ['HTTPS_PROXY'] = endpoint
     return endpoint
