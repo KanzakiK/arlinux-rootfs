@@ -20,9 +20,7 @@ stage="$(mktemp -d "$repo/build/wine-pe/build.XXXXXXXX")"
 mkdir "$stage/source" "$stage/tools" "$stage/core"
 echo "Build directory: $stage"
 git -C "$source_dir" archive HEAD | tar -xf - -C "$stage/source"
-if [[ -n "${ARLINUX_WINE_VKD3D_REFRESH:-}" ]]; then
-    python3 "$ARLINUX_WINE_VKD3D_REFRESH" "$stage/source"
-fi
+python3 "$repo/tools/build/refresh-wine-vkd3d.py" "$stage/source"
 (cd "$stage/source" && perl tools/make_requests)
 native_triplet="$(gcc -dumpmachine)"
 export PKG_CONFIG_LIBDIR="/usr/lib/$native_triplet/pkgconfig:/usr/share/pkgconfig"

@@ -1,0 +1,41 @@
+{
+  "protocol": 1,
+  "wine": "11.19",
+  "repository": "https://github.com/wine-staging/wine-staging",
+  "commit": "11dd86bdfada3c85877b90c765ff9e3af200ddd1",
+  "vkd3dCommit": "fed0c3418f815b0bc07533f6fc6f4aa06e8712c3",
+  "patches": [
+    {
+      "name": "0001-Updated-vkd3d-to-05a74c522e78f32d8c4f776c2dc09ff4b59.patch",
+      "sha256": "d84a64eba74257725381663ade19909c3669c91445ed92eb37a855b2dc43213f"
+    },
+    {
+      "name": "0002-Updated-vkd3d-to-e75e92b1953af34ad7ca0a304773523e87e.patch",
+      "sha256": "ba184a2ea2e0afc4b886a54a1220e3f1efb75debc78112e1bad3629d9759e5d4"
+    },
+    {
+      "name": "0003-Updated-vkd3d-to-87b6dcab557bc48badc3be326ee9da8bf38.patch",
+      "sha256": "ecac76eb9dc7561affbe141c771880197534ad469d83553408da04ab1f68893b"
+    },
+    {
+      "name": "0004-Updated-vkd3d-to-a11043fdb94c47ef21ee28adb3fd73469cd.patch",
+      "sha256": "970e05f63cc7e04cef27cfab9dc0074ca6013321bf8e9d819c3ce0926b377a01"
+    },
+    {
+      "name": "0005-Updated-vkd3d-to-6ee3db299e07109512041c8bd1d11af9e22.patch",
+      "sha256": "26639f3fdadb3dbca230cebcd2d6b94964ffcecdc1f36649e021907efa7c9f84"
+    },
+    {
+      "name": "0006-Updated-vkd3d-to-cfcb4833e27cb287e2d70b48e1bfe46713e.patch",
+      "sha256": "cef1251bdcfb6bc431799c7cda6b9395c5fd21f2c7fb21e6653f98bc1bc625c1"
+    },
+    {
+      "name": "0007-Updated-vkd3d-to-a9d1f263a0659e671f16b28f3ab42a363cf.patch",
+      "sha256": "bfc5eb726caa41b79171a19ca57e0ae4fb40ba736f6a51d11f4be95f12c33516"
+    },
+    {
+      "name": "0008-Updated-vkd3d-to-fed0c3418f815b0bc07533f6fc6f4aa06e8.patch",
+      "sha256": "4a047d0e08ab3a0a759c3cd1053e83a4138859bdd4d183a4f353951b109984a4"
+    }
+  ]
+}

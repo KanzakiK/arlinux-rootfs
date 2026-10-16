@@ -1,0 +1,55 @@
+--- a/FEXUnixLib.cpp
++++ b/FEXUnixLib.cpp
+@@ -3,6 +3,8 @@
+ #include <type_traits>
+ #include <fcntl.h>
+ #include <string>
++#include <cstdlib>
++#include <sys/stat.h>
+ #include <sys/mman.h>
+ #include <sys/prctl.h>
+ #include <unistd.h>
+@@ -77,10 +79,17 @@
+ }
+ 
+ constexpr static int USER_PERMS = S_IRWXU | S_IRWXG | S_IRWXO;
++// Android has no POSIX shm namespace. Keep the diagnostic stats file in the
++// app-owned temporary directory; Wine's CPU modules still use the same ABI.
++static std::string StatsPath() {
++  const char* tmp = std::getenv("TMPDIR");
++  if (!tmp || tmp[0] != '/') return {};
++  return std::string(tmp) + "/fex-" + std::to_string(getpid()) + "-stats";
++}
+ static inline void* InitializeSHM(uint32_t MapSize, uint32_t MaxSize) {
+   void* Base {};
+-  const std::string Name = "fex-" + std::to_string(getpid()) + "-stats";
+-  int fd = shm_open(Name.c_str(), O_CREAT | O_TRUNC | O_RDWR, USER_PERMS);
++  const std::string Name = StatsPath();
++  int fd = open(Name.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
+ 
+   if (fd == -1) {
+     return nullptr;
+@@ -121,10 +130,10 @@
+ 
+ static inline bool AllocateMoreSlots(void* SHMBase, uint32_t NewSize) {
+   bool Result {};
+-  const std::string Name = "fex-" + std::to_string(getpid()) + "-stats";
++  const std::string Name = StatsPath();
+ 
+   // When allocating more slots, open the fd without O_TRUNC | O_CREAT.
+-  int fd = shm_open(Name.c_str(), O_RDWR, USER_PERMS);
++  int fd = open(Name.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+   if (fd == -1) {
+     return false;
+   }
+@@ -158,8 +167,8 @@
+ }
+ 
+ static NTSTATUS FEXUnixLib_DeleteSHMStatsFileHandler(void* _Args) {
+-  const std::string Name = "fex-" + std::to_string(getpid()) + "-stats";
+-  shm_unlink(Name.c_str());
++  const std::string Name = StatsPath();
++  unlink(Name.c_str());
+   return STATUS_SUCCESS;
+ }
+ 

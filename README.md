@@ -165,3 +165,10 @@ artifacts.
 Arlinux rootfs is GPL-3.0-or-later. Bundled distributions and third-party
 submodules retain their own licenses and notices; distributors are responsible
 for preserving all applicable notices in binary bundles.
+
+## Bionic Wine runtime
+
+Wine PE/native compilation, FEX/DXVK integration, Vulkan adapter, patches,
+packaging and publication are maintained in this repository. See
+[the build and publication guide](docs/WINDOWS-BIONIC.md). Android host builds
+consume the resulting bundles and runtime download manifest.
