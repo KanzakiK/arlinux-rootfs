@@ -46,6 +46,49 @@ class PackageTests(unittest.TestCase):
         }))
         return root, binary
 
+    def components(self):
+        pe = self.base / 'pe'
+        pe.mkdir()
+        patch = TOOLS / 'patches/wine-dcomp-content-lifetime.patch'
+        (pe/'arlinux-dcomp.json').write_text(json.dumps({
+            'commit': '318eda0d8fa08ee94faadf6dc5ad85870339b327',
+            'patchSHA256': hashlib.sha256(patch.read_bytes()).hexdigest()}))
+        (pe/'arlinux-vkd3d.json').write_bytes(
+            (TOOLS/'patches/wine-staging-vkd3d/manifest.json').read_bytes())
+        for arch in ('aarch64', 'i386', 'x86_64'):
+            directory = pe/'files/lib/wine'/(arch+'-windows')
+            directory.mkdir(parents=True)
+            for name in ('dcomp', 'd3d12', 'd3d12core'):
+                (directory/(name+'.dll')).write_bytes(b'MZ')
+        return pe
+
+    def test_complete_component_build_accepted(self):
+        self.assertIn('arlinux-dcomp.json', package.verify_components(self.components()))
+
+    def test_old_pe_package_without_dcomp_rejected(self):
+        pe = self.components()
+        (pe/'arlinux-dcomp.json').unlink()
+        with self.assertRaisesRegex(RuntimeError, 'missing required component'):
+            package.verify_components(pe)
+
+    def test_stale_dcomp_patch_record_rejected(self):
+        pe = self.components()
+        (pe/'arlinux-dcomp.json').write_text('{}')
+        with self.assertRaisesRegex(RuntimeError, 'DirectComposition fixes'):
+            package.verify_components(pe)
+
+    def test_missing_architecture_module_rejected(self):
+        pe = self.components()
+        (pe/'files/lib/wine/i386-windows/dcomp.dll').unlink()
+        with self.assertRaisesRegex(RuntimeError, 'i386/dcomp'):
+            package.verify_components(pe)
+
+    def test_stale_vkd3d_record_rejected(self):
+        pe = self.components()
+        (pe/'arlinux-vkd3d.json').write_text('{}')
+        with self.assertRaisesRegex(RuntimeError, 'VKD3D refresh'):
+            package.verify_components(pe)
+
     def test_missing_build_record_requires_rebuild(self):
         with self.assertRaisesRegex(RuntimeError, 'Rebuild graphics'):
             package.verify_zink(self.base)

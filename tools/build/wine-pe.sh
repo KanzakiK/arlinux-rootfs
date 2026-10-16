@@ -7,46 +7,103 @@ if [[ $# != 3 ]]; then
 fi
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source_dir="$(realpath "$1")"
-export PATH="$(realpath "$2"):$PATH"
+compiler="$(realpath "$2")"
+export PATH="$compiler:$PATH"
 destination="$(realpath -m "$3")"
-revision=afe1b2beeeb1ecdc9152c082eaee552bbe572076
+revision=46af030d975f331ff6304a34a6b91c6147285c6d
 [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$revision" ]] || {
     echo 'Wine source must match the pinned ARLinux Wine 11.19 revision.' >&2
     exit 2
 }
 [[ ! -e "$destination" ]] || { echo 'Output directory already exists.' >&2; exit 2; }
 mkdir -p "$repo/build/wine-pe"
-stage="$(mktemp -d "$repo/build/wine-pe/build.XXXXXXXX")"
-mkdir "$stage/source" "$stage/tools" "$stage/core"
+# Content-addressed build directories preserve Make's dependency graph on retry.
+# JOBS and destination are deliberately not inputs: they do not change binaries.
+identity="$(python3 - "$repo" "$source_dir" "$compiler" <<'KEY'
+from pathlib import Path
+import hashlib,subprocess,sys
+repo,source,compiler=map(Path,sys.argv[1:])
+h=hashlib.sha256()
+h.update(subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD']))
+inputs=[repo/'tools/build/wine-pe.sh',repo/'tools/build/refresh-wine-vkd3d.py',
+        repo/'tools/build/prepare-wine-dcomp.sh',source/'dlls/combase/parameterized.c']
+inputs+=sorted((repo/'tools/patches/wine-staging-vkd3d').glob('*'))
+inputs+=[repo/'tools/patches/wine-dcomp-content-lifetime.patch']
+for path in inputs:
+    h.update(path.name.encode());h.update(path.read_bytes())
+for name in ('clang','ld.lld'):
+    path=(compiler/name).resolve()
+    h.update(str(path).encode());h.update(path.read_bytes())
+for command in (['gcc','--version'],['make','--version'],['pkg-config','--modversion','freetype2']):
+    h.update(subprocess.check_output(command))
+print(h.hexdigest())
+KEY
+)"
+stage="$repo/build/wine-pe/$identity"
+mkdir -p "$stage"
+exec 9>"$stage/build.lock"
+flock -n 9 || { echo "Build already running: $stage" >&2; exit 2; }
 echo "Build directory: $stage"
-git -C "$source_dir" archive HEAD | tar -xf - -C "$stage/source"
-python3 "$repo/tools/build/refresh-wine-vkd3d.py" "$stage/source"
-(cd "$stage/source" && perl tools/make_requests)
+echo "Build identity: $identity"
+if [[ -f "$stage/source/.arlinux-source-ready" ]]; then
+    touch "$stage/source-ready"
+fi
+if [[ ! -f "$stage/source-ready" ]]; then
+    # An interrupted source preparation is retained for inspection, never reused.
+    prepare="$(mktemp -d "$stage/prepare.XXXXXXXX")"
+    mkdir "$prepare/source"
+    git -C "$source_dir" archive HEAD | tar -xf - -C "$prepare/source"
+    [[ -f "$prepare/source/dlls/combase/parameterized.c" ]] || {
+        echo 'Pinned Wine commit is incomplete: missing combase/parameterized.c.' >&2; exit 2;
+    }
+    python3 "$repo/tools/build/refresh-wine-vkd3d.py" "$prepare/source"
+    bash "$repo/tools/build/prepare-wine-dcomp.sh" "$prepare/source"
+    (cd "$prepare/source" && perl tools/make_requests)
+    if [[ -d "$stage/source" ]]; then
+        echo "Incomplete source preparation at $stage/source; inspect it before retrying." >&2
+        exit 2
+    fi
+    touch "$prepare/source/.arlinux-source-ready"
+    mv -T "$prepare/source" "$stage/source"
+    touch "$stage/source-ready"
+fi
+mkdir -p "$stage/tools" "$stage/core"
 native_triplet="$(gcc -dumpmachine)"
 export PKG_CONFIG_LIBDIR="/usr/lib/$native_triplet/pkgconfig:/usr/share/pkgconfig"
 pkg-config --exists freetype2 || {
     echo 'Install native FreeType development headers for Wine font generation.' >&2; exit 2;
 }
-(cd "$stage/tools" && "$stage/source/configure" --enable-win64 --disable-tests \
+(cd "$stage/tools" && if [[ ! -f Makefile ]]; then "$stage/source/configure" --enable-win64 --disable-tests \
     --without-mingw --without-x --without-wayland \
-    && make -j"${JOBS:-8}" tools/all tools/sfnt2fon/all \
+    ; fi
+    make -j"${JOBS:-8}" tools/all tools/sfnt2fon/all \
         tools/widl/all tools/winebuild/all tools/winegcc/all tools/wmc/all tools/wrc/all nls/all) \
     > "$stage/tools.log" 2>&1
 export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
-(cd "$stage/core" && "$stage/source/configure" --host=aarch64-w64-mingw32 --enable-win64 \
+(cd "$stage/core" && if [[ ! -f Makefile ]]; then "$stage/source/configure" --host=aarch64-w64-mingw32 --enable-win64 \
     --enable-archs=arm64ec,aarch64,i386,x86_64 --with-wine-tools="$stage/tools" \
-    --disable-tests --without-wayland --without-unwind --without-x --without-freetype --without-fontconfig --without-gnutls --without-opengl) > "$stage/configure.log" 2>&1
+    --disable-tests --without-wayland --without-unwind --without-x --without-freetype --without-fontconfig --without-gnutls --without-opengl; fi) > "$stage/configure.log" 2>&1
 make -C "$stage/core" -j"${JOBS:-8}" > "$stage/build.log" 2>&1
 make -C "$stage/core" install DESTDIR="$stage/install" > "$stage/install.log" 2>&1
-rm -rf "$stage/install/usr/local/lib/wine/aarch64-unix"
-mkdir "$stage/output"
-mv "$stage/install/usr/local" "$stage/output/files"
+if [[ -d "$stage/install/usr/local/lib/wine/aarch64-unix" ]]; then
+    rm -r -- "$stage/install/usr/local/lib/wine/aarch64-unix"
+fi
+mkdir -p "$stage/output/files"
+# Copy rather than move: an interrupted packaging step can be retried safely.
+cp -a "$stage/install/usr/local/." "$stage/output/files/"
 git -C "$source_dir" rev-parse HEAD > "$stage/output/wine-commit"
 cp "$stage/source/VERSION" "$stage/output/wine-version"
 if [[ -f "$stage/source/arlinux-vkd3d.json" ]]; then
     cp "$stage/source/arlinux-vkd3d.json" "$stage/output/arlinux-vkd3d.json"
 fi
+cp "$stage/source/arlinux-dcomp.json" "$stage/output/arlinux-dcomp.json"
 tar -czf "$stage/output/wine-source.tar.gz" -C "$stage" source
+python3 - "$stage" <<'BUILD_STATE'
+import json, sys
+from pathlib import Path
+stage = Path(sys.argv[1])
+(stage/'output/build-state.json').write_text(json.dumps({'tools': str(stage/'tools')}) + '\n')
+BUILD_STATE
 mkdir -p "$(dirname "$destination")"
 mv -T --no-clobber "$stage/output" "$destination"
 [[ ! -d "$stage/output" ]] || { echo 'Destination appeared during build; preserving outputs.' >&2; exit 2; }

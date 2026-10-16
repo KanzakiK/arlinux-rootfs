@@ -32,6 +32,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='wine-package-', dir=args.output.parent) as temporary:
         stage = Path(temporary)
         files = stage/'files'
+        records = {name: json.loads((args.wine/name).read_text())
+                   for name in ('arlinux-dcomp.json', 'arlinux-vkd3d.json')}
         # Only the Windows modules; no glibc native backend is packaged.
         # A single complete, version-matched Wine installation is the sole base.
         shutil.copytree(args.wine/'files', files, symlinks=True)
@@ -70,6 +72,10 @@ def main():
                     'dxvk_commit': (args.dxvk/'source-commit').read_text().strip(),
                     'files': {str(p.relative_to(stage)): digest(p)
                               for p in sorted(files.rglob('*')) if p.is_file()}}
+        for name, record in records.items():
+            (stage/name).write_text(json.dumps(record, indent=2)+'\n')
+        metadata['directComposition'] = records['arlinux-dcomp.json']
+        metadata['vkd3d'] = records['arlinux-vkd3d.json']
         sources = (('wine', args.wine/'wine-source.tar.gz'),
                    ('fex', args.fex/'fex-source.tar.gz'), ('dxvk', args.dxvk/'source.tar.gz'))
         metadata['sources'] = {}
@@ -82,6 +88,8 @@ def main():
         with tarfile.open(archive, 'w:gz', compresslevel=3) as bundle:
             bundle.add(files, arcname='files')
             bundle.add(stage/'arlinux-runtime.json', arcname='arlinux-runtime.json')
+            for name in records:
+                bundle.add(stage/name, arcname=name)
         archive.replace(args.output)
     checksum = digest(args.output)
     args.output.with_name(args.output.name+'.sha256').write_text(f'{checksum}  {args.output.name}\n')

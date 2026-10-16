@@ -1,3 +1,5 @@
+diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
+index 3265d746..c4d02bae 100644
 --- a/dlls/win32u/vulkan.c
 +++ b/dlls/win32u/vulkan.c
 @@ -27,6 +27,7 @@
@@ -8,7 +10,7 @@
  
  #include "ntstatus.h"
  #include "win32u_private.h"
-@@ -120,6 +121,11 @@
+@@ -120,6 +121,11 @@ struct device_memory
      struct vulkan_device_memory obj;
      VkDeviceSize size;
      void *vm_map;
@@ -20,12 +22,10 @@
  
      D3DKMT_HANDLE local;
      D3DKMT_HANDLE global;
-@@ -189,6 +195,31 @@
- {
-     struct vulkan_fence *obj = vulkan_fence_from_handle( handle );
+@@ -191,6 +197,31 @@ static struct fence *fence_from_handle( VkFence handle )
      return CONTAINING_RECORD( obj, struct fence, obj );
-+}
-+
+ }
+ 
 +static pthread_mutex_t coherent_guard = PTHREAD_MUTEX_INITIALIZER;
 +static struct device_memory *coherent_memory;
 +
@@ -49,10 +49,12 @@
 +    }
 +    pthread_mutex_unlock( &coherent_guard );
 +    return result;
- }
- 
++}
++
  static VkResult allocate_external_host_memory( struct vulkan_device *device, VkMemoryAllocateInfo *alloc_info, uint32_t mem_flags,
-@@ -223,7 +254,7 @@
+                                                VkImportMemoryHostPointerInfoEXT *import_info )
+ {
+@@ -223,7 +254,7 @@ static VkResult allocate_external_host_memory( struct vulkan_device *device, VkM
      if (!(props.memoryTypeBits & (1u << alloc_info->memoryTypeIndex)))
      {
          /* If requested memory type is not allowed to use external memory, try to find a supported compatible type. */
@@ -61,7 +63,7 @@
          for (i = 0; i < physical_device->memory_properties.memoryTypeCount; i++)
          {
              if (!(props.memoryTypeBits & (1u << i))) continue;
-@@ -490,6 +521,7 @@
+@@ -490,6 +521,7 @@ static VkResult init_physical_device( struct vulkan_physical_device *physical_de
      for (uint32_t i = 0; i < count; i++)
      {
          const char *extension = properties[i].extensionName;
@@ -69,7 +71,7 @@
  #define USE_VK_EXT(x)                           \
          if (!strcmp( extension, #x ))           \
          {                                       \
-@@ -665,6 +697,30 @@
+@@ -665,6 +697,30 @@ static void win32u_vkDestroyInstance( VkInstance client_instance, const VkAlloca
      free( instance );
  }
  
@@ -100,7 +102,7 @@
  static VkResult convert_device_create_info( struct vulkan_physical_device *physical_device, VkDeviceCreateInfo *info,
                                              struct mempool *pool, struct vulkan_device *device )
  {
-@@ -716,6 +772,11 @@
+@@ -716,6 +772,11 @@ static VkResult convert_device_create_info( struct vulkan_physical_device *physi
          device->extensions.has_VK_EXT_external_memory_host = 1;
      }
  
@@ -112,7 +114,7 @@
      /* win32u uses VkSwapchainPresentScalingCreateInfoEXT if available. */
      if (device->extensions.has_VK_KHR_swapchain && instance->extensions.has_VK_EXT_surface_maintenance1 &&
          physical_device->extensions.has_VK_EXT_swapchain_maintenance1)
-@@ -730,6 +791,7 @@
+@@ -730,6 +791,7 @@ static VkResult convert_device_create_info( struct vulkan_physical_device *physi
      for (const char **extension = extensions, **end = extension + count; extension < end; extension++)
          TRACE( "  - %s\n", debugstr_a(*extension) );
  
@@ -120,7 +122,7 @@
      info->ppEnabledExtensionNames = extensions;
      info->enabledExtensionCount = count;
      return VK_SUCCESS;
-@@ -818,6 +880,8 @@
+@@ -818,6 +880,8 @@ failed:
      return res;
  }
  
@@ -129,7 +131,7 @@
  static void win32u_vkDestroyDevice( VkDevice client_device, const VkAllocationCallbacks *allocator )
  {
      struct vulkan_device *device = vulkan_device_from_handle( client_device );
-@@ -826,6 +890,14 @@
+@@ -826,6 +890,14 @@ static void win32u_vkDestroyDevice( VkDevice client_device, const VkAllocationCa
  
      if (!device) return;
  
@@ -144,8 +146,8 @@
      device->p_vkDestroyDevice( device->host.device, NULL /* pAllocator */ );
      for (i = 0; i < device->queue_count; i++)
          instance->p_remove_object( instance, &device->queues[i].obj );
-@@ -862,11 +934,17 @@
-     *client_queue = device_find_queue( client_device, &info );
+@@ -881,11 +953,17 @@ static VkResult import_semaphore_from_d3dkmt_sync( struct vulkan_device *device,
+     }
  }
  
 +static BOOL is_device_only_image( VkDevice device, VkImage image );
@@ -162,7 +164,7 @@
      VkBaseOutStructure **next, *prev = (VkBaseOutStructure *)alloc_info;
      struct vulkan_device *device = vulkan_device_from_handle( client_device );
      struct vulkan_physical_device *physical_device = device->physical_device;
-@@ -910,7 +988,10 @@
+@@ -929,7 +1007,10 @@ static VkResult win32u_vkAllocateMemory( VkDevice client_device, const VkMemoryA
              *next = (*next)->pNext; next = &prev;
              break;
          case VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO: break;
@@ -174,7 +176,7 @@
          case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM: break;
          case VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO: break;
          case VK_STRUCTURE_TYPE_MEMORY_PRIORITY_ALLOCATE_INFO_EXT: break;
-@@ -920,11 +1001,23 @@
+@@ -939,12 +1020,24 @@ static VkResult win32u_vkAllocateMemory( VkDevice client_device, const VkMemoryA
  
      /* For host visible memory, we try to use VK_EXT_external_memory_host on wow64 to ensure that mapped pointer is 32-bit. */
      mem_flags = physical_device->memory_properties.memoryTypes[alloc_info->memoryTypeIndex].propertyFlags;
@@ -190,7 +192,7 @@
 +    }
  
      if (!(memory = calloc( 1, sizeof(*memory) ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
-+
+ 
 +    if (use_fd_buffer_mapping( physical_device ) && !image_allocation &&
 +        (mem_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !export_info && !import_win32 && !pointer_info)
 +    {
@@ -198,10 +200,11 @@
 +        alloc_info->pNext = &fd_export;
 +        memory->fd_mapping = !!(mem_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 +    }
- 
++
      if (import_win32)
      {
-@@ -984,6 +1077,17 @@
+         VkExternalMemoryHandleTypeFlagBits type;
+@@ -1002,6 +1095,17 @@ static VkResult win32u_vkAllocateMemory( VkDevice client_device, const VkMemoryA
  
      if ((res = device->p_vkAllocateMemory( device->host.device, alloc_info, NULL, &host_device_memory ))) goto failed;
  
@@ -219,7 +222,7 @@
      if (export_info)
      {
          if (!memory->local)
-@@ -1013,18 +1117,32 @@
+@@ -1034,18 +1138,32 @@ static VkResult win32u_vkAllocateMemory( VkDevice client_device, const VkMemoryA
      memory->size = alloc_info->allocationSize;
      memory->vm_map = mapping;
      instance->p_insert_object( instance, &memory->obj.obj );
@@ -252,12 +255,10 @@
      return VK_ERROR_OUT_OF_HOST_MEMORY;
  }
  
-@@ -1037,8 +1155,16 @@
+@@ -1058,8 +1176,16 @@ static void win32u_vkFreeMemory( VkDevice client_device, VkDeviceMemory client_m
  
      if (!client_memory) return;
      memory = device_memory_from_handle( client_memory );
--
--    if (memory->vm_map && !physical_device->external_memory_align)
 +    if (memory->emulate_coherent)
 +    {
 +        struct device_memory **entry;
@@ -266,12 +267,13 @@
 +            if (*entry == memory) { *entry = memory->coherent_next; break; }
 +        pthread_mutex_unlock( &coherent_guard );
 +    }
-+
+ 
+-    if (memory->vm_map && !physical_device->external_memory_align)
 +    if (memory->vm_map && !memory->fd_mapping && !physical_device->external_memory_align)
      {
          const VkMemoryUnmapInfoKHR info =
          {
-@@ -1049,6 +1175,7 @@
+@@ -1070,6 +1196,7 @@ static void win32u_vkFreeMemory( VkDevice client_device, VkDeviceMemory client_m
          device->p_vkUnmapMemory2KHR( device->host.device, &info );
      }
  
@@ -279,7 +281,7 @@
      device->p_vkFreeMemory( device->host.device, memory->obj.host.device_memory, NULL );
      instance->p_remove_object( instance, &memory->obj.obj );
  
-@@ -1134,6 +1261,56 @@
+@@ -1155,6 +1282,56 @@ static VkResult win32u_vkMapMemory2KHR( VkDevice client_device, const VkMemoryMa
          return VK_SUCCESS;
      }
  
@@ -336,7 +338,7 @@
      if (physical_device->map_placed_align)
      {
          SIZE_T alloc_size = memory->size;
-@@ -1210,7 +1387,7 @@
+@@ -1231,7 +1408,7 @@ static VkResult win32u_vkUnmapMemory2KHR( VkDevice client_device, const VkMemory
      VkMemoryUnmapInfoKHR info;
      VkResult res;
  
@@ -345,7 +347,7 @@
  
      if (!device->p_vkUnmapMemory2KHR)
      {
-@@ -1354,6 +1531,84 @@
+@@ -1375,6 +1552,84 @@ static void win32u_vkGetPhysicalDeviceExternalBufferPropertiesKHR( VkPhysicalDev
      get_physical_device_external_buffer_properties( physical_device, buffer_info, buffer_properties, instance->p_vkGetPhysicalDeviceExternalBufferPropertiesKHR );
  }
  
@@ -430,7 +432,7 @@
  static VkResult win32u_vkCreateImage( VkDevice client_device, const VkImageCreateInfo *create_info,
                                        const VkAllocationCallbacks *allocator, VkImage *image )
  {
-@@ -1361,6 +1616,7 @@
+@@ -1382,6 +1637,7 @@ static VkResult win32u_vkCreateImage( VkDevice client_device, const VkImageCreat
      struct vulkan_device *device = vulkan_device_from_handle( client_device );
      struct vulkan_physical_device *physical_device = device->physical_device;
      VkExternalMemoryImageCreateInfo host_external_info, *external_info = NULL;
@@ -438,7 +440,7 @@
  
      for (next = &prev->pNext; *next; prev = *next, next = &(*next)->pNext)
      {
-@@ -1394,7 +1650,29 @@
+@@ -1415,7 +1671,29 @@ static VkResult win32u_vkCreateImage( VkDevice client_device, const VkImageCreat
          ((VkImageCreateInfo *)create_info)->pNext = &host_external_info; /* cast away const, it has been copied in the thunks */
      }
  
@@ -469,12 +471,10 @@
  }
  
  static void win32u_vkGetDeviceImageMemoryRequirements( VkDevice client_device, const VkDeviceImageMemoryRequirements *image_requirements,
-@@ -2183,6 +2461,81 @@
-     WARN( "Failed to release keyed mutex 0x%s key 0x%s, status %#x\n", wine_dbgstr_longlong( mutex_info->pReleaseSyncs[i] ),
-           wine_dbgstr_longlong( mutex_info->pReleaseKeys[i] ), status );
+@@ -2206,6 +2484,81 @@ failed:
      return VK_ERROR_UNKNOWN;
-+}
-+
+ }
+ 
 +static VkResult finish_coherent_wait( struct vulkan_device *device, VkResult result )
 +{
 +    if (result == VK_SUCCESS) return sync_coherent_memory( device, TRUE );
@@ -548,10 +548,12 @@
 +{
 +    struct vulkan_device *device = vulkan_device_from_handle( handle );
 +    return finish_coherent_wait( device, device->p_vkGetSemaphoreCounterValueKHR( device->host.device, vulkan_semaphore_from_handle( semaphore )->host.semaphore, value ) );
- }
- 
++}
++
  static VkResult win32u_vkQueueSubmit( VkQueue client_queue, uint32_t count, const VkSubmitInfo *submits, VkFence client_fence )
-@@ -2341,6 +2694,7 @@
+ {
+     struct vulkan_fence *fence = client_fence ? vulkan_fence_from_handle( client_fence ) : NULL;
+@@ -2362,6 +2715,7 @@ static VkResult win32u_vkQueueSubmit( VkQueue client_queue, uint32_t count, cons
          }
      }
  
@@ -559,7 +561,7 @@
      res = device->p_vkQueueSubmit( queue->host.queue, count, submits, fence ? fence->host.fence : 0 );
  
  failed:
-@@ -2350,6 +2704,7 @@
+@@ -2371,6 +2725,7 @@ failed:
  
  static VkResult queue_submit( struct vulkan_queue *queue, uint32_t count, const VkSubmitInfo2 *submits, VkFence client_fence, PFN_vkQueueSubmit2 p_vkQueueSubmit2 )
  {
@@ -567,7 +569,7 @@
      struct vulkan_fence *fence = client_fence ? vulkan_fence_from_handle( client_fence ) : NULL;
      struct mempool pool = {0};
      VkResult res;
-@@ -2404,6 +2759,7 @@
+@@ -2425,6 +2780,7 @@ static VkResult queue_submit( struct vulkan_queue *queue, uint32_t count, const
          }
      }
  
@@ -575,7 +577,7 @@
      res = p_vkQueueSubmit2( queue->host.queue, count, submits, fence ? fence->host.fence : 0 );
  
  failed:
-@@ -2956,8 +3312,20 @@
+@@ -2984,8 +3340,20 @@ static struct vulkan_funcs vulkan_funcs =
      .p_vkAllocateMemory = win32u_vkAllocateMemory,
      .p_vkCreateBuffer = win32u_vkCreateBuffer,
      .p_vkCreateDevice = win32u_vkCreateDevice,
@@ -596,9 +598,41 @@
      .p_vkCreateInstance = win32u_vkCreateInstance,
      .p_vkCreateSemaphore = win32u_vkCreateSemaphore,
      .p_vkCreateSwapchainKHR = win32u_vkCreateSwapchainKHR,
+diff --git a/dlls/winevulkan/make_vulkan b/dlls/winevulkan/make_vulkan
+index 71a921ae..7b3da913 100755
+--- a/dlls/winevulkan/make_vulkan
++++ b/dlls/winevulkan/make_vulkan
+@@ -185,6 +185,14 @@ FUNCTION_OVERRIDES = {
+ 
+ # functions for which a user driver entry must be generated
+ USER_DRIVER_FUNCS = {
++    "vkDeviceWaitIdle",
++    "vkQueueWaitIdle",
++    "vkWaitForFences",
++    "vkGetFenceStatus",
++    "vkWaitSemaphores",
++    "vkWaitSemaphoresKHR",
++    "vkGetSemaphoreCounterValue",
++    "vkGetSemaphoreCounterValueKHR",
+     "vkAcquireNextImage2KHR",
+     "vkAcquireNextImageKHR",
+     "vkAllocateMemory",
+@@ -192,6 +200,10 @@ USER_DRIVER_FUNCS = {
+     "vkCreateDevice",
+     "vkCreateFence",
+     "vkCreateImage",
++    "vkDestroyImage",
++    "vkGetImageMemoryRequirements",
++    "vkGetImageMemoryRequirements2",
++    "vkGetImageMemoryRequirements2KHR",
+     "vkCreateInstance",
+     "vkCreateSemaphore",
+     "vkCreateSwapchainKHR",
+diff --git a/include/wine/vulkan_driver.h b/include/wine/vulkan_driver.h
+index d2209a3e..af2883d5 100644
 --- a/include/wine/vulkan_driver.h
 +++ b/include/wine/vulkan_driver.h
-@@ -89,7 +89,7 @@
+@@ -89,7 +89,7 @@ struct VkDevice_T
  #include "wine/list.h"
  
  /* Wine internal vulkan driver version, needs to be bumped upon vulkan_funcs changes. */
@@ -607,7 +641,7 @@
  
  struct vulkan_object
  {
-@@ -181,6 +181,7 @@
+@@ -181,6 +181,7 @@ struct vulkan_physical_device
      VkPhysicalDeviceMemoryProperties memory_properties;
      uint32_t external_memory_align;
      uint32_t map_placed_align;
@@ -615,7 +649,7 @@
  };
  
  static inline struct vulkan_physical_device *vulkan_physical_device_from_handle( VkPhysicalDevice handle )
-@@ -301,8 +302,20 @@
+@@ -301,8 +302,20 @@ struct vulkan_funcs
      PFN_vkAllocateMemory p_vkAllocateMemory;
      PFN_vkCreateBuffer p_vkCreateBuffer;
      PFN_vkCreateDevice p_vkCreateDevice;
@@ -636,31 +670,3 @@
      PFN_vkCreateInstance p_vkCreateInstance;
      PFN_vkCreateSemaphore p_vkCreateSemaphore;
      PFN_vkCreateSwapchainKHR p_vkCreateSwapchainKHR;
---- a/dlls/winevulkan/make_vulkan
-+++ b/dlls/winevulkan/make_vulkan
-@@ -185,6 +185,14 @@
- 
- # functions for which a user driver entry must be generated
- USER_DRIVER_FUNCS = {
-+    "vkDeviceWaitIdle",
-+    "vkQueueWaitIdle",
-+    "vkWaitForFences",
-+    "vkGetFenceStatus",
-+    "vkWaitSemaphores",
-+    "vkWaitSemaphoresKHR",
-+    "vkGetSemaphoreCounterValue",
-+    "vkGetSemaphoreCounterValueKHR",
-     "vkAcquireNextImage2KHR",
-     "vkAcquireNextImageKHR",
-     "vkAllocateMemory",
-@@ -192,6 +200,10 @@
-     "vkCreateDevice",
-     "vkCreateFence",
-     "vkCreateImage",
-+    "vkDestroyImage",
-+    "vkGetImageMemoryRequirements",
-+    "vkGetImageMemoryRequirements2",
-+    "vkGetImageMemoryRequirements2KHR",
-     "vkCreateInstance",
-     "vkCreateSemaphore",
-     "vkCreateSwapchainKHR",

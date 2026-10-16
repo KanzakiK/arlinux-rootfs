@@ -30,6 +30,29 @@ def verify_zink(prefix):
     return record
 
 
+def verify_components(pe_runtime):
+    """Reject PE inputs that silently omit required source-built components."""
+    records = {}
+    for name in ('arlinux-dcomp.json', 'arlinux-vkd3d.json'):
+        path = pe_runtime / name
+        if not path.is_file():
+            raise RuntimeError('Rebuild Wine PE modules; missing required component record: ' + name)
+        records[name] = json.loads(path.read_text())
+    patch = Path(__file__).parent / 'patches/wine-dcomp-content-lifetime.patch'
+    dcomp = records['arlinux-dcomp.json']
+    if (dcomp.get('commit') != '318eda0d8fa08ee94faadf6dc5ad85870339b327' or
+            dcomp.get('patchSHA256') != hashlib.sha256(patch.read_bytes()).hexdigest()):
+        raise RuntimeError('Rebuild Wine PE modules with the current DirectComposition fixes')
+    expected = json.loads((Path(__file__).parent / 'patches/wine-staging-vkd3d/manifest.json').read_text())
+    if records['arlinux-vkd3d.json'] != expected:
+        raise RuntimeError('Rebuild Wine PE modules with the current VKD3D refresh')
+    for arch in ('aarch64', 'i386', 'x86_64'):
+        for dll in ('dcomp', 'd3d12', 'd3d12core'):
+            if not (pe_runtime / 'files/lib/wine' / (arch + '-windows') / (dll + '.dll')).is_file():
+                raise RuntimeError('Missing required Wine PE module: ' + arch + '/' + dll)
+    return records
+
+
 def archive_runtime(root, archive):
     if archive.exists() or archive.with_name(archive.name + '.sha256').exists():
         raise FileExistsError('Runtime archive already exists: ' + str(archive))
@@ -70,8 +93,6 @@ def main():
     parser.add_argument('--graphics-prefix', type=Path)
     parser.add_argument('--dxvk-runtime', type=Path,
                         help='DXVK build with optional KHR_pipeline_library, containing ARCH-windows directories')
-    parser.add_argument('--dcomp-runtime', type=Path,
-                        help='Source build from tools/build/wine-bionic-dcomp.sh')
     parser.add_argument('--vulkan-driver', choices=['system', 'turnip', 'none'], default='system')
     parser.add_argument('--system-vulkan-adapter', type=Path,
                         help='Bionic libvulkan_android_desktop.so from tools/build/bionic-vulkan.py')
@@ -99,8 +120,9 @@ def main():
         if not args.graphics_prefix:
             parser.error('OpenGL requires a graphics prefix with Zink')
         graphics_record = verify_zink(args.graphics_prefix)
+    components = verify_components(args.pe_runtime)
     original = json.loads((args.pe_runtime / 'arlinux-runtime.json').read_text())
-    wine_commit = 'afe1b2beeeb1ecdc9152c082eaee552bbe572076'
+    wine_commit = '46af030d975f331ff6304a34a6b91c6147285c6d'
     if original['wine_commit'] != wine_commit or \
             original['fex_commit'] != '82510eb452b258959ef982be58a9c3c1bafc82a4':
         raise RuntimeError('Expected the matching packaged Wine and FEX PE modules')
@@ -112,12 +134,18 @@ def main():
         raise RuntimeError('Wine source archive commit does not match the packaged PE runtime')
     with source_archive.open('rb') as stream:
         source_archive_sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
-    source_asset = 'wine-source-' + wine_commit + '.tar.gz'
+    source_asset = 'wine-source-' + source_archive_sha256 + '.tar.gz'
     source_url = ('https://github.com/taowen/wine/releases/download/arlinux-wine-source-' +
-                  wine_commit + '/' + source_asset)
+                  source_archive_sha256 + '/' + source_asset)
     for name in ['libarm64ecfex.dll', 'libwow64fex.dll']:
         if not (args.pe_runtime / 'files/lib/wine/aarch64-windows' / name).is_file():
             raise RuntimeError('Missing Windows CPU module: ' + name)
+    source_target = args.output.parent / source_asset
+    if source_target.exists():
+        if hashlib.sha256(source_target.read_bytes()).hexdigest() != source_archive_sha256:
+            raise RuntimeError('Existing source asset has different contents')
+    elif source_archive.resolve() != source_target.resolve():
+        shutil.copyfile(source_archive, source_target)
     args.output.mkdir(parents=True, exist_ok=False)
     source = args.pe_runtime / 'files'
     destination = args.output / 'files'
@@ -131,29 +159,11 @@ def main():
         return []
 
     shutil.copytree(source, destination, symlinks=True, ignore=ignore)
-    dcomp_record = None
-    if args.dcomp_runtime:
-        revision = (args.dcomp_runtime / 'community-commit').read_text().strip()
-        if revision != '318eda0d8fa08ee94faadf6dc5ad85870339b327':
-            raise RuntimeError('Unexpected community DirectComposition revision')
-        sources = args.dcomp_runtime / 'wine-source.tar.gz'
-        with sources.open('rb') as stream:
-            source_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
-        for arch in ['aarch64', 'i386']:
-            name = 'lib/wine/' + arch + '-windows/dcomp.dll'
-            src = args.dcomp_runtime / 'files' / name
-            dst = destination / name
-            if not src.is_file():
-                raise RuntimeError('Missing DirectComposition module: ' + str(src))
-            if dst.is_symlink():
-                dst.unlink()
-            shutil.copyfile(src, dst)
-        dcomp_record = dict(repository='https://github.com/giang17/wine',
-                            commit=revision, sourceSHA256=source_sha)
-        configuration = destination / 'etc/dxvk.conf'
-        configuration.parent.mkdir(parents=True, exist_ok=True)
-        configuration.write_text('[msedgewebview2.exe]\n'
-                                 'dxgi.enableDummyCompositionSwapchain = True\n')
+    dcomp_record = components['arlinux-dcomp.json']
+    configuration = destination / 'etc/dxvk.conf'
+    configuration.parent.mkdir(parents=True, exist_ok=True)
+    configuration.write_text('[msedgewebview2.exe]\n'
+                             'dxgi.enableDummyCompositionSwapchain = True\n')
     if args.dxvk_runtime:
         for arch in ['aarch64', 'x86_64', 'i386']:
             target = destination / 'lib/wine/dxvk' / (arch + '-windows')

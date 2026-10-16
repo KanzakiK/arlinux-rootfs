@@ -25,6 +25,19 @@ def main():
         metadata = json.load(packed.extractfile('bionic-runtime.json'))
         if metadata.get('protocol') != 1 or metadata.get('libc') != 'bionic':
             raise ValueError('Expected the project Bionic Wine runtime')
+        required = ('directComposition', 'vkd3d', 'graphicsBuild')
+        if any(not metadata.get(name) for name in required):
+            raise ValueError('Runtime omits required build components: ' + ', '.join(required))
+        if metadata.get('vulkanCompat') != 'hybris' or metadata.get('openglDriver') != 'zink':
+            raise ValueError('Latest requires system Vulkan compatibility and Zink OpenGL')
+        if not all(metadata.get('backends', {}).get(name) for name in ('vulkan', 'opengl', 'audio', 'tls')):
+            raise ValueError('Latest requires Vulkan, OpenGL, audio and TLS backends')
+        for arch in ('aarch64', 'i386', 'x86_64'):
+            for dll in ('dcomp', 'd3d12', 'd3d12core'):
+                if f'files/lib/wine/{arch}-windows/{dll}.dll' not in metadata['files']:
+                    raise ValueError('Latest omits required module: ' + arch + '/' + dll)
+        if 'files/etc/dxvk.conf' not in metadata['files']:
+            raise ValueError('Latest omits the WebView2 composition configuration')
         expected = dict(metadata['files'])
         for member in packed:
             name = member.name.removeprefix('./')
@@ -47,7 +60,7 @@ def main():
     if source_checksum != source['archiveSHA256']:
         raise ValueError('Wine source archive SHA-256 does not match bionic-runtime.json')
     expected_source_url = ('https://github.com/taowen/wine/releases/download/arlinux-wine-source-' +
-                           source['commit'] + '/' + source['archiveName'])
+                           source['archiveSHA256'] + '/' + source['archiveName'])
     if source['archiveURL'] != expected_source_url:
         raise ValueError('wineSource.archiveURL must use the immutable source release tag')
     asset = 'arlinux-wine-bionic.tar.gz'
@@ -58,7 +71,7 @@ def main():
     if args.check:
         return
     command = ['gh', 'release']
-    source_tag = 'arlinux-wine-source-' + source['commit']
+    source_tag = 'arlinux-wine-source-' + source['archiveSHA256']
     source_view = subprocess.run(command + ['view', source_tag, '-R', 'taowen/wine',
                                             '--json', 'assets'], capture_output=True, text=True)
     if source_view.returncode:

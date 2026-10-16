@@ -27,7 +27,7 @@ windows_accessibility="${ARLINUX_WINDOWS_ACCESSIBILITY:-$repo/build/windows-acce
 
 
 steamworks="${ARLINUX_STEAMWORKS_PAYLOAD:-$repo/build/steamworks-payload}"
-steamworks_files=(lsteambridge-server aarch64-windows/steam.exe
+steamworks_files=(lsteambridge-server aarch64-windows/steam.exe aarch64-windows/lsteamclient.dll
     aarch64-unix/lsteamclient.so aarch64-unix/steamclient.so aarch64-unix/steamclient64.so
     i386-windows/lsteamclient.dll x86_64-windows/lsteamclient.dll
     LICENSE.bridge LICENSE.lsteamclient upstream-revision)
@@ -93,6 +93,7 @@ input_id() {
                 | sort -z | xargs -0 -r sha256sum)
         git -C "distributions/$product" submodule status --recursive || true
         (cd "$steamworks"; sha256sum "${steamworks_files[@]}")
+        sha256sum "$windows_accessibility"
         printf '%s\n' "$gpu_inputs"
         true
     } | sha256sum | cut -d' ' -f1

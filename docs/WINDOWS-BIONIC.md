@@ -42,6 +42,24 @@ workflow's three regression tests passed. This is compilation validation;
 the refreshed runtime has not yet passed Android device acceptance or replaced
 the published latest runtime.
 
+## Required default build components
+
+`wine-pe.sh` now prepares the pinned community DirectComposition implementation
+and `wine-dcomp-content-lifetime.patch` before compiling all PE architectures.
+It shares `prepare-wine-dcomp.sh` with the focused DComp build; an extra DComp
+packaging overlay is no longer required. Both PE and Bionic packaging require
+DComp and VKD3D provenance, and all aarch64/i386/x86_64 DComp and D3D12 modules.
+The WebView2 DXVK composition configuration is installed automatically.
+
+The latest publisher rejects runtimes missing DComp, VKD3D, the graphics build
+record, Zink, system Vulkan compatibility, audio, TLS or composition config.
+Bionic packaging archives the exact private source tree including its native
+patches, copies the source archive beside the runtime, and names source assets
+and immutable release tags by source SHA-256. Different local patches to the
+same Wine commit therefore cannot collide in an immutable source release.
+These are build requirements; successful packaging does not replace device
+acceptance for Power BI or Steam games.
+
 ## Build
 
 Run all commands in the `arlinux-rootfs` checkout. Wine PE/native builds,
@@ -49,10 +67,10 @@ DXVK, Vulkan adapter, patches, packaging and publication are maintained here.
 The Android host repository consumes the resulting distribution and download
 manifest; it is not needed for these Wine build scripts.
 
-Use a complete source tree from the existing Wine source archive, including
-`dlls/combase/parameterized.c`. A bare export of the current Wine Git revision
-omits that file. Supply native Wine build tools from the same version and a
-Bionic dependency prefix with X11, XCB, FreeType, and Fontconfig.
+Use the pinned `third_party/wine` revision, which tracks
+`dlls/combase/parameterized.c`. The PE build creates matching native Wine tools;
+supply those tools to the Bionic build, together with a dependency prefix
+containing X11, XCB, FreeType, and Fontconfig.
 
 Build TLS and graphics dependencies and provide the native PulseAudio client
 prefix used by the Android audio server:
@@ -346,7 +364,7 @@ python tools/publish-wine-latest.py PATH_TO_TESTED_ARCHIVE \
 ```
 
 The publisher verifies both archives, uploads the source once to the immutable
-`arlinux-wine-source-<commit>` release, replaces the `latest` runtime asset,
+`arlinux-wine-source-<source-sha256>` release, replaces the `latest` runtime asset,
 checks GitHub's asset digest, then updates the rootfs download pin. Use
 `--check` to validate without publishing. Rebuild distribution/APK bundles after
 updating the pin. On a clean installation, the latest channel resolves the
@@ -354,3 +372,27 @@ current GitHub asset ID and SHA-256, so an older APK can fetch the current
 runtime. Installed runtimes are reused until Linux reinstallation clears the
 shared Wine store and its archive cache. Personal files, installed applications
 and unrelated vendor downloads are retained.
+
+## Upstream development refresh (2026-10-16)
+
+The source input is now pinned to ARLinux merge `46af030d975f331ff6304a34a6b91c6147285c6d`,
+which includes upstream `7b573fd7522d7e78957bdba1b175c717303923e8` (2026-10-15).
+Upstream still calls this development tree Wine 11.19; this is not a Wine 11.20 release.
+The Android address-space adaptation was reconciled with upstream's removal of
+the old free-range allocation. The WOW64 Vulkan memory patch was rebased to the
+new allocation declarations. The WinRT parameterized-interface implementation
+is tracked in the source commit, rather than recovered from an older build.
+
+`wine-pe.sh` builds native Wine tools from its own private source tree before
+configuring PE modules. Reusing an unrelated older makedep/widl is unsupported.
+The new source, native tools and PE build are validated together; a completed
+PE build alone does not establish Android or Power BI acceptance.
+
+PE build retries reuse a content-addressed directory under `build/wine-pe/`.
+The key covers the Wine commit, component preparation scripts and patches,
+compiler/linker binaries, and native build-tool versions. A per-directory lock
+rejects concurrent builds with identical inputs. Completed configure steps and
+object files survive compilation or packaging failures; changing an input uses
+a separate directory. `JOBS` and the output path do not invalidate the cache.
+`tests/test-wine-pe-retry.py` exercises failed compilation, repeated packaging,
+and invalidation after patch changes with a lightweight build fixture.

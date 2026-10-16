@@ -27,9 +27,6 @@ fi
 if [[ -n "${BIONIC_DXVK_RUNTIME:-}" ]]; then
     vulkan_args+=(--dxvk-runtime "$BIONIC_DXVK_RUNTIME")
 fi
-if [[ -n "${BIONIC_DCOMP_RUNTIME:-}" ]]; then
-    vulkan_args+=(--dcomp-runtime "$BIONIC_DCOMP_RUNTIME")
-fi
 if [[ "$vulkan_driver" == system ]]; then
     [[ -d "${BIONIC_DXVK_RUNTIME:-}" ]] || {
         echo 'Build tools/build/bionic-dxvk.sh and set BIONIC_DXVK_RUNTIME.' >&2; exit 2;
@@ -50,7 +47,7 @@ python3 - "$pe_runtime" <<'PY'
 import json, sys
 from pathlib import Path
 manifest = json.loads((Path(sys.argv[1]) / 'arlinux-runtime.json').read_text())
-assert manifest['wine_commit'] == 'afe1b2beeeb1ecdc9152c082eaee552bbe572076', 'Expected the packaged ARLinux Wine 11.19 runtime'
+assert manifest['wine_commit'] == '46af030d975f331ff6304a34a6b91c6147285c6d', 'Expected the packaged ARLinux Wine 11.19 runtime'
 assert manifest['fex_commit'] == '82510eb452b258959ef982be58a9c3c1bafc82a4', 'FEX PE modules differ from the native helper source'
 PY
 python3 - "$fex_source" <<'PY'
@@ -70,11 +67,15 @@ mkdir "$stage/source"
 tar -C "$source_dir" --exclude=.git --exclude=autom4te.cache -cf - . | tar -xf - -C "$stage/source"
 source_dir="$stage/source"
 python3 "$repo/tools/build/refresh-wine-vkd3d.py" "$source_dir"
+bash "$repo/tools/build/prepare-wine-dcomp.sh" "$source_dir"
 python3 - "$source_dir/arlinux-vkd3d.json" "$pe_runtime/arlinux-vkd3d.json" <<'PY'
 import json, sys
 from pathlib import Path
 assert Path(sys.argv[2]).is_file(), 'Rebuild Wine PE modules with the pinned VKD3D refresh first'
 assert json.loads(Path(sys.argv[1]).read_text()) == json.loads(Path(sys.argv[2]).read_text()), 'Native and PE VKD3D revisions differ'
+for parent in [Path(sys.argv[1]).parent, Path(sys.argv[2]).parent]:
+    assert (parent/'arlinux-dcomp.json').is_file(), 'Rebuild Wine PE with DirectComposition first'
+assert json.loads((Path(sys.argv[1]).parent/'arlinux-dcomp.json').read_text()) == json.loads((Path(sys.argv[2]).parent/'arlinux-dcomp.json').read_text()), 'Native and PE DirectComposition sources differ'
 PY
 if ! grep -q '/apex/com.android.conscrypt/cacerts' "$source_dir/dlls/crypt32/unixlib.c"; then
     patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-certificates.patch"
@@ -124,8 +125,18 @@ grep -q '^#define SONAME_LIBVULKAN ' "$stage/core/include/config.h" || {
 "$CXX" -std=c++17 -shared -fPIC -static-libstdc++ -O2 -Wl,-z,defs \
     -Wl,-z,max-page-size=16384 "$stage/fex/FEXUnixLib.cpp" -o "$stage/fex/libarm64ecfex.so"
 cp "$stage/fex/libarm64ecfex.so" "$stage/fex/libwow64fex.so"
+tar -czf "$stage/wine-source.tar.gz" -C "$stage" source
 python3 "$repo/tools/package-wine-bionic.py" --core "$stage/core" --fex "$stage/fex" \
     --native-prefix "$prefix" --dependency-prefix "$tls" --dependency-prefix "$pulse" \
     --graphics-prefix "$graphics" --ndk "$ndk" --pe-runtime "$pe_runtime" --output "$output" \
+    --wine-source-archive "$stage/wine-source.tar.gz" \
     "${vulkan_args[@]}"
+# Local build metadata is written after archive creation; private source/build
+# paths never enter the redistributable runtime archive.
+python3 - "$stage" "$output" <<'BUILD_STATE'
+import json, sys
+from pathlib import Path
+stage, output = map(Path, sys.argv[1:])
+(output/'build-state.json').write_text(json.dumps({'source': str(stage/'source'), 'core': str(stage/'core')}) + '\n')
+BUILD_STATE
 echo "Built experimental Bionic runtime: $output"
