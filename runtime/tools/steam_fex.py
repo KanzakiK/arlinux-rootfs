@@ -102,8 +102,11 @@ def base_packages(cache):
     if not marker.exists():
         (apt/'lists/partial').mkdir(parents=True, exist_ok=True)
         source = apt/'sources.list'
+        language = Path('/etc/arlinux-steam-language')
+        chinese = language.is_file() and language.read_text().strip() == 'zh'
+        mirror = 'https://mirrors.tuna.tsinghua.edu.cn/debian' if chinese else 'https://deb.debian.org/debian'
         source.write_text('deb [arch=amd64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] '
-                          'https://mirrors.tuna.tsinghua.edu.cn/debian bookworm main\n')
+                          + mirror + ' bookworm main\n')
         options = ['-o', 'APT::Architecture=amd64', '-o', 'APT::Architectures=amd64',
                    '-o', f'Dir::Etc::sourcelist={source}', '-o', 'Dir::Etc::sourceparts=-',
                    '-o', f'Dir::State::lists={apt / "lists"}', '-o', 'APT::Sandbox::User=root']

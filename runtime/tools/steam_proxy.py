@@ -1,9 +1,8 @@
-"""Instance-local Steam HTTPS relay using distribution nginx and a private CA.
+"""Prepare instance-local trust for the Android Kotlin Steam HTTPS relay.
 
 Keep the HTTP Steam Host while using a verified Akamai TLS name upstream.
 Certificates and services are never shared between Linux instances.
 """
-from contextlib import contextmanager
 import hashlib
 import os
 from pathlib import Path
@@ -12,7 +11,6 @@ import socket
 import ssl
 import subprocess
 import tempfile
-import threading
 import time
 
 DOMAINS = (
@@ -107,17 +105,17 @@ def write_hosts(activate):
 
 
 def dependencies():
-    if all(shutil.which(name) for name in ('nginx', 'openssl', 'certutil', 'update-ca-certificates')):
+    if all(shutil.which(name) for name in ('openssl', 'certutil', 'update-ca-certificates')):
         return
     if shutil.which('apt-get'):
         subprocess.run(['sudo', 'apt-get', 'update'], check=True)
         subprocess.run(['sudo', 'apt-get', 'install', '-y', '--no-install-recommends',
-                        'nginx-light', 'openssl', 'libnss3-tools', 'ca-certificates'], check=True)
+                        'openssl', 'libnss3-tools', 'ca-certificates'], check=True)
     elif shutil.which('pacman'):
         subprocess.run(['sudo', 'pacman', '-S', '--needed', '--noconfirm',
-                        'nginx', 'openssl', 'nss', 'ca-certificates-utils'], check=True)
+                        'openssl', 'nss', 'ca-certificates-utils'], check=True)
     else:
-        raise RuntimeError('Install nginx, OpenSSL and certutil for the Chinese Steam relay')
+        raise RuntimeError('Install OpenSSL and certutil for the Chinese Steam relay')
 
 
 def run(*arguments):
@@ -176,99 +174,29 @@ def trust(ca):
     run('certutil', '-A', '-d', database, '-n', CA_NAME, '-t', 'C,,', '-i', str(ca))
 
 
-def configuration(directory):
-    # No access log: request URLs, cookies, login state and bodies are private.
-    upstreams = '\n'.join('server ' + d + ':443 max_fails=2 fail_timeout=5s;' for d in UPSTREAMS)
-    return f'''worker_processes 1;
-pid "{directory}/nginx.pid";
-error_log /dev/null;
-events {{ worker_connections 256; }}
-http {{
-    access_log off;
-    client_body_temp_path "{directory}/body";
-    proxy_temp_path "{directory}/proxy";
-    map $http_upgrade $upgrade_connection {{ default upgrade; '' close; }}
-    upstream steam_edge {{ least_conn; {upstreams} }}
-    server {{ listen {ADDRESS}:443 ssl default_server; ssl_reject_handshake on; }}
-    server {{
-        listen {ADDRESS}:443 ssl;
-        server_name {' '.join(DOMAINS)};
-        ssl_certificate "{directory}/server.crt";
-        ssl_certificate_key "{directory}/server.key";
-        ssl_protocols TLSv1.2 TLSv1.3;
-        client_max_body_size 32m;
-        location / {{
-            proxy_pass https://steam_edge;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $upgrade_connection;
-            proxy_ssl_server_name on;
-            proxy_ssl_name {SNI};
-            proxy_ssl_verify on;
-            proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
-            proxy_connect_timeout 5s;
-            proxy_read_timeout 120s;
-            proxy_next_upstream error timeout http_502 http_503 http_504;
-            proxy_next_upstream_tries 4;
-            proxy_next_upstream_timeout 15s;
-            proxy_buffering off;
-            proxy_request_buffering off;
-        }}
-    }}
-}}
-'''
-
-
-@contextmanager
-def session():
-    """Start before Steam, remove redirects before stopping the local service."""
-    write_hosts(False)  # Remove redirects left by a crashed previous session.
+def prepare():
+    """Prepare certificates and guest trust; Android serves TLS and HTTP."""
+    write_hosts(False)
     if not enabled():
-        yield
-        return
+        return False
     dependencies()
     directory = Path.home()/'.local/share/arlinux/steam-proxy'
     ca, cert = certificates(directory)
     trust(ca)
-    for name in ('body', 'proxy'):
-        (directory/name).mkdir(mode=0o700, exist_ok=True)
-    config = directory/'nginx.conf'
-    config.write_text(configuration(directory))
-    config.chmod(0o600)
-    run('nginx', '-t', '-p', str(directory) + '/', '-c', str(config))
-    service = subprocess.Popen(['nginx', '-p', str(directory) + '/', '-c', str(config), '-g', 'daemon off;'],
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    stopped = threading.Event()
-    def watch():
-        while not stopped.wait(2):
-            if service.poll() is not None or not enabled():
-                write_hosts(False)
-                return
-    try:
-        deadline = time.monotonic() + 5
-        tls = ssl.create_default_context(cafile=str(ca))
-        while True:
-            if service.poll() is not None:
-                raise RuntimeError('Steam HTTPS relay failed to start')
-            try:
-                with socket.create_connection((ADDRESS, 443), timeout=.5) as connection:
-                    with tls.wrap_socket(connection, server_hostname=DOMAINS[0]):
-                        break
-            except (OSError, ssl.SSLError):
-                if time.monotonic() > deadline:
-                    raise RuntimeError('Steam HTTPS relay did not open its listener')
-                time.sleep(.1)
-        write_hosts(True)
-        threading.Thread(target=watch, daemon=True).start()
-        print('Chinese Steam HTTPS relay ready (private instance certificate; verified Akamai upstream).', flush=True)
-        yield
-    finally:
-        stopped.set()
-        write_hosts(False)
-        service.terminate()
+    return True
+
+
+def activate():
+    ca = Path.home()/'.local/share/arlinux/steam-proxy/ca.crt'
+    deadline = time.monotonic() + 5
+    tls = ssl.create_default_context(cafile=str(ca))
+    while True:
         try:
-            service.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            service.kill()
-            service.wait()
+            with socket.create_connection((ADDRESS, 443), timeout=.5) as connection:
+                with tls.wrap_socket(connection, server_hostname=DOMAINS[0]):
+                    break
+        except (OSError, ssl.SSLError):
+            if time.monotonic() > deadline:
+                raise RuntimeError('Steam HTTPS relay did not open its listener')
+            time.sleep(.1)
+    write_hosts(True)

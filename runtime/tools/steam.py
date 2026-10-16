@@ -329,32 +329,6 @@ def runtime_installed(root):
         return False
 
 
-def bootstrap_runtime(binary, root, arguments):
-    """Restart the first session after Steam installs its native game depots.
-
-    The graphics provider environment must be set before the client starts.
-    Let Valve finish its downloads and close normally; never kill a busy client.
-    """
-    with subprocess.Popen([str(binary), *arguments]) as client:
-        while True:
-            try:
-                return client.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                if not runtime_installed(root):
-                    continue
-            print('Game runtimes downloaded. Restarting Steam to prepare graphics.', flush=True)
-            try:
-                send_client_command(root, ['-shutdown'])
-            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-                print(f'Steam restart request failed: {error}. Close Steam normally '
-                      'to finish game setup.', flush=True)
-                return client.wait()
-            try:
-                status = client.wait(timeout=60)
-            except subprocess.TimeoutExpired:
-                print('Steam is still busy. Close it normally to finish game setup.', flush=True)
-                return client.wait()
-            return 42 if status == 0 else status
 
 
 def client_running():
@@ -435,42 +409,53 @@ def send_client_command(root, arguments):
 
 
 def launch(root, arguments):
+    """Prepare once, then replace this process with Valve; Android owns side services."""
     binary = root/'steamrtarm64/steam'
     if not binary.is_file():
         raise RuntimeError('Steam installation has no native ARM64 executable')
-    # Do not rewrite compatibility configuration or run a second client when
-    # the user clicks the launcher again. Valve owns command delivery.
     if client_running():
         send_client_command(root, arguments or ['steam://open/main'])
         return 0
-    # Steam's dual-stack CDN connections can stall on Android even after its
-    # IPv6 connectivity probe succeeds. Use Valve's IPv4 mode for this client
-    # session so game/runtime/shader downloads do not block the first Play.
     arguments = ['-noipv6', *[arg for arg in arguments if arg != '-noipv6']]
     ensure_dependencies()
-    # GPU overlays are extracted after the rootfs is built. Refresh the native
-    # cache so pressure-vessel can discover their complete ELF dependencies.
     if Path('/etc/ld.so.conf.d/00-arlinux-graphics.conf').is_file():
         subprocess.run(['sudo', 'ldconfig'], check=True)
     links(root)
     from steam_fex import configure
     from steam_bionic import configure as configure_bionic
-    from steam_proxy import session as proxy_session
+    from steam_proxy import prepare, activate, write_hosts, ADDRESS
+    configure_bionic(root)
+    ready = runtime_installed(root)
+    if ready:
+        configure(root)
+    relay = prepare()
+    import socket
+    request = json.dumps({'home': str(Path.home()), 'arguments': arguments,
+                          'prepareRuntime': not ready, 'relay': relay,
+                          'address': ADDRESS}).encode() + b'\n'
+    # The host service is global to this Android package and guest lifecycle.
+    package = Path(os.environ['BIONICX_FILES']).parent.name
+    with socket.socket(socket.AF_UNIX) as control:
+        control.settimeout(30)
+        control.connect('\0' + package + '.steam-session')
+        control.sendall(request)
+        response = bytearray()
+        while not response.endswith(b'\n'):
+            block = control.recv(4096)
+            if not block or len(response) > 65536:
+                raise RuntimeError('Steam host service did not acknowledge preparation')
+            response.extend(block)
+        if not json.loads(response)['ok']:
+            raise RuntimeError('Steam host service could not prepare the session')
+    if relay:
+        try:
+            activate()
+        except Exception:
+            write_hosts(False)
+            raise
     os.chdir(root)
-    with proxy_session():
-        while True:
-            configure_bionic(root)
-            if runtime_installed(root):
-                configure(root)
-                status = subprocess.run([str(binary), *arguments]).returncode
-            else:
-                status = bootstrap_runtime(binary, root, arguments)
-            if status != 42:  # Valve updater or first-time runtime setup restart.
-                if status < 0:
-                    print(f'Steam stopped with signal {-status}. '
-                          f'Client logs: {root / "logs"}', file=sys.stderr)
-                    return 128 - status
-                return status
+    os.execv(str(binary), [str(binary), *arguments])
+
 
 
 def require_robust_futex():
@@ -497,14 +482,25 @@ def main():
     previous = (Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share'))/'Steam').resolve()
     root = shared.ROOT/'steam'
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--command', action='store_true')
     parser.add_argument('--desktop', action='store_true',
                         help='Keep the launcher terminal open if startup fails')
     parser.add_argument('--update', action='store_true', help='Refresh the native bootstrap, then run Valve updater')
     parser.add_argument('--channel', choices=CHANNELS, help='Select a Valve ARM64 channel (default: stable)')
     args, steam_arguments = parser.parse_known_args()
     require_robust_futex()
-    # Hold the lock for the entire client session, not just installation. A
-    # second instance must not update the same depots or launch another client.
+    if args.command:
+        send_client_command(root, steam_arguments)
+        return 0
+    # Retain a single lifetime lock across exec without a supervising process.
+    session = (shared.directory('locks')/'steam-session.lock').open('a')
+    try:
+        fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        send_client_command(root, steam_arguments or ['steam://open/main'])
+        return 0
+    os.set_inheritable(session.fileno(), True)
+    # The preparation lock is close-on-exec; only the lifetime lock survives.
     with (shared.directory('locks')/'steam.lock').open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
