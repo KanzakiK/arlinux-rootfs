@@ -166,6 +166,13 @@ def main():
         return []
 
     shutil.copytree(source, destination, symlinks=True, ignore=ignore)
+    # Keep the HID driver's private Unix ABI paired with the native backend.
+    for arch in ('aarch64', 'i386', 'x86_64'):
+        driver = args.core / 'dlls/winebus.sys' / (arch + '-windows/winebus.sys')
+        target = destination / 'lib/wine' / (arch + '-windows/winebus.sys')
+        if target.is_symlink():
+            target.unlink()
+        shutil.copyfile(driver, target)
     dcomp_record = components['arlinux-dcomp.json']
     configuration = destination / 'etc/dxvk.conf'
     configuration.parent.mkdir(parents=True, exist_ok=True)
@@ -262,6 +269,15 @@ def main():
         target = destination / 'share/vulkan/explicit_layer.d/VkLayer_hybris_compat.json'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(manifest, indent=2) + '\n')
+    # Ship the LGPL-derived backend and its source preparation alongside Wine.
+    gamepad_sources = Path(__file__).resolve().parents[1]
+    gamepad_destination = destination / 'share/arlinux/winebus'
+    gamepad_destination.mkdir(parents=True, exist_ok=True)
+    for name in ('bus_arlinux.h', 'README.md'):
+        shutil.copyfile(gamepad_sources / 'native/winebus' / name, gamepad_destination / name)
+    shutil.copyfile(gamepad_sources / 'tools/build/prepare-wine-gamepad.py',
+                    gamepad_destination / 'prepare-wine-gamepad.py')
+    shutil.copyfile(gamepad_sources / 'third_party/wine/COPYING.LIB', gamepad_destination / 'COPYING.LIB')
     packaging = optimize(args.output, strip)
     for path in sorted(destination.rglob('*')):
         if path.is_file() and not path.is_symlink():
@@ -278,7 +294,7 @@ def main():
                     vulkanCompat='hybris' if compat_layer else 'none',
                     openglDriver='zink' if opengl else 'none',
                     graphicsBuild=graphics_record,
-                    backends=dict(vulkan=(unix / 'winevulkan.so').exists(),
+                    backends=dict(gamepad=True, vulkan=(unix / 'winevulkan.so').exists(),
                                   opengl=opengl,
                                   audio=(unix / 'winepulse.so').exists(),
                                   tls=bool(list(unix.glob('libgnutls.so*')))),

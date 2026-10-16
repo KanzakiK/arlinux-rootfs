@@ -68,6 +68,7 @@ tar -C "$source_dir" --exclude=.git --exclude=autom4te.cache -cf - . | tar -xf -
 source_dir="$stage/source"
 python3 "$repo/tools/build/refresh-wine-vkd3d.py" "$source_dir"
 bash "$repo/tools/build/prepare-wine-dcomp.sh" "$source_dir"
+python3 "$repo/tools/build/prepare-wine-gamepad.py" "$source_dir"
 python3 - "$source_dir/arlinux-vkd3d.json" "$pe_runtime/arlinux-vkd3d.json" <<'PY'
 import json, sys
 from pathlib import Path
@@ -121,6 +122,9 @@ grep -q '^#define SONAME_LIBVULKAN ' "$stage/core/include/config.h" || {
     cd "$stage/core"
     mapfile -t modules < <(sed -n -E 's/^(dlls\/[^ :]*\.so):.*/\1/p' Makefile)
     make -j"${JOBS:-8}" loader/wine server/wineserver "${modules[@]}"
+    # winebus PE and Unix halves exchange private structures. Build the driver
+    # from this same prepared source instead of reusing a potentially older PE.
+    make -j"${JOBS:-8}" dlls/winebus.sys/{aarch64,i386,x86_64}-windows/winebus.sys
 ) > "$stage/build.log" 2>&1
 "$CXX" -std=c++17 -shared -fPIC -static-libstdc++ -O2 -Wl,-z,defs \
     -Wl,-z,max-page-size=16384 "$stage/fex/FEXUnixLib.cpp" -o "$stage/fex/libarm64ecfex.so"

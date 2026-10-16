@@ -96,14 +96,44 @@ int wmain(int argc, WCHAR **argv)
     if (separator) { *separator = 0; if (!SetCurrentDirectoryW(cwd)) { free(command); return 2; } }
     STARTUPINFOW startup = { .cb = sizeof(startup) };
     PROCESS_INFORMATION child;
-    BOOL started = CreateProcessW(NULL, command, NULL, NULL, FALSE, 0,
+    /* Bootstrap launchers can exit before their actual game. Keep the facade
+     * (and the Linux Steamworks bridge waiting for it) alive for every child.
+     * Suspend creation so even a very short bootstrapper joins the job before
+     * it can spawn a process. No kill-on-close limit: normal game exit owns
+     * cleanup, and closing our bookkeeping handle must not kill a game. */
+    HANDLE job = CreateJobObjectW(NULL, NULL);
+    if (!job) { free(command); return GetLastError(); }
+    BOOL started = CreateProcessW(NULL, command, NULL, NULL, FALSE, CREATE_SUSPENDED,
                                   NULL, NULL, &startup, &child);
     free(command);
-    if (!started) return GetLastError();
+    if (!started) { DWORD error = GetLastError(); CloseHandle(job); return error; }
+    if (!AssignProcessToJobObject(job, child.hProcess)) {
+        DWORD error = GetLastError();
+        TerminateProcess(child.hProcess, error);
+        CloseHandle(child.hThread); CloseHandle(child.hProcess); CloseHandle(job);
+        return error;
+    }
+    if (ResumeThread(child.hThread) == (DWORD)-1) {
+        DWORD error = GetLastError();
+        TerminateProcess(child.hProcess, error);
+        CloseHandle(child.hThread); CloseHandle(child.hProcess); CloseHandle(job);
+        return error;
+    }
     CloseHandle(child.hThread);
     WaitForSingleObject(child.hProcess, INFINITE);
     DWORD code = 1;
     GetExitCodeProcess(child.hProcess, &code);
     CloseHandle(child.hProcess);
+    for (;;) {
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting;
+        if (!QueryInformationJobObject(job, JobObjectBasicAccountingInformation,
+                                       &accounting, sizeof(accounting), NULL)) {
+            code = GetLastError();
+            break;
+        }
+        if (!accounting.ActiveProcesses) break;
+        Sleep(100);
+    }
+    CloseHandle(job);
     return code;
 }

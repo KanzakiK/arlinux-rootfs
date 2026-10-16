@@ -132,7 +132,8 @@ def build_wine(cache, framework, android, paths, common, invoke, env):
         'wine-graphics': ('tools/build/wine-bionic-graphics.sh', 'third_party/mesa', 'graphics-protocols'),
         'wine-vulkan': ('tools/build/bionic-vulkan.py', 'third_party/libhybris', 'third_party/android-headers', 'tools/patches'),
         'wine-bionic': ('tools/build/wine-bionic.sh', 'tools/package-wine-bionic.py', 'tools/build/refresh-wine-vkd3d.py',
-                        'tools/build/prepare-wine-dcomp.sh', 'tools/patches', 'tools/wine_pe_debug.py'),
+                        'tools/build/prepare-wine-dcomp.sh', 'tools/build/prepare-wine-gamepad.py',
+                        'native/winebus', 'tools/patches', 'tools/wine_pe_debug.py'),
     }
     def stage(name, command, dependencies=()):
         inputs = {k: v for k, v in common.items() if k not in ('sources', 'wineSources', 'pulseRecipe')}
