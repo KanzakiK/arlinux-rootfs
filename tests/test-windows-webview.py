@@ -20,13 +20,13 @@ class WebViewTests(unittest.TestCase):
 
     def test_game_preparation_keeps_identity_and_checks_registry_failures(self):
         env = {'SteamAppId': '2758540'}
-        with patch.object(webview, 'ensure_runtime', return_value=Path('/browser')), \
+        with patch.object(webview, 'install_into_prefix', return_value=Path('/prefix/pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application/runtime')), \
              patch.object(webview.windows, 'host_path', return_value=Path('/private/browser')), \
              patch.object(webview.windows, 'run') as run:
             prepared = webview.prepare_game(Path('/wine'), Path('/prefix'), '/games/我的小鲨鱼.exe', env)
             self.assertEqual(prepared['SteamAppId'], '2758540')
             self.assertEqual(env, {'SteamAppId': '2758540'})
-            self.assertEqual(prepared['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'], r'Z:\private\browser')
+            self.assertEqual(prepared['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'], r'C:\Program Files\Microsoft\EdgeWebView\Application\runtime')
             self.assertIn('--use-angle=vulkan', prepared['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'])
             self.assertNotIn('--disable-gpu ', prepared['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'])
             self.assertEqual(run.call_count, 2)
@@ -34,6 +34,15 @@ class WebViewTests(unittest.TestCase):
             run.side_effect = RuntimeError('registry failed')
             with self.assertRaises(RuntimeError):
                 webview.prepare_game(Path('/wine'), Path('/prefix'), '/games/我的小鲨鱼.exe', env)
+
+    def test_browser_path_does_not_expose_long_android_prefix(self):
+        prefix = Path('/data/user/0/io.taowen.arlinux.dev/files/instances/yibu-test/home/'
+                      '.local/share/arlinux/windows-bionic/prefix')
+        browser = prefix / 'pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application/runtime'
+        self.assertEqual(webview.browser_windows_path(prefix, browser),
+                         r'C:\Program Files\Microsoft\EdgeWebView\Application\runtime')
+        with self.assertRaises(ValueError):
+            webview.browser_windows_path(prefix, Path('/outside/runtime'))
 
     def test_corrupted_cached_runtime_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:

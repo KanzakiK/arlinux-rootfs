@@ -184,7 +184,7 @@ def powerbi_environment(prefix):
     browser = windows_webview.install_into_prefix(prefix)
     return {
         'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER':
-            'Z:' + str(windows.host_path(browser)).replace('/', '\\'),
+            windows_webview.browser_windows_path(prefix, browser),
         'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': POWERBI_WEBVIEW_FLAGS,
     }
 

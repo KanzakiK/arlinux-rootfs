@@ -97,6 +97,16 @@ def install_into_prefix(prefix):
     return destination
 
 
+def browser_windows_path(prefix, browser):
+    """Use the canonical C: path, avoiding Android paths exceeding MAX_PATH.
+
+    WebView queries its own image into a MAX_PATH buffer and terminates when
+    launched through the much longer Android-backed Z: alias.
+    """
+    relative = browser.relative_to(prefix / 'pfx/drive_c')
+    return 'C:\\' + str(relative).replace('/', '\\')
+
+
 def prepare_game(root, prefix, executable, environment):
     """Apply only the tested title profile; ordinary games do not download Edge."""
     env = dict(environment)
@@ -112,6 +122,6 @@ def prepare_game(root, prefix, executable, environment):
     windows.run(root, prefix, 'reg.exe', ['add',
         r'HKCU\Software\Wine\AppDefaults\msedgewebview2.exe',
         '/v', 'Version', '/t', 'REG_SZ', '/d', 'win8', '/f'], check=True, timeout=60)
-    env['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = 'Z:'+str(windows.host_path(browser)).replace('/', '\\')
+    env['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = browser_windows_path(prefix, browser)
     env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = FLAGS
     return env

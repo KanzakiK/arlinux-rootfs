@@ -137,6 +137,23 @@ static void window_tree(HWND window, unsigned long parent, unsigned depth) {
 static BOOL CALLBACK top_window(HWND window, LPARAM) {
     window_tree(window, 0, 0); return TRUE;
 }
+static void emit_window(HWND w, bool &first) {
+    if (!IsWindowVisible(w)) return;
+    wchar_t title[512]{}, cls[256]{};
+    GetWindowTextW(w, title, 512); GetClassNameW(w, cls, 256);
+    DWORD pid = 0; GetWindowThreadProcessId(w, &pid);
+    BSTR name = SysAllocString(title), type = SysAllocString(cls);
+    if (!first) std::cout << ','; first = false;
+    std::cout << "{\"window\":" << reinterpret_cast<uintptr_t>(w)
+        << ",\"parent\":" << reinterpret_cast<uintptr_t>(GetParent(w))
+        << ",\"process\":" << pid << ",\"name\":" << quote(utf8(name))
+        << ",\"class\":" << quote(utf8(type)) << '}';
+    SysFreeString(name); SysFreeString(type);
+    for (auto c = GetWindow(w, GW_CHILD); c; c = GetWindow(c, GW_HWNDNEXT)) emit_window(c, first);
+}
+static BOOL CALLBACK window_metadata(HWND w, LPARAM param) {
+    emit_window(w, *reinterpret_cast<bool *>(param)); return TRUE;
+}
 static bool live(Node *n) {
     DWORD process = 0; GetWindowThreadProcessId(n->window, &process);
     return IsWindow(n->window) && process == n->process;
@@ -207,11 +224,18 @@ int main() {
     while (std::getline(std::cin, line)) {
         std::istringstream request(line); std::string operation, argument; unsigned long id = 0;
         request >> operation >> id >> argument;
-        if (operation == "snapshot") {
+        if (operation == "windows") {
+            bool first = true; std::cout << '[';
+            EnumWindows(window_metadata, reinterpret_cast<LPARAM>(&first));
+            std::cout << "]\n";
+        } else if (operation == "snapshot" || operation == "foreground") {
             // Keep preceding objects alive for clients holding a snapshot while
             // another client refreshes. Bound memory without reusing object IDs.
             if (nodes.size() > 30000) { for (auto &[key, n] : nodes) delete n; nodes.clear(); identities.clear(); }
-            current.clear(); EnumWindows(top_window, 0);
+            current.clear();
+            HWND selected = operation == "foreground" ? GetForegroundWindow() : reinterpret_cast<HWND>(static_cast<uintptr_t>(id));
+            if (selected && IsWindow(selected)) window_tree(selected, 0, 0);
+            else if (operation == "snapshot" && !id) EnumWindows(top_window, 0);
             std::cout << '['; bool first = true;
             for (auto key : current) { if (!first) std::cout << ','; first = false; emit(nodes[key]); }
             std::cout << "]\n";
