@@ -133,13 +133,14 @@ def ensure_runtime():
         raise ValueError('Invalid Bionic runtime source')
     latest = '/releases/download/latest/' in url
     if latest:
-        # Shared binaries can outlive an instance. Resolve latest once for each
-        # freshly installed rootfs, rather than treating any shared pointer as
-        # current. The selection lives in rootfs because reinstall retains home.
+        # Cache successful release lookups briefly, never pin an instance forever.
+        # A changed APK manifest also invalidates the selection immediately.
         try:
-            selected = json.loads(LATEST_SELECTION.read_text())['sha256']
-            return runtime(selected)
-        except FileNotFoundError:
+            selected = json.loads(LATEST_SELECTION.read_text())
+            age = time.time() - selected.get('checkedAt', 0)
+            if selected.get('manifestSHA256') == digest(MANIFEST) and 0 <= age < 3600:
+                return runtime(selected['sha256'])
+        except (FileNotFoundError, ValueError, KeyError, TypeError):
             pass
         expected, url = latest_runtime()
     try:
@@ -161,7 +162,8 @@ def ensure_runtime():
 def remember_latest(identity):
     LATEST_SELECTION.parent.mkdir(parents=True, exist_ok=True)
     temporary = LATEST_SELECTION.with_suffix('.tmp')
-    temporary.write_text(json.dumps({'sha256': identity})+'\n')
+    temporary.write_text(json.dumps({'sha256': identity, 'checkedAt': time.time(),
+                                    'manifestSHA256': digest(MANIFEST)})+'\n')
     temporary.replace(LATEST_SELECTION)
 
 
