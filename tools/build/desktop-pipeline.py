@@ -320,11 +320,14 @@ def main():
             invoke('python3', 'tools/device-desktop.py', 'seal', out / 'seed.zip', snapshot, out / 'offline.zip')
             invoke('python3', android / 'tools/build/webview-store-bundle.py',
                    out / 'offline.zip', out / 'default.zip')
-            invoke('python3', android / 'tools/build/verify-webview-store-bundle.py', out / 'default.zip')
+            invoke('python3', android / 'tools/build/verify-webview-store-bundle.py', out / 'default.zip', '--framework', framework)
             (out / 'seed.zip').unlink()
             (out / 'offline.zip').unlink()
 
         result = cache.stage('prepare' if args.prepare else 'desktop', inputs, desktop)
+        if not args.prepare:
+            # A cache hit must pass the current audit too, not only its old receipt.
+            invoke('python3', android / 'tools/build/verify-webview-store-bundle.py', result / 'default.zip', '--framework', framework)
         # Publish the selected local artifact atomically, after every stage succeeded.
         pending = args.output.with_suffix('.zip.part')
         shutil.copyfile(result / 'default.zip', pending)
