@@ -1,7 +1,7 @@
-"""Prepare instance-local trust for the Android Kotlin Steam HTTPS relay.
+"""Prepare guest trust for the application-wide Android Kotlin Steam HTTPS relay.
 
 Keep the HTTP Steam Host while using a verified Akamai TLS name upstream.
-Certificates and services are never shared between Linux instances.
+The application owns its listener and certificate; instances only install trust.
 """
 import hashlib
 import os
@@ -19,16 +19,19 @@ DOMAINS = (
     'client-update.steamstatic.com', 'client-update.fastly.steamstatic.com',
     'client-update.akamai.steamstatic.com', 'cdn.steamstatic.com',
 )
-def instance_address(home=None):
-    # Android apps and Linux instances share the host loopback namespace.
-    # Include the package and instance path so Debug/Release cannot share a relay.
-    identity = str(Path.home() if home is None else home).encode()
-    octets = hashlib.sha256(identity).digest()[:3]
+def application_directory():
+    return Path(os.environ['BIONICX_FILES'])/'steam-proxy'
+
+
+def application_address():
+    # Distinguish Debug/Release packages while sharing one listener across instances.
+    package = Path(os.environ['BIONICX_FILES']).parent.name
+    octets = hashlib.sha256(package.encode()).digest()[:3]
     return '127.' + '.'.join(str(part) for part in octets)
 
 
-ADDRESS = instance_address()
-CA_NAME = 'ARLinux instance Steam proxy'
+ADDRESS = application_address()
+CA_NAME = 'ARLinux application Steam proxy'
 TRUST = Path('/usr/local/share/ca-certificates/arlinux-steam-proxy.crt')
 
 
@@ -75,7 +78,7 @@ def certificates(directory):
     previous = os.umask(0o077)
     try:
         run('openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '365',
-            '-subj', '/CN=ARLinux instance Steam proxy', '-keyout', str(directory/'ca.key'),
+            '-subj', '/CN=ARLinux application Steam proxy', '-keyout', str(directory/'ca.key'),
             '-out', str(ca), '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
             '-addext', 'keyUsage=critical,keyCertSign,cRLSign')
         run('openssl', 'req', '-new', '-newkey', 'rsa:2048', '-nodes',
@@ -112,15 +115,15 @@ def prepare():
     if not enabled():
         return False
     dependencies()
-    directory = Path.home()/'.local/share/arlinux/steam-proxy'
+    directory = application_directory()
     ca, cert = certificates(directory)
     trust(ca)
     return True
 
 
 def activate():
-    """Verify CONNECT and instance TLS before exposing proxy configuration."""
-    ca = Path.home()/'.local/share/arlinux/steam-proxy/ca.crt'
+    """Verify CONNECT and application TLS before exposing proxy configuration."""
+    ca = application_directory()/'ca.crt'
     context = ssl.create_default_context(cafile=str(ca))
     with socket.create_connection((ADDRESS, 18443), timeout=5) as connection:
         connection.sendall(b'CONNECT store.steampowered.com:443 HTTP/1.1\r\nHost: store.steampowered.com:443\r\n\r\n')
