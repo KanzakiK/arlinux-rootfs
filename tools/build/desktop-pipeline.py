@@ -133,12 +133,17 @@ def build_wine(cache, framework, android, paths, common, invoke, env):
         'wine-vulkan': ('tools/build/bionic-vulkan.py', 'third_party/libhybris', 'third_party/android-headers', 'tools/patches'),
         'wine-bionic': ('tools/build/wine-bionic.sh', 'tools/package-wine-bionic.py', 'tools/build/refresh-wine-vkd3d.py',
                         'tools/build/prepare-wine-dcomp.sh', 'tools/build/prepare-wine-gamepad.py',
-                        'native/winebus', 'tools/patches', 'tools/wine_pe_debug.py'),
+                        'native/winebus', 'tools/patches', 'tools/wine_pe_debug.py', 'tools/wine_fonts.py'),
     }
     def stage(name, command, dependencies=()):
         inputs = {k: v for k, v in common.items() if k not in ('sources', 'wineSources', 'pulseRecipe')}
         inputs['sources'] = {k: v for k, v in common['sources'].items()
                              if any(k == p or k.startswith(p + '/') for p in recipes[name])}
+        if name == 'wine-bionic':
+            import sys
+            sys.path.insert(0, str(framework / 'tools'))
+            from wine_fonts import FILES, source_directory
+            inputs['windowsFonts'] = {n: inventory(source_directory()/n) for n in FILES}
         if name in ('wine-pe', 'wine-bionic'):
             inputs['wineSources'] = common['wineSources']
         if name == 'wine-pulse':

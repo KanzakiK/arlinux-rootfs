@@ -172,3 +172,9 @@ Wine PE/native compilation, FEX/DXVK integration, Vulkan adapter, patches,
 packaging and publication are maintained in this repository. See
 [the build and publication guide](docs/WINDOWS-BIONIC.md). Android host builds
 consume the resulting bundles and runtime download manifest.
+
+Bionic Wine packages the Windows build host's unmodified Arial family (regular,
+bold, italic and bold italic). WSL uses `/mnt/c/Windows/Fonts` by default; set
+`ARLINUX_WINDOWS_FONTS` for another input directory. All four files are required.
+The desktop build cache fingerprints these inputs and the runtime records their
+SHA-256 checksums. Fonts are copied into each Wine prefix before wineboot.

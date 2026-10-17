@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 from wine_pe_debug import optimize
+from wine_fonts import install as install_fonts
 
 SYSTEM_LIBS = {'libc.so', 'libm.so', 'libdl.so', 'libz.so', 'liblog.so', 'libandroid.so', 'libnativewindow.so'}
 
@@ -166,6 +167,7 @@ def main():
         return []
 
     shutil.copytree(source, destination, symlinks=True, ignore=ignore)
+    install_fonts(destination / "share/arlinux/fonts")
     # Keep the HID driver's private Unix ABI paired with the native backend.
     for arch in ('aarch64', 'i386', 'x86_64'):
         driver = args.core / 'dlls/winebus.sys' / (arch + '-windows/winebus.sys')
