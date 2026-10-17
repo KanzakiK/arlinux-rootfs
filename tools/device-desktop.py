@@ -88,7 +88,7 @@ def rewrite(seed: Path, output: Path, replacements: dict[str, bytes | Path]) -> 
     pending = output.with_suffix('.zip.part')
     with zipfile.ZipFile(seed) as source, zipfile.ZipFile(pending, 'w') as target:
         manifest = json.loads(source.read('manifest.json'))
-        if manifest['distributionId'] not in ('debian', 'yibu', 'arch', 'omarchy'):
+        if manifest['distributionId'] not in ('debian', 'yibu', 'arch', 'omarchy', 'plasma'):
             raise ValueError('Unsupported offline desktop distribution')
         for name in sorted(set(manifest['files']) | set(replacements)):
             value = replacements.get(name)
@@ -123,6 +123,9 @@ def required_snapshot_files(distribution: str) -> set[str]:
                          'var/lib/arlinux/runtime-epoch-1', 'usr/share/arlinux/offline-distribution',
                          'usr/bin/xterm' if distribution == 'arch' else 'usr/bin/foot'} | (
                              {'usr/bin/hyprctl'} if distribution == 'omarchy' else set())
+    if distribution == 'plasma':
+        return common | {'usr/bin/plasmashell', 'usr/bin/dolphin', 'usr/bin/konsole', 'usr/bin/kate',
+                         'usr/share/arlinux/offline-distribution'}
     return common | {'usr/bin/thunar', 'usr/bin/mousepad'}
 
 
@@ -156,7 +159,7 @@ def validate_snapshot(snapshot: Path, distribution: str = "debian") -> None:
                         installed.add(fields.get('Package'))
     if not required <= seen:
         raise ValueError('Incomplete build snapshot: ' + ', '.join(sorted(required - seen)))
-    if distribution in ('debian', 'yibu') and not providers <= installed:
+    if distribution in ('debian', 'yibu', 'plasma') and not providers <= installed:
         raise ValueError('Build snapshot is missing ARLinux Mesa packages: ' +
                          ', '.join(sorted(providers - installed)))
 

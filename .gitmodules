@@ -32,3 +32,6 @@
 	path = third_party/wine
 	url = https://github.com/taowen/wine.git
 	branch = arlinux
+[submodule "distributions/plasma"]
+	path = distributions/plasma
+	url = https://github.com/taowen/arlinux-plasma.git

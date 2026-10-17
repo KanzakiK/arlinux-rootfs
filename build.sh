@@ -27,7 +27,7 @@ select_products() {
 case "$command" in
   prepare|offline)
     id="${1:?Specify one distribution}"
-    case "$id" in debian|yibu|arch|omarchy) ;; *) echo 'Offline preparation supports debian, yibu, arch and omarchy' >&2; exit 2 ;; esac
+    case "$id" in debian|yibu|arch|omarchy|plasma) ;; *) echo 'Offline preparation supports debian, yibu, arch, omarchy and plasma' >&2; exit 2 ;; esac
     select_products "$id"
     work="build/offline/$id"
     snapshot="${2:-}"
@@ -50,7 +50,7 @@ case "$command" in
     git submodule update --init --recursive
     ./tools/build/linux-assets.sh "${selected[@]}"
     for product in "${selected[@]}"; do
-      if [[ "$product" == arch || "$product" == omarchy ]]; then
+      if [[ "$product" == arch || "$product" == omarchy || "$product" == plasma ]]; then
         snapshot="build/offline/$product/rootfs.tar"
         [[ -f "$snapshot" ]] || {
           echo "Prepare an offline desktop first: ./build.sh prepare $product, then ./build.sh offline $product SNAPSHOT.tar" >&2

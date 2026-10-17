@@ -42,7 +42,7 @@ python3 - "$bundle" "$id" <<'PY'
 import json, sys, zipfile
 with zipfile.ZipFile(sys.argv[1]) as archive:
     manifest = json.loads(archive.read('manifest.json'))
-    if manifest['distributionId'] in ('arch', 'omarchy') and 'offline-desktop' not in archive.namelist():
+    if manifest['distributionId'] in ('arch', 'omarchy', 'plasma') and 'offline-desktop' not in archive.namelist():
         raise SystemExit('Prepare and seal an offline desktop before publishing')
     if manifest['distributionId'] != sys.argv[2] or 'device-build' in archive.namelist():
         raise SystemExit('Expected the tested distribution bundle, not a preparation image')

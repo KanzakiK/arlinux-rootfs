@@ -210,7 +210,7 @@ PY
     install -Dm644 tools/arlinux-app-data/org.arlinux.HostedInput.service \
       "$rootfs/usr/share/dbus-1/services/org.arlinux.HostedInput.service"
     cp -a "$product_dir/guest/." "$rootfs/usr/lib/arlinux/guest/"
-    if [[ "$product" == yibu || "$product" == debian ]]; then
+    if [[ "$product" == yibu || "$product" == debian || "$product" == plasma ]]; then
         mkdir -p "$rootfs/usr/lib/arlinux/mesa-packages"
         cp build/linux/mesa-debs/*.deb "$rootfs/usr/lib/arlinux/mesa-packages/"
         if [[ "$product" == yibu ]]; then

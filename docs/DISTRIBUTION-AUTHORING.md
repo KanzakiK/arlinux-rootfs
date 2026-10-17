@@ -37,7 +37,8 @@ my-linux/
 ├── profile.json
 ├── rootfs.lock.json
 ├── guest/
-│   └── first-boot.sh
+│   ├── first-boot.sh
+│   └── README.txt          # copied to the user's Desktop by the Android host
 └── tools/
     ├── seed.sh
     └── post-seed.sh        # optional
@@ -58,6 +59,11 @@ Android build instance instead of emulating ARM64 on the build host:
 
 Use the same commands with `yibu` for the built-in workspace. Preparation files
 stay under `build/offline/<id>/`; the final installable ZIP is `out/<id>.zip`.
+Use `plasma` for the Debian KDE Plasma desktop. Its Plasma shell uses the
+host-provided Xwayland display and stacking window manager; it does not launch
+KWin, a display manager or a systemd user session. Dolphin, Konsole and Kate
+are prepared with the desktop packages. Validate a fresh offline import before
+publishing `plasma.zip`, including the desktop menu and application input.
 The snapshot argument is explicit: no file glob or experimental filename selects
 it. Package snapshots may be reused, but run `offline` after runtime changes;
 it rebuilds current assets and replaces framework code during sealing.

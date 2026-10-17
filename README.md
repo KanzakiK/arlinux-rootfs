@@ -63,7 +63,8 @@ contain these Wine binaries; the build verifies their checksums before packaging
 Prebuilt ZIP bundles are published as release assets in each distribution's
 own GitHub repository: [Debian](https://github.com/taowen/arlinux-debian/releases),
 [Arch](https://github.com/taowen/arlinux-arch/releases),
-[Omarchy](https://github.com/taowen/arlinux-omarchy/releases), and
+[Omarchy](https://github.com/taowen/arlinux-omarchy/releases),
+[KDE Plasma](https://github.com/taowen/arlinux-plasma/releases), and
 [LXQt](https://github.com/taowen/arlinux-lxqt/releases). Download the `.zip`
 asset, not GitHub's automatic source-code archive. The Android APK is released
 separately; a rootfs bundle is imported after installing it.
