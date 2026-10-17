@@ -396,3 +396,24 @@ object files survive compilation or packaging failures; changing an input uses
 a separate directory. `JOBS` and the output path do not invalidate the cache.
 `tests/test-wine-pe-retry.py` exercises failed compilation, repeated packaging,
 and invalidation after patch changes with a lightweight build fixture.
+
+## Android shared-storage file security
+
+`wine-bionic-shared-storage-security.patch` projects effective Android app access
+into file and directory DACLs on FUSE/sdcardfs. Shared-storage synthetic UIDs
+otherwise map to Wine's anonymous SID and can make `AccessCheck(FILE_GENERIC_READ)`
+fail even though Wine can open the file. Electron's install-directory preflight
+then aborts, reporting misleading AppContainer/ALL APPLICATION PACKAGES advice.
+
+Keep the real owner SID and add only the current user's rights confirmed by
+`faccessat` through the open fd. Use flags=0 when real/effective UIDs match;
+Android may reject AT_EACCESS with EINVAL. Unequal identities retain AT_EACCESS. Do not grant WRITE_DAC/WRITE_OWNER,
+change Android permissions, disable Electron sandboxing, or match device models.
+Foreign-owner descriptors are refreshed so scoped-storage grants are not cached
+as permanent access. Ordinary private storage keeps upstream behavior.
+
+Regression: fresh Linux instance and prefix, Windows Launcher → Browse Downloads
+→ complete extracted VSCode folder → Code.exe; verify an editable document.
+Use `tools/diagnostics/windows-file-access.c` in the Android repo to compare
+file/folder SDs and impersonation-token AccessCheck against readable Downloads,
+private files and an inaccessible path.

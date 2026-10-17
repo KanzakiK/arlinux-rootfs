@@ -82,6 +82,7 @@ if ! grep -q '/apex/com.android.conscrypt/cacerts' "$source_dir/dlls/crypt32/uni
     patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-certificates.patch"
 fi
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-pulse.patch"
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-shared-storage-security.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-arm64-apc-context.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-local-focus.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-dragdrop-owner.patch"
