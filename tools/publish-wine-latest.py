@@ -50,7 +50,12 @@ def main():
             raise ValueError('Latest requires system Vulkan compatibility and Zink OpenGL')
         if not all(metadata.get('backends', {}).get(name) for name in ('vulkan', 'opengl', 'audio', 'tls')):
             raise ValueError('Latest requires Vulkan, OpenGL, audio and TLS backends')
-        for arch in ('aarch64', 'i386', 'x86_64'):
+        # Compact packaging serves x64 callers through the ARM64X modules;
+        # optimize() deliberately removes their standalone x86_64 duplicates.
+        arches = ['aarch64', 'i386']
+        if metadata.get('packaging', {}).get('standaloneX64Dlls') is not False:
+            arches.append('x86_64')
+        for arch in arches:
             for dll in ('dcomp', 'd3d12', 'd3d12core', 'dwrite', 'kbdus'):
                 if f'files/lib/wine/{arch}-windows/{dll}.dll' not in metadata['files']:
                     raise ValueError('Latest omits required module: ' + arch + '/' + dll)
