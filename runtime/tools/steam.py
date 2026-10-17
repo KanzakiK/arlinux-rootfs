@@ -408,6 +408,20 @@ def send_client_command(root, arguments):
         os.close(fd)
 
 
+def system_language_arguments(arguments):
+    """Apply Android's current language on every cold start, including restarts."""
+    marker = Path('/etc/arlinux-steam-language')
+    chinese = marker.is_file() and marker.read_text().strip() == 'zh'
+    filtered = []
+    values = iter(arguments)
+    for value in values:
+        if value == '-language':
+            next(values, None)
+        elif not value.startswith('-language='):
+            filtered.append(value)
+    return ['-language', 'schinese' if chinese else 'english', *filtered]
+
+
 def launch(root, arguments):
     """Prepare once, then replace this process with Valve; Android owns side services."""
     binary = root/'steamrtarm64/steam'
@@ -416,6 +430,7 @@ def launch(root, arguments):
     if client_running():
         send_client_command(root, arguments or ['steam://open/main'])
         return 0
+    arguments = system_language_arguments(arguments)
     arguments = ['-noipv6', *[arg for arg in arguments if arg != '-noipv6']]
     ensure_dependencies()
     if Path('/etc/ld.so.conf.d/00-arlinux-graphics.conf').is_file():
