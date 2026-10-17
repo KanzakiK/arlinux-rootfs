@@ -95,8 +95,11 @@ def archive_runtime(root, archive):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--cached-runtime', type=Path,
+                        help='Reuse an immutable packaged runtime; verify it before refreshing fonts and HID')
+    parser.add_argument('--cached-sha256', help='Required SHA-256 of --cached-runtime')
     for name in ['core', 'fex', 'native-prefix', 'ndk', 'pe-runtime', 'output']:
-        parser.add_argument('--' + name, type=Path, required=True)
+        parser.add_argument('--' + name, type=Path)
     parser.add_argument('--dependency-prefix', type=Path, action='append', default=[])
     parser.add_argument('--graphics-prefix', type=Path)
     parser.add_argument('--dxvk-runtime', type=Path,
@@ -108,6 +111,14 @@ def main():
     parser.add_argument('--wine-source-archive', type=Path,
                         help='Source archive produced by wine-pe.sh; defaults to PE runtime/wine-source.tar.gz')
     args = parser.parse_args()
+    if args.cached_runtime:
+        if not all((args.cached_sha256, args.core, args.output, args.archive)):
+            parser.error('Cached packaging requires --cached-sha256, --core, --output and --archive')
+        refresh_cached_runtime(args)
+        return
+    for name in ('core', 'fex', 'native_prefix', 'ndk', 'pe_runtime', 'output'):
+        if getattr(args, name) is None:
+            parser.error('Full packaging requires --' + name.replace('_', '-'))
     if args.archive and (args.archive.exists() or args.archive.resolve().is_relative_to(args.output.resolve())):
         parser.error('Archive must be a new file outside the runtime output directory')
     if args.vulkan_driver == 'system' and (not args.system_vulkan_adapter or not args.system_vulkan_adapter.is_file()):
@@ -317,6 +328,59 @@ def main():
     print('Packaged Bionic Wine:', len(hashes), 'files')
     if args.archive:
         print('Runtime archive SHA-256:', archive_runtime(args.output, args.archive))
+
+
+def refresh_cached_runtime(args):
+    """Refresh packaging inputs without replacing unrelated, verified native modules."""
+    with args.cached_runtime.open('rb') as stream:
+        base_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if base_sha != args.cached_sha256:
+        raise ValueError('Cached runtime SHA-256 mismatch')
+    if args.output.exists() or args.archive.exists():
+        raise FileExistsError('Packaging output must be new')
+    args.output.mkdir(parents=True)
+    with tarfile.open(args.cached_runtime) as packed:
+        packed.extractall(args.output, filter='data')
+    metadata = json.loads((args.output / 'bionic-runtime.json').read_text())
+    if metadata.get('libc') != 'bionic' or metadata.get('protocol') != 1:
+        raise ValueError('Expected the project Bionic Wine runtime')
+    version = re.search(r'^#define PACKAGE_VERSION "([^"]+)"',
+                        (args.core / 'include/config.h').read_text(), re.MULTILINE)
+    if not version or version[1] != metadata.get('wine'):
+        raise ValueError('Cached runtime and gamepad core Wine versions differ')
+    for name, expected in metadata['files'].items():
+        with (args.output / name).open('rb') as stream:
+            if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
+                raise ValueError('Cached runtime file checksum mismatch: ' + name)
+    destination = args.output / 'files'
+    install_fonts(destination / 'share/arlinux/fonts')
+    # Copy the Unix and all PE halves together; their driver ABI is private.
+    modules = {'files/lib/wine/aarch64-unix/winebus.so': args.core / 'dlls/winebus.sys/winebus.so'}
+    for arch in ('aarch64', 'i386', 'x86_64'):
+        modules[f'files/lib/wine/{arch}-windows/winebus.sys'] = args.core / f'dlls/winebus.sys/{arch}-windows/winebus.sys'
+    for name, source in modules.items():
+        target = args.output / name
+        if target.is_symlink():
+            target.unlink()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    root = Path(__file__).resolve().parents[1]
+    sources = destination / 'share/arlinux/winebus'
+    sources.mkdir(parents=True, exist_ok=True)
+    for name, source in {'bus_arlinux.h': root / 'native/winebus/bus_arlinux.h',
+                         'README.md': root / 'native/winebus/README.md',
+                         'COPYING.LIB': root / 'third_party/wine/COPYING.LIB',
+                         'prepare-wine-gamepad.py': root / 'tools/build/prepare-wine-gamepad.py'}.items():
+        shutil.copyfile(source, sources / name)
+    metadata['backends']['gamepad'] = True
+    metadata['packagingRefresh'] = {'baseArchiveSHA256': base_sha,
+                                  'components': ['Arial', 'Android gamepad HID']}
+    # Older archives also hash file aliases. Retain those checked entries while
+    # adding/replacing actual files, so repackaging cannot weaken their inventory.
+    metadata['files'].update({p.relative_to(args.output).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                             for p in sorted(destination.rglob('*')) if p.is_file() and not p.is_symlink()})
+    (args.output / 'bionic-runtime.json').write_text(json.dumps(metadata, indent=2) + '\n')
+    print('Runtime archive SHA-256:', archive_runtime(args.output, args.archive), flush=True)
 
 
 if __name__ == '__main__':

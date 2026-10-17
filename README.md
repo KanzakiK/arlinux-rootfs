@@ -99,6 +99,21 @@ backend and `tools/package-wine-bionic.py` packages matching Windows modules,
 Bionic libraries, Zink, system Vulkan WSI and the shared GPU compatibility layer.
 Publish the matching source archives alongside the binary runtime.
 
+Packaging-only updates can reuse an immutable, SHA-256-verified runtime while
+retaining its other compatibility fixes. The same packager refreshes the host
+Arial family and copies the matching Unix/PE gamepad driver halves together:
+
+```bash
+python3 tools/package-wine-bionic.py --cached-runtime runtime.tar.gz \
+  --cached-sha256 SHA256 --core build/native/core \
+  --output build/refreshed-runtime --archive out/arlinux-wine-bionic.tar.gz
+```
+
+Use the core that built the matching Wine version. This path preserves existing
+runtime metadata, verifies every cached file, records the base archive digest,
+and creates the same deterministic archive as a full build. Output paths must
+be new. It does not rebuild Wine or refresh unrelated native libraries.
+
 DXVK is installed into each private prefix; app-specific DLL overrides remain
 under the application's control. For example, use the official Paint.NET Wine
 launcher settings for its bundled Microsoft shader compiler.
