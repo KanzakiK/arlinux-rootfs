@@ -88,8 +88,8 @@ def rewrite(seed: Path, output: Path, replacements: dict[str, bytes | Path]) -> 
     pending = output.with_suffix('.zip.part')
     with zipfile.ZipFile(seed) as source, zipfile.ZipFile(pending, 'w') as target:
         manifest = json.loads(source.read('manifest.json'))
-        if manifest['distributionId'] not in ('debian', 'yibu'):
-            raise ValueError('The device desktop installer targets Debian-based offline desktops')
+        if manifest['distributionId'] not in ('debian', 'yibu', 'arch', 'omarchy'):
+            raise ValueError('Unsupported offline desktop distribution')
         for name in sorted(set(manifest['files']) | set(replacements)):
             value = replacements.get(name)
             digest = hashlib.sha256()
@@ -116,10 +116,19 @@ set -eu
 ''', 'device-build': b'1\n'})
 
 
-def validate_snapshot(snapshot: Path) -> None:
+def required_snapshot_files(distribution: str) -> set[str]:
+    common = {'usr/share/arlinux/offline-desktop', 'usr/share/arlinux/packages.tsv'}
+    if distribution in ('arch', 'omarchy'):
+        return common | {'usr/bin/pacman',
+                         'var/lib/arlinux/runtime-epoch-1', 'usr/share/arlinux/offline-distribution',
+                         'usr/bin/xterm' if distribution == 'arch' else 'usr/bin/foot'} | (
+                             {'usr/bin/hyprctl'} if distribution == 'omarchy' else set())
+    return common | {'usr/bin/thunar', 'usr/bin/mousepad'}
+
+
+def validate_snapshot(snapshot: Path, distribution: str = "debian") -> None:
     """Reject incomplete or outdated package snapshots before compression."""
-    required = {'usr/share/arlinux/offline-desktop', 'usr/share/arlinux/packages.tsv',
-                'usr/bin/thunar', 'usr/bin/mousepad'}
+    required = required_snapshot_files(distribution)
     providers = {'mesa-libgallium', 'libgbm1', 'libgl1-mesa-dri', 'libglx-mesa0', 'libegl-mesa0'}
     seen, installed = set(), set()
     with tarfile.open(snapshot, 'r|') as source:
@@ -131,6 +140,13 @@ def validate_snapshot(snapshot: Path) -> None:
             if name == 'usr/share/arlinux/offline-desktop':
                 if source.extractfile(member).read() != b'1\n':
                     raise ValueError('Device preparation did not finish')
+            elif name == 'usr/share/arlinux/offline-distribution':
+                if source.extractfile(member).read().decode().strip() != distribution:
+                    raise ValueError('Build snapshot belongs to a different distribution')
+            elif name == 'usr/share/arlinux/packages.tsv' and distribution in ('arch', 'omarchy'):
+                packages = dict(line.split('\t', 1) for line in source.extractfile(member).read().decode().splitlines())
+                if 'arlinux' not in packages.get('mesa', ''):
+                    raise ValueError('Build snapshot is missing the ARLinux Mesa package')
             elif name == 'var/lib/dpkg/status':
                 for block in source.extractfile(member).read().decode().split('\n\n'):
                     fields = dict(line.split(': ', 1) for line in block.splitlines()
@@ -140,13 +156,15 @@ def validate_snapshot(snapshot: Path) -> None:
                         installed.add(fields.get('Package'))
     if not required <= seen:
         raise ValueError('Incomplete build snapshot: ' + ', '.join(sorted(required - seen)))
-    if not providers <= installed:
+    if distribution in ('debian', 'yibu') and not providers <= installed:
         raise ValueError('Build snapshot is missing ARLinux Mesa packages: ' +
                          ', '.join(sorted(providers - installed)))
 
 
 def seal(seed: Path, snapshot: Path, output: Path) -> None:
-    validate_snapshot(snapshot)
+    with zipfile.ZipFile(seed) as archive:
+        distribution = json.loads(archive.read('manifest.json'))['distributionId']
+    validate_snapshot(snapshot, distribution)
     # Start with an unconfigured seed so no preparation entry point can ship.
     with zipfile.ZipFile(seed) as archive:
         if {'device-build', 'offline-desktop'} & set(archive.namelist()):
@@ -168,6 +186,8 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                         and not name.startswith('usr/share/pixmaps/arlinux-')):
                     continue
                 if member.isdir():
+                    continue
+                if distribution in ('arch', 'omarchy') and name.startswith('usr/lib/arlinux/mesa-packages/'):
                     continue
                 if '..' in name.split('/') or name.startswith('/'):
                     raise ValueError('Unsafe runtime seed entry: ' + name)
@@ -251,8 +271,7 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                 if compressor.poll() is None:
                     compressor.kill()
                     compressor.wait()
-        required = {'usr/share/arlinux/offline-desktop', 'usr/share/arlinux/packages.tsv',
-                    'usr/bin/arlinux-opencode', 'usr/bin/thunar', 'usr/bin/mousepad'}
+        required = required_snapshot_files(distribution) | {'usr/bin/arlinux-opencode'}
         if not required <= seen:
             raise ValueError('Incomplete device desktop: ' + ', '.join(sorted(required - seen)))
         with compressed.open('rb') as stream:

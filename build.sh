@@ -26,8 +26,8 @@ select_products() {
 
 case "$command" in
   prepare|offline)
-    id="${1:?Specify one Debian-based distribution}"
-    case "$id" in debian|yibu) ;; *) echo 'Offline preparation supports debian and yibu' >&2; exit 2 ;; esac
+    id="${1:?Specify one distribution}"
+    case "$id" in debian|yibu|arch|omarchy) ;; *) echo 'Offline preparation supports debian, yibu, arch and omarchy' >&2; exit 2 ;; esac
     select_products "$id"
     work="build/offline/$id"
     snapshot="${2:-}"

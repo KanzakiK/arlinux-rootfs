@@ -298,3 +298,13 @@ not host bundles for individual distributions.
 
 `arlinux-lxqt` is maintained as the external-reference test: it is developed as
 an independent repository using only this documented interface.
+
+### Arch and Omarchy offline desktops
+
+Arch and Omarchy use the same `prepare` / `offline` workflow as Debian and Yibu.
+Their `guest/build-desktop.sh` is the only automatic package-download entry point;
+run it in a disposable build-only instance. After it succeeds, export only rootfs
+and seal against the matching current seed. The snapshot records its distribution,
+package versions, and bundled Mesa provider. Consumer `guest/first-boot.sh` only
+applies local configuration and never synchronizes repositories or installs packages.
+Publishing an unprepared Arch/Omarchy seed is rejected.
