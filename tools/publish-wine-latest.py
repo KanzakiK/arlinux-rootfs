@@ -33,7 +33,7 @@ def main():
         if not all(metadata.get('backends', {}).get(name) for name in ('vulkan', 'opengl', 'audio', 'tls')):
             raise ValueError('Latest requires Vulkan, OpenGL, audio and TLS backends')
         for arch in ('aarch64', 'i386', 'x86_64'):
-            for dll in ('dcomp', 'd3d12', 'd3d12core'):
+            for dll in ('dcomp', 'd3d12', 'd3d12core', 'dwrite', 'kbdus'):
                 if f'files/lib/wine/{arch}-windows/{dll}.dll' not in metadata['files']:
                     raise ValueError('Latest omits required module: ' + arch + '/' + dll)
         if 'files/etc/dxvk.conf' not in metadata['files']:

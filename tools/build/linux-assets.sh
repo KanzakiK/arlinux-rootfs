@@ -192,7 +192,7 @@ PY
     install -Dm644 runtime/tools/windows_apps.py "$rootfs/usr/lib/arlinux/windows_apps.py"
     install -Dm755 runtime/tools/arlinux-windows-app "$rootfs/usr/bin/arlinux-windows-app"
     install -Dm644 runtime/tools/windows-app-downloads.tsv "$rootfs/usr/lib/arlinux/guest/windows-app-downloads.tsv"
-    for app in paintnet powerbi; do
+    for app in paintnet powerbi fontforge; do
         install -Dm644 "runtime/tools/arlinux-$app.desktop" "$rootfs/usr/share/applications/arlinux-$app.desktop"
         install -Dm644 "runtime/tools/$app.png" "$rootfs/usr/share/pixmaps/arlinux-$app.png"
     done

@@ -58,7 +58,7 @@ class PackageTests(unittest.TestCase):
         for arch in ('aarch64', 'i386', 'x86_64'):
             directory = pe/'files/lib/wine'/(arch+'-windows')
             directory.mkdir(parents=True)
-            for name in ('dcomp', 'd3d12', 'd3d12core'):
+            for name in ('dcomp', 'd3d12', 'd3d12core', 'dwrite', 'kbdus'):
                 (directory/(name+'.dll')).write_bytes(b'MZ')
             for name in ('winex11.drv', 'winepulse.drv'):
                 (directory/name).write_bytes(b'MZ')
@@ -76,6 +76,15 @@ class PackageTests(unittest.TestCase):
         (pe/'files/lib/wine/aarch64-windows/winex11.drv').unlink()
         with self.assertRaisesRegex(RuntimeError, 'aarch64/winex11.drv'):
             package.verify_components(pe)
+
+    def test_missing_keyboard_or_dwrite_module_rejected(self):
+        pe = self.components()
+        for arch, dll in [('aarch64', 'kbdus'), ('i386', 'kbdus'), ('x86_64', 'dwrite')]:
+            path = pe / 'files/lib/wine' / (arch + '-windows') / (dll + '.dll')
+            path.unlink()
+            with self.assertRaisesRegex(RuntimeError, arch + '/' + dll):
+                package.verify_components(pe)
+            path.write_bytes(b'MZ')
 
     def test_old_pe_package_without_dcomp_rejected(self):
         pe = self.components()

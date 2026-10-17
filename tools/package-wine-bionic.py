@@ -48,7 +48,7 @@ def verify_components(pe_runtime):
     if records['arlinux-vkd3d.json'] != expected:
         raise RuntimeError('Rebuild Wine PE modules with the current VKD3D refresh')
     for arch in ('aarch64', 'i386', 'x86_64'):
-        for dll in ('dcomp', 'd3d12', 'd3d12core'):
+        for dll in ('dcomp', 'd3d12', 'd3d12core', 'dwrite', 'kbdus'):
             if not (pe_runtime / 'files/lib/wine' / (arch + '-windows') / (dll + '.dll')).is_file():
                 raise RuntimeError('Missing required Wine PE module: ' + arch + '/' + dll)
     for arch in ('aarch64', 'i386', 'x86_64'):

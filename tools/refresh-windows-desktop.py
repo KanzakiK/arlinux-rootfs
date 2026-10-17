@@ -23,7 +23,7 @@ def refresh(bundle, output):
         replacements['usr/lib/arlinux/guest/'+name] = root/'runtime/tools'/name
     replacements['usr/lib/arlinux/guest/yibu-launcher.py'] = root/'runtime/tools/apps.py'
     replacements['usr/bin/arlinux-windows-app'] = root/'runtime/tools/arlinux-windows-app'
-    for app in ['paintnet', 'powerbi']:
+    for app in ['paintnet', 'powerbi', 'fontforge']:
         replacements[f'usr/share/applications/arlinux-{app}.desktop'] = root/f'runtime/tools/arlinux-{app}.desktop'
         replacements[f'usr/share/pixmaps/arlinux-{app}.png'] = root/f'runtime/tools/{app}.png'
     with tempfile.TemporaryDirectory(prefix='bionic-desktop-') as temporary:

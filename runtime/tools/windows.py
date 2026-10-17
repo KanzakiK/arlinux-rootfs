@@ -325,6 +325,8 @@ def launch(executable, arguments=(), prefix=None):
     import windows_a11y
     initialize(root, prefix, env)
     windows_a11y.ensure(root, prefix, executable.stem, env)
+    if executable.suffix.lower() == '.lnk':
+        return run(root, prefix, 'start.exe', [str(executable), *arguments], env=env).returncode
     return run(root, prefix, executable, arguments, env=env).returncode
 
 

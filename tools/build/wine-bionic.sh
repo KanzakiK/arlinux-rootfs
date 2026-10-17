@@ -81,6 +81,9 @@ PY
 if ! grep -q '/apex/com.android.conscrypt/cacerts' "$source_dir/dlls/crypt32/unixlib.c"; then
     patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-certificates.patch"
 fi
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-dwrite-bitmap-cache.patch"
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-keyboard-layout.patch"
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-dwrite-transformed-hinting.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-pulse.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-shared-storage-security.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-arm64-apc-context.patch"

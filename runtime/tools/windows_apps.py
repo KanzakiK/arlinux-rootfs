@@ -4,7 +4,7 @@ Downloads come from the vendors, never from a copied development prefix.
 Power BI's WebView2 sandbox is disabled in the shared instance Wine prefix:
 Wine lacks the required Windows sandbox interception thunks. Android app
 isolation is not equivalent to browser sandboxing. First installation requires
-explicit consent. Both applications are experimental on ARLinux.
+explicit consent. These applications are experimental on ARLinux.
 """
 import argparse
 import fcntl
@@ -28,6 +28,7 @@ MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 LICENSES = {
     'paintnet': 'https://www.getpaint.net/license.html',
     'powerbi': 'https://powerbi.microsoft.com/desktop-eula/',
+    'fontforge': 'https://fontforge.org/en-US/license/',
 }
 
 
@@ -200,6 +201,28 @@ def ensure_powerbi_authentication():
                     'winbind'], check=True)
 
 
+def fontforge_executable(prefix):
+    # The official x64 installer uses Program Files (x86). Accept a manually
+    # installed copy too, without requiring our installed.json marker.
+    for directory in ('Program Files (x86)', 'Program Files'):
+        application = prefix / 'pfx/drive_c' / directory / 'FontForgeBuilds'
+        executable = application / 'run_fontforge.exe'
+        if executable.is_file() and (application / 'bin/fontforge.exe').is_file():
+            return executable
+    return None
+
+
+def install_fontforge(root, prefix):
+    print('Installing FontForge…', flush=True)
+    windows.run(root, prefix, download('fontforge'),
+                ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-'],
+                env=windows.environment(root, prefix), timeout=3600, check=True)
+    executable = fontforge_executable(prefix)
+    if executable is None:
+        raise RuntimeError('FontForge installer did not create the application; click again to retry')
+    return executable
+
+
 def prepare(app, accepted=False):
     home = windows.storage() / 'apps' / app
     home.mkdir(parents=True, exist_ok=True)
@@ -210,7 +233,11 @@ def prepare(app, accepted=False):
     pointer_root = windows.storage() if hasattr(windows, 'instance_prefix') else home
     with (home / 'install.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if pointer.is_file():
+        if app == 'fontforge':
+            executable = fontforge_executable(prefix)
+            if executable is not None:
+                return executable, prefix, cache
+        if app != 'fontforge' and pointer.is_file():
             entry = json.loads(pointer.read_text())
             executable = (pointer_root / entry['executable']).resolve(strict=True)
             if not executable.is_relative_to(pointer_root.resolve()):
@@ -218,7 +245,9 @@ def prepare(app, accepted=False):
             if app == 'powerbi':
                 ensure_powerbi_authentication()
             return executable, prefix, cache
-        consent(app, accepted)
+        # FontForge is freely licensed; opening its icon starts installation.
+        if app != 'fontforge':
+            consent(app, accepted)
         if app == 'powerbi':
             ensure_powerbi_authentication()
         root = windows.ensure_runtime()
@@ -243,6 +272,8 @@ def prepare(app, accepted=False):
                     application.parent.mkdir(parents=True, exist_ok=True)
                     stage.rename(application)
             executable = application / 'paintdotnet.exe'
+        elif app == 'fontforge':
+            executable = install_fontforge(root, prefix)
         else:
             executable = install_powerbi(root, prefix)
         temporary = pointer.with_suffix('.tmp')
@@ -264,7 +295,7 @@ def main():
         env.update(powerbi_environment(prefix))
     windows.initialize(root, prefix, env)
     import windows_a11y
-    windows_a11y.ensure(root, prefix, 'Paint.NET' if args.app == 'paintnet' else 'Power BI Desktop', env)
+    windows_a11y.ensure(root, prefix, {'paintnet': 'Paint.NET', 'powerbi': 'Power BI Desktop', 'fontforge': 'FontForge'}[args.app], env)
     if args.app == 'paintnet':
         # These are the vendor paintdotnet.sh overrides, not modified binaries.
         env['WINEDLLOVERRIDES'] = 'mshtml=;d3dcompiler_47=n'

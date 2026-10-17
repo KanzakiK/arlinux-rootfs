@@ -85,12 +85,18 @@ arlinux-windows /absolute/path/to/application.exe
 arlinux-windows --install BUNDLE.tar.gz --sha256 SHA256
 ```
 
-Each executable gets an independent Bionic prefix. `--prefix DIRECTORY` selects
-its data directory, which contains `pfx`. The Paint.NET and Power BI desktop
-shortcuts use the same runtime and Android launch service. First installation
-asks for the vendor license, downloads official installers and initializes a
-new prefix. Paint.NET uses its ARM64 vendor Wine ZIP; Power BI remains an
-experimental compatibility target. Existing glibc prefixes are not reused.
+Windows applications and Steam games share one instance-level Bionic Wine
+prefix (`~/.local/share/arlinux/windows-bionic/prefix`, containing `pfx`).
+`--prefix DIRECTORY` explicitly selects another data directory. Built-in
+Paint.NET, Power BI and FontForge icons use the same runtime and Android launch
+service. FontForge downloads the checksum-pinned official Windows x64 installer
+on first click, installs unattended, then opens the editor. Later clicks launch
+the installed copy directly, including an existing installation in the shared
+prefix. An incomplete installation remains retryable. Its vendor icon is
+extracted from `run_fontforge.exe` in the official 2025-10-09 installer.
+Paint.NET and Power BI first installations ask for their vendor licenses.
+Paint.NET uses its ARM64 vendor Wine ZIP; Power BI remains an experimental
+compatibility target. Existing glibc prefixes are not reused.
 
 Wine Windows modules are built with `tools/build/wine-pe.sh`, FEX PE modules
 with `tools/build/fex-windows.sh`, and the PE input with

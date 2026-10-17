@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FontForge
+Comment=Download and install FontForge on first use, then open the font editor
+Comment[zh_CN]=首次使用自动下载安装 FontForge，之后直接打开字体编辑器
+Exec=arlinux-windows-app fontforge --desktop
+Icon=/usr/share/pixmaps/arlinux-fontforge.png
+Terminal=true
+Categories=Windows;Graphics;VectorGraphics;
+StartupNotify=false

@@ -23,10 +23,25 @@ class RetryTests(unittest.TestCase):
                         FIXTURE_ROOT=str(self.root), FIXTURE_SOURCE=str(self.source))
         self.write('repo/tools/build/wine-pe.sh', SCRIPT.read_text())
         self.write('source/dlls/combase/parameterized.c', 'fixture')
+        self.write('source/dlls/dwrite/font.c',
+                   (SCRIPT.parents[2]/'third_party/wine/dlls/dwrite/font.c').read_text())
+        self.write('repo/tools/patches/wine-dwrite-bitmap-cache.patch',
+                   (SCRIPT.parents[1]/'patches/wine-dwrite-bitmap-cache.patch').read_text())
+        keyboard_patch = (SCRIPT.parents[1]/'patches/wine-keyboard-layout.patch').read_text()
+        # This test replaces configure with a compiler fixture, so omit its
+        # generated module-list hunk; the real source patch is validated separately.
+        start = keyboard_patch.index('--- a/configure\n')
+        end = keyboard_patch.index('--- a/loader/wine.inf.in\n', start)
+        keyboard_patch = keyboard_patch[:start] + keyboard_patch[end:]
+        self.write('repo/tools/patches/wine-keyboard-layout.patch', keyboard_patch)
+        for name in ('configure.ac', 'loader/wine.inf.in'):
+            self.write('source/'+name, (SCRIPT.parents[2]/'third_party/wine'/name).read_text())
         self.write('source/VERSION', 'Wine fixture')
         self.write('source/fonts/fixture.ttf', 'source font')
         self.write('source/tools/make_requests', '')
         self.write('source/configure', '''#!/bin/sh
+wine_fn_config_makefile() { :; }
+wine_fn_config_makefile dlls/kernel32 enable_kernel32
 printf '%s\\n' "$PWD" >> "$FIXTURE_ROOT/configures"
 touch Makefile
 ''', executable=True)
