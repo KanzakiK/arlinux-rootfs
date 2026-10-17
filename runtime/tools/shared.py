@@ -95,6 +95,53 @@ def ranked_sources(urls):
     return [url for url, speed in ordered]
 
 
+
+# Destination hints from SteamCommunity302. They never change the request Host,
+# TLS SNI, certificate verification, release identity or expected SHA-256.
+GITHUB_CONTENT_HOSTS = ('release-assets.githubusercontent.com', 'objects.githubusercontent.com',
+                        'raw.githubusercontent.com', 'media.githubusercontent.com')
+
+
+def github_routes(url, headers):
+    """Rank 302's four GitHub routes against the direct route using real bytes."""
+    language = Path('/etc/arlinux-steam-language')
+    host = urlparse(url).hostname
+    if (host not in ('github.com', 'api.github.com', 'codeload.github.com', *GITHUB_CONTENT_HOSTS)
+            or not language.is_file() or language.read_text().strip() != 'zh'):
+        return [headers]
+    routes = [headers]
+    for number, address in enumerate(('20.205.243.166', '20.207.73.82', '20.27.177.113', '20.233.83.145'), 1):
+        destinations = {'github.com': address, 'api.github.com': f'{number}.ghapi.steam302.xyz',
+                        'codeload.github.com': f'{number}.ghcodel.steam302.xyz'}
+        destinations.update({name: f'{number}.ghcontent.steam302.xyz' for name in GITHUB_CONTENT_HOSTS})
+        options = [*headers, '--noproxy', ','.join(destinations)]
+        for name, edge in destinations.items():
+            options.extend(('--connect-to', f'{name}:443:{edge}:443'))
+        routes.append(options)
+
+    def probe(options):
+        try:
+            result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '2', '--max-time', '5',
+                '--range', '0-262143', '--output', '/dev/null', '--write-out',
+                '%{http_code} %{size_download} %{speed_download}', *options, url],
+                capture_output=True, text=True, timeout=6)
+            status, size, speed = result.stdout.strip().split()
+            if result.returncode in (0, 28) and status in ('200', '206') and float(size) >= 16384:
+                return float(speed)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+        return 0
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        rates = list(pool.map(probe, routes))
+    order = sorted(range(len(routes)), key=lambda i: -rates[i])
+    # Report only route number/rate; signed redirect URLs and headers stay private.
+    if rates[order[0]]:
+        print(f'Selected GitHub download route {order[0]}: {rates[order[0]] / 1024:.0f} KiB/s',
+              flush=True, file=sys.stderr)
+    return [routes[i] for i in order]
+
+
 def download(url, expected, suffix):
     """Keep one verified vendor artifact, with a cross-instance download lock."""
     urls = [url] if isinstance(url, str) else list(url)
@@ -111,12 +158,12 @@ def download(url, expected, suffix):
             candidates = []
             for source in ranked_sources(urls):
                 if re.fullmatch(r'https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/[1-9][0-9]*', source):
-                    candidates.append((source, ['-H', 'Accept: application/octet-stream']))
+                    candidates.extend((source, options) for options in github_routes(source, ['-H', 'Accept: application/octet-stream']))
                     continue
                 api = github_asset(source, expected)
                 if api:
-                    candidates.append((api, ['-H', 'Accept: application/octet-stream']))
-                candidates.append((source, []))
+                    candidates.extend((api, options) for options in github_routes(api, ['-H', 'Accept: application/octet-stream']))
+                candidates.extend((source, options) for options in github_routes(source, []))
             for index, (source, headers) in enumerate(candidates):
                 try:
                     print('Downloading verified installer…', flush=True, file=sys.stderr)

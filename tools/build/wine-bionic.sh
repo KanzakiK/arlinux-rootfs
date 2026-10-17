@@ -96,7 +96,7 @@ export CC="$ndk/bin/aarch64-linux-android29-clang" CXX="$ndk/bin/aarch64-linux-a
 export AR="$ndk/bin/llvm-ar" RANLIB="$ndk/bin/llvm-ranlib"
 export CFLAGS='-O2 -g -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES'
 export CPPFLAGS="-I$prefix/include -I$graphics/include" LDFLAGS="-L$prefix/lib -L$graphics/lib -Wl,-z,max-page-size=16384"
-export X_CFLAGS="-I$prefix/include" X_LIBS="-L$prefix/lib"
+export X_CFLAGS="-I$prefix/include -I$graphics/include" X_LIBS="-L$prefix/lib -L$graphics/lib"
 export FREETYPE_CFLAGS="-I$prefix/include/freetype2" FREETYPE_LIBS="-L$prefix/lib -lfreetype"
 export FONTCONFIG_CFLAGS="-I$prefix/include" FONTCONFIG_LIBS="-L$prefix/lib -lfontconfig"
 export GNUTLS_CFLAGS="-I$tls/include" GNUTLS_LIBS="-L$tls/lib -lgnutls"
@@ -107,7 +107,7 @@ export PKG_CONFIG_LIBDIR=/nonexistent GRADLE=/bin/true
     cd "$stage/core"
     "$source_dir/configure" --host=aarch64-linux-android --enable-wineandroid_drv=no \
         --enable-win64 --enable-archs=arm64ec,aarch64,i386,x86_64 --with-wine-tools="$tools_dir" \
-        --disable-tests --with-x --with-freetype --with-fontconfig --without-xshm \
+        --disable-tests --with-x --with-xinput --with-xinput2 --with-freetype --with-fontconfig --without-xshm \
         --without-wayland --without-unwind --with-gnutls --without-gstreamer \
         --without-alsa --with-pulse --without-dbus "$opengl_arg" --with-vulkan \
         --prefix=/arlinux-wine --exec-prefix=/arlinux-wine
@@ -120,6 +120,11 @@ fi
 grep -q '^#define SONAME_LIBVULKAN ' "$stage/core/include/config.h" || {
     echo 'Wine could not enable Vulkan; check the Bionic graphics prefix.' >&2; exit 2;
 }
+for feature in HAVE_X11_EXTENSIONS_XINPUT2_H SONAME_LIBXI; do
+    grep -q "^#define $feature " "$stage/core/include/config.h" || {
+        echo "Wine raw mouse input is unavailable: $feature. Rebuild graphics with libXi." >&2; exit 2;
+    }
+done
 (
     cd "$stage/core"
     mapfile -t modules < <(sed -n -E 's/^(dlls\/[^ :]*\.so):.*/\1/p' Makefile)

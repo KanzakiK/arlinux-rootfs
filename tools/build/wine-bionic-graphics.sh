@@ -41,6 +41,7 @@ build_xlib() {
         export CC="$ndk/bin/aarch64-linux-android29-clang"
         export CFLAGS="-O2 -fPIC -I$native/include -I$prefix/include"
         export LDFLAGS="-L$prefix/lib -L$native/lib -Wl,-z,max-page-size=16384"
+        export xorg_cv_malloc0_returns_null=no
         export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig"
         [[ -f Makefile ]] || ./configure --host=aarch64-linux-android --prefix="$prefix" \
             --disable-static --disable-docs --disable-specs --without-xmlto --without-fop
@@ -113,6 +114,8 @@ cpp_link_args = ['-static-libstdc++', '-L{native}/lib', '-Wl,-z,max-page-size=16
 PY
 export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig"
 build_xlib libXfixes-6.0.1 b695f93cd2499421ab02d22744458e650ccc88c1d4c8130d60200213abc02d58
+# Raw mouse input in Windows games requires both XInput headers and libXi.
+build_xlib libXi-1.8.2 d0e0555e53d6e2114eabfa44226ba162d2708501a25e18d99cfb35c094c6c104
 build_xlib libXrender-0.9.12 b832128da48b39c8d608224481743403ad1691bf4e554e4be9c174df171d1b97
 build_xlib libXcomposite-0.4.6 fe40bcf0ae1a09070eba24088a5eb9810efe57453779ec1e20a55080c6dc2c87
 build_xlib libXxf86vm-1.1.6 96af414c73ce1d5449ad04be7f9f27fa8330f844b6dda843ef22e3e1befb3ee3
