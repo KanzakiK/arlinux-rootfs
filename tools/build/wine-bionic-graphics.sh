@@ -20,10 +20,9 @@ fi
 if [[ "$opengl" == zink && ! -f "$mesa/meson.build" ]]; then
     echo 'Zink requires MESA_SOURCE instead of a dash.' >&2; exit 2
 fi
-if [[ "$driver" == turnip ]]; then
-[[ -f "$mesa/src/vulkan/wsi/wsi_common_arlinux.c" ]] || {
-    echo 'Use ARLinux Mesa with its shared Android buffer WSI.' >&2; exit 2;
-}
+if [[ "$driver" != none && ! -f "$mesa/src/vulkan/wsi/wsi_common_arlinux.c" ]]; then
+    echo 'Use ARLinux Mesa with its shared Android buffer WSI.' >&2
+    exit 2
 fi
 mkdir -p "$base" "$prefix/lib/pkgconfig"
 fetch() {
@@ -72,7 +71,7 @@ from pathlib import Path
 import shutil, sys
 mesa, base, native, ndk, protocols = map(Path, sys.argv[1:6])
 source = base / 'mesa'
-if (sys.argv[6] == 'turnip' or sys.argv[7] == 'zink') and not source.exists():
+if (sys.argv[6] != 'none' or sys.argv[7] == 'zink') and not source.exists():
     shutil.copytree(mesa, source, ignore=shutil.ignore_patterns('.git', 'build', 'build-*', 'autom4te.cache'))
     for name in ['src/util/detect_os.h', 'include/vulkan/vk_android_native_buffer.h']:
         p = source / name
@@ -132,13 +131,13 @@ cmake -S "$base/Vulkan-Loader-1.4.357" -B "$base/loader-build-1.4.357" -G Ninja 
 cmake --build "$base/loader-build-1.4.357" -j"${JOBS:-8}"
 cmake --install "$base/loader-build-1.4.357"
 unset PKG_CONFIG_LIBDIR
-if [[ "$driver" != turnip && "$opengl" == none ]]; then
+if [[ "$driver" == none && "$opengl" == none ]]; then
     echo "Built desktop Vulkan loader for $driver driver."
     exit 0
 fi
 if [[ "$opengl" == zink ]]; then
     vulkan_drivers=[]
-    [[ "$driver" != turnip ]] || vulkan_drivers=freedreno
+    [[ "$driver" == none ]] || vulkan_drivers=freedreno
     if [[ ! -d "$base/build-zink-$driver" ]]; then
         meson setup "$base/build-zink-$driver" "$base/mesa" --cross-file "$base/cross.ini" \
             --prefix="$prefix" -Dplatforms=x11,wayland -Darlinux-wsi=true \
@@ -148,7 +147,7 @@ if [[ "$opengl" == zink ]]; then
             -Dxmlconfig=enabled -Dzstd=disabled -Dlibunwind=disabled \
             -Dvideo-codecs=[] -Dtools=[] --wrap-mode=nofallback
     else
-        meson configure "$base/build-zink-$driver" -Dxmlconfig=enabled
+        meson configure "$base/build-zink-$driver" -Dxmlconfig=enabled -Dvulkan-drivers="$vulkan_drivers"
     fi
     ninja -C "$base/build-zink-$driver" -j"${JOBS:-8}"
     meson install -C "$base/build-zink-$driver"

@@ -197,7 +197,9 @@ def main():
     # These are opened by Wine at runtime rather than linked as DT_NEEDED.
     pending = re.findall(r'^#define SONAME_LIB(?:FONTCONFIG|FREETYPE|GNUTLS|VULKAN|GL|EGL|GLESV2|X[A-Z0-9_]+) "([^"]+)"',
                          config_header, re.MULTILINE)
-    if args.vulkan_driver == 'turnip':
+    # Ship Turnip alongside the system driver so Adreno can use modern Vulkan.
+    turnip = args.vulkan_driver != 'none'
+    if turnip:
         pending.append('libvulkan_freedreno.so')
     prefixes = [args.native_prefix, *args.dependency_prefix]
     if args.graphics_prefix:
@@ -252,10 +254,13 @@ def main():
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n'
                       '<fontconfig><dir>/system/fonts</dir><cachedir prefix="xdg">fontconfig</cachedir></fontconfig>\n')
-    if args.vulkan_driver != 'none':
-        icd = destination / ('share/vulkan/icd.d/' + args.vulkan_driver + '_icd.aarch64.json')
+    drivers = [] if args.vulkan_driver == 'none' else [args.vulkan_driver]
+    if turnip and 'turnip' not in drivers:
+        drivers.append('turnip')
+    for backend in drivers:
+        icd = destination / ('share/vulkan/icd.d/' + backend + '_icd.aarch64.json')
         icd.parent.mkdir(parents=True, exist_ok=True)
-        if args.vulkan_driver == 'system':
+        if backend == 'system':
             driver = {'file_format_version': '1.0.0', 'ICD': {'api_version': '1.3.0',
                       'library_path': '../../../lib/wine/aarch64-unix/libvulkan_android_desktop.so'}}
         else:

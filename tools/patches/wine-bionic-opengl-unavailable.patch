@@ -1,0 +1,52 @@
+--- a/dlls/win32u/opengl.c
++++ b/dlls/win32u/opengl.c
+@@ -80,6 +80,7 @@
+ static struct list devices_egl = LIST_INIT( devices_egl );
+ static struct egl_platform display_egl;
+ static struct opengl_funcs display_funcs;
++static BOOL opengl_available;
+ 
+ static pthread_mutex_t root_context_lock = PTHREAD_MUTEX_INITIALIZER;
+ static struct opengl_context *root_core, *root_noerror, *root_compat;
+@@ -3466,6 +3467,11 @@
+     init_egl_platforms( &display_funcs, driver_funcs );
+ 
+     formats_count = driver_funcs->p_init_pixel_formats( &onscreen_count );
++    if (!formats_count)
++    {
++        WARN( "No OpenGL pixel formats available, disabling the OpenGL driver\n" );
++        return;
++    }
+     if (!(pixel_formats = malloc( formats_count * sizeof(*pixel_formats) ))) ERR( "Failed to allocate memory for pixel formats\n" );
+     else for (int i = 0; i < formats_count; i++) driver_funcs->p_describe_pixel_format( i + 1, pixel_formats + i );
+ 
+@@ -3489,7 +3495,11 @@
+     display_funcs.p_context_destroy = win32u_context_destroy;
+ 
+     root = get_root_context( core_attrs );
+-    make_internal_context_current( root, NULL );
++    if (!root->attrs.format || !make_internal_context_current( root, NULL ))
++    {
++        WARN( "Failed to activate the OpenGL root context, disabling the OpenGL driver\n" );
++        return;
++    }
+     driver_funcs->p_init_extensions( &display_funcs, root->extensions );
+     make_client_context_current();
+ 
+@@ -3565,6 +3575,7 @@
+         LIST_FOR_EACH_ENTRY_SAFE( egl, next, &devices_egl, struct egl_platform, entry )
+             init_device_info( egl, &display_funcs );
+     }
++    opengl_available = TRUE;
+ }
+ 
+ /***********************************************************************
+@@ -3582,7 +3593,7 @@
+     }
+ 
+     pthread_once( &init_once, display_funcs_init );
+-    return &display_funcs;
++    return opengl_available ? &display_funcs : NULL;
+ }
+ 
+ BOOL get_opengl_gpus( struct list *gpus )
