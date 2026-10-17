@@ -316,6 +316,17 @@ def install(root, channel):
         # installed-file record and skip the real client download.
         if channel == 'stable':
             shutil.copyfile(listing, root/f'package/{CLIENT_MANIFEST}')
+    # Only a new installation gets our defaults. Never rewrite an existing
+    # client's settings, including during later startup or bootstrap updates.
+    config = root/'config/config.vdf'
+    config.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with config.open('x') as output:
+            output.write('"InstallConfigStore" { "Software" { "Valve" { "Steam" { '
+                         '"System" { "IdleScreensaverBatterySeconds" "0" '
+                         '"IdleScreensaverACSeconds" "0" } } } } }\n')
+    except FileExistsError:
+        pass
     print(f'Steam ARM64 bootstrap build {version} ready; starting Valve updater.', flush=True)
 
 
