@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import subprocess
+import time
 import unittest
 from unittest.mock import patch
 
@@ -70,11 +71,12 @@ class LatestRuntimeTests(unittest.TestCase):
 
     def test_installed_latest_does_not_query_network_on_every_launch(self):
         self.selection.parent.mkdir(parents=True)
-        self.selection.write_text(json.dumps({'sha256': 'b' * 64}))
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / 'windows-downloads.tsv'
             manifest.write_text('Wine Bionic latest\t' + 'a' * 64 +
                 '\thttps://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz\n')
+            self.selection.write_text(json.dumps({'sha256': 'b' * 64,
+                'checkedAt': time.time(), 'manifestSHA256': windows.digest(manifest)}))
             with patch.object(windows, 'MANIFEST', manifest), \
                  patch.object(windows, 'runtime', return_value=Path('/runtime/' + 'b' * 64)), \
                  patch.object(windows, 'latest_runtime') as request:
@@ -93,14 +95,35 @@ class LatestRuntimeTests(unittest.TestCase):
             self.assertEqual(windows.ensure_runtime(), Path('/runtime')/current)
             resolve.assert_called_once()
             install.assert_called_once_with(Path('/archive'), current)
-            self.assertEqual(json.loads(self.selection.read_text()), {'sha256': current})
+            selected = json.loads(self.selection.read_text())
+            self.assertEqual(selected['sha256'], current)
+            self.assertEqual(selected['manifestSHA256'], windows.digest(manifest))
+            self.assertLess(abs(selected['checkedAt'] - time.time()), 5)
+
+    def test_expired_or_changed_manifest_cache_rechecks_release(self):
+        current = 'b' * 64
+        self.selection.parent.mkdir(parents=True)
+        manifest = Path(self.directory.name) / 'windows-downloads.tsv'
+        manifest.write_text('Wine Bionic latest\t' + 'a' * 64 +
+            '\thttps://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz\n')
+        for checked, fingerprint in ((time.time() - 3601, windows.digest(manifest)),
+                                     (time.time(), 'c' * 64)):
+            self.selection.write_text(json.dumps({'sha256': current,
+                'checkedAt': checked, 'manifestSHA256': fingerprint}))
+            with patch.object(windows, 'MANIFEST', manifest), \
+                 patch.object(windows, 'runtime', return_value=Path('/runtime') / current), \
+                 patch.object(windows, 'validate'), \
+                 patch.object(windows, 'latest_runtime', return_value=(current, 'https://example.test/runtime')) as request:
+                self.assertEqual(windows.ensure_runtime(), Path('/runtime') / current)
+                request.assert_called_once()
 
     def test_selected_instance_does_not_follow_other_instances_shared_pointer(self):
         selected = 'b' * 64
         self.selection.parent.mkdir(parents=True)
-        self.selection.write_text(json.dumps({'sha256': selected}))
         manifest = Path(self.directory.name)/'windows-downloads.tsv'
         manifest.write_text('Wine Bionic latest\t'+'a'*64+'\thttps://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz\n')
+        self.selection.write_text(json.dumps({'sha256': selected,
+            'checkedAt': time.time(), 'manifestSHA256': windows.digest(manifest)}))
         with patch.object(windows, 'MANIFEST', manifest), \
              patch.object(windows, 'runtime', return_value=Path('/runtime')/selected) as runtime, \
              patch.object(windows, 'latest_runtime') as resolve:
