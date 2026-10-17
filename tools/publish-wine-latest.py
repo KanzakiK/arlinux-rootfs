@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 
 
 def component_source_archives(metadata, directory):
@@ -26,6 +27,20 @@ def component_source_archives(metadata, directory):
             raise ValueError('Missing or mismatched component source archive: ' + str(path))
         component_sources.append((path, expected))
     return component_sources
+
+
+def verify_uploaded_asset(command, asset, checksum, size):
+    # GitHub can briefly return the previous asset or an unset digest after
+    # replacement. Never advance the download pin until metadata agrees.
+    for attempt in range(6):
+        release = json.loads(subprocess.check_output(command[:1] + ['api',
+                             'repos/taowen/wine/releases/tags/latest'], text=True))
+        uploaded = next((item for item in release['assets'] if item['name'] == asset), None)
+        if uploaded and uploaded.get('digest') == 'sha256:' + checksum and uploaded.get('size') == size:
+            return
+        if attempt < 5:
+            time.sleep(2)
+    raise RuntimeError('Published archive verification failed; download pin unchanged')
 
 
 def main():
@@ -98,8 +113,10 @@ def main():
         return
     command = ['gh', 'release']
     source_tag = 'arlinux-wine-source-' + source['archiveSHA256']
-    source_view = subprocess.run(command + ['view', source_tag, '-R', 'taowen/wine',
-                                            '--json', 'assets'], capture_output=True, text=True)
+    # Older gh release --json projections omit GitHub's asset digest field.
+    # Raw API responses preserve it across supported CLI versions.
+    source_view = subprocess.run(['gh', 'api', 'repos/taowen/wine/releases/tags/' + source_tag],
+                                 capture_output=True, text=True)
     if source_view.returncode:
         subprocess.run(command + ['create', source_tag, '-R', 'taowen/wine',
             '--title', 'ARLinux Wine source ' + source['commit'], '--notes',
@@ -119,15 +136,15 @@ def main():
             subprocess.run(command + ['upload', source_tag, '-R', 'taowen/wine',
                                       str(staged_source)], check=True)
     # Keep the stable latest runtime asset for existing clients.
-    view = subprocess.run(command + ['view', 'latest', '-R', 'taowen/wine',
-                                    '--json', 'tagName'], capture_output=True, text=True)
+    view = subprocess.run(['gh', 'api', 'repos/taowen/wine/releases/tags/latest'],
+                          capture_output=True, text=True)
     if view.returncode:
         subprocess.run(command + ['create', 'latest', '-R', 'taowen/wine',
             '--title', 'ARLinux Bionic Wine latest', '--notes',
             'Shared Bionic Wine runtime for ARLinux Windows applications and Steam games. '
             'Downloads are pinned and verified by SHA-256.', '--latest'], check=True)
-    assets = json.loads(subprocess.check_output(command + ['view', 'latest', '-R',
-                        'taowen/wine', '--json', 'assets'], text=True))['assets']
+    assets = json.loads(subprocess.check_output(['gh', 'api',
+                        'repos/taowen/wine/releases/tags/latest'], text=True))['assets']
     for path, expected in component_sources:
         existing = next((item for item in assets if item['name'] == path.name), None)
         if existing:
@@ -135,16 +152,14 @@ def main():
                 raise RuntimeError('Component source asset already differs: ' + path.name)
         else:
             subprocess.run(command + ['upload', 'latest', '-R', 'taowen/wine', str(path)], check=True)
-    with tempfile.TemporaryDirectory(prefix='arlinux-wine-latest-') as directory:
-        staged = Path(directory) / asset
-        shutil.copyfile(archive, staged)
-        subprocess.run(command + ['upload', 'latest', '-R', 'taowen/wine',
-                                  str(staged), '--clobber'], check=True)
-    release = json.loads(subprocess.check_output(command + ['view', 'latest', '-R',
-                         'taowen/wine', '--json', 'assets'], text=True))
-    uploaded = next(item for item in release['assets'] if item['name'] == asset)
-    if uploaded.get('digest') != 'sha256:' + checksum or uploaded['size'] != archive.stat().st_size:
-        raise RuntimeError('Published archive verification failed; download pin unchanged')
+    existing = next((item for item in assets if item['name'] == asset), None)
+    if not existing or existing.get('digest') != 'sha256:' + checksum or existing.get('size') != archive.stat().st_size:
+        with tempfile.TemporaryDirectory(prefix='arlinux-wine-latest-') as directory:
+            staged = Path(directory) / asset
+            shutil.copyfile(archive, staged)
+            subprocess.run(command + ['upload', 'latest', '-R', 'taowen/wine',
+                                      str(staged), '--clobber'], check=True)
+    verify_uploaded_asset(command, asset, checksum, archive.stat().st_size)
     args.manifest.write_text(manifest, encoding='utf-8', newline='\n')
     print('Published latest and updated download pin:', args.manifest)
 
