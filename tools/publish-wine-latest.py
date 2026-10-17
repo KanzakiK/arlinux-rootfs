@@ -10,6 +10,24 @@ import tarfile
 import tempfile
 
 
+def component_source_archives(metadata, directory):
+    component_sources = []
+    for name in ('wine', 'fex', 'dxvk'):
+        record = metadata.get('originalSources', {}).get(name, {})
+        filename, expected = record.get('asset'), record.get('sha256')
+        if not isinstance(filename, str) or Path(filename).name != filename or not expected:
+            raise ValueError('Missing component source record: ' + name)
+        path = directory / filename
+        actual = None
+        if path.is_file():
+            with path.open('rb') as stream:
+                actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if actual != expected:
+            raise ValueError('Missing or mismatched component source archive: ' + str(path))
+        component_sources.append((path, expected))
+    return component_sources
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path, help='Exact archive already tested on devices')
@@ -63,6 +81,9 @@ def main():
                            source['archiveSHA256'] + '/' + source['archiveName'])
     if source['archiveURL'] != expected_source_url:
         raise ValueError('wineSource.archiveURL must use the immutable source release tag')
+    # The PE packager also records the Wine, FEX and DXVK source inputs.
+    # Validate every one before changing any public release asset.
+    component_sources = component_source_archives(metadata, archive.parent)
     asset = 'arlinux-wine-bionic.tar.gz'
     url = 'https://github.com/taowen/wine/releases/download/latest/' + asset
     manifest = f'Wine {metadata["wine"]} Bionic latest\t{checksum}\t{url}\n'
@@ -100,6 +121,15 @@ def main():
             '--title', 'ARLinux Bionic Wine latest', '--notes',
             'Shared Bionic Wine runtime for ARLinux Windows applications and Steam games. '
             'Downloads are pinned and verified by SHA-256.', '--latest'], check=True)
+    assets = json.loads(subprocess.check_output(command + ['view', 'latest', '-R',
+                        'taowen/wine', '--json', 'assets'], text=True))['assets']
+    for path, expected in component_sources:
+        existing = next((item for item in assets if item['name'] == path.name), None)
+        if existing:
+            if existing.get('digest') != 'sha256:' + expected or existing.get('size') != path.stat().st_size:
+                raise RuntimeError('Component source asset already differs: ' + path.name)
+        else:
+            subprocess.run(command + ['upload', 'latest', '-R', 'taowen/wine', str(path)], check=True)
     with tempfile.TemporaryDirectory(prefix='arlinux-wine-latest-') as directory:
         staged = Path(directory) / asset
         shutil.copyfile(archive, staged)
