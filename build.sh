@@ -50,7 +50,17 @@ case "$command" in
     git submodule update --init --recursive
     ./tools/build/linux-assets.sh "${selected[@]}"
     for product in "${selected[@]}"; do
-      python3 tools/bundle.py pack "distributions/$product" "out/$product.zip"
+      if [[ "$product" == arch || "$product" == omarchy ]]; then
+        snapshot="build/offline/$product/rootfs.tar"
+        [[ -f "$snapshot" ]] || {
+          echo "Prepare an offline desktop first: ./build.sh prepare $product, then ./build.sh offline $product SNAPSHOT.tar" >&2
+          exit 2
+        }
+        python3 tools/bundle.py pack "distributions/$product" "build/offline/$product/seed.zip"
+        python3 tools/device-desktop.py seal "build/offline/$product/seed.zip" "$snapshot" "out/$product.zip"
+      else
+        python3 tools/bundle.py pack "distributions/$product" "out/$product.zip"
+      fi
     done
     ;;
   doctor)
