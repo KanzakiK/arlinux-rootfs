@@ -14,6 +14,7 @@ import tarfile
 import tempfile
 import urllib.request
 from artifact_download import download
+from component_inputs import request_identity, source_inputs
 
 
 ROOTFS = {'yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'}
@@ -39,9 +40,11 @@ def request():
         if not re.fullmatch('[0-9a-f]{40}', data.get(name, '')):
             raise ValueError('Expected a pinned ' + name + ' commit')
     identity = data['identity']
-    actual = hashlib.sha256(json.dumps({k:v for k,v in data.items() if k not in ('identity','cacheSeed')}, sort_keys=True).encode()).hexdigest()
+    actual = request_identity(data)
     if identity != actual:
         raise ValueError('Component request identity differs from its inputs')
+    if data.get('format') == 2 and data['sourceInputs'] != source_inputs(framework, data['framework'], data['stage'], plan):
+        raise ValueError('Pinned checkout differs from the declared component sources')
     expected_arch = 'arm64' if stage['runner'].endswith('-arm') else 'x64'
     if os.environ.get('RUNNER_ARCH', '').lower() != expected_arch:
         raise ValueError('Unexpected hosted runner architecture')
@@ -95,8 +98,11 @@ def prepare(data, framework):
     with Path(os.environ['GITHUB_ENV']).open('a') as out:
         out.write('ARLINUX_FRAMEWORK='+framework.as_posix()+'\n')
         out.write('ARLINUX_WORKSPACE='+root.as_posix()+'\n')
-    paths = [str(root/'cache/ccache'), str(root/'cache/rootfs')]
-    paths.append(str(framework/'build') if data['stage'] in ROOTFS else str(framework/'build/linux'))
+    # Cache immutable stage archives and receipts, never the root-owned scratch
+    # rootfs (including /root and ldconfig's private directories). Those trees
+    # made Actions' unprivileged tar fail and discarded the entire cache.
+    paths = [str(root/'cache/ccache'), str(framework/'build/pipeline'),
+             str(framework/'build/linux')]
     with Path(os.environ['GITHUB_OUTPUT']).open('a') as out:
         out.write('cache-paths<<ARLINUX_CACHE_PATHS\n'+'\n'.join(paths)+'\nARLINUX_CACHE_PATHS\n')
 
@@ -184,6 +190,9 @@ def build(data, framework):
             'ARLINUX_REQUIRE_GPU_CACHE=1',
             'bash', framework/'build.sh', 'rootfs', '--config', config,
             '--distribution', stage, '--output', output)
+        # Only host build-cache files change owner; guest metadata remains in
+        # snapshot.tar and the scratch rootfs is left untouched.
+        run('sudo', 'chown', '-R', f'{os.getuid()}:{os.getgid()}', framework/'build/pipeline')
 
 
 
@@ -206,6 +215,26 @@ def publish(data, framework):
             raise ValueError('Component output differs from its build-cache receipt')
         paths = [path.parent, path.parent.parent/'receipt.json',
                  *(Path(name) for name in state['references'])]
+    # A forced hosted rerun must verify the rebuilt/cached bytes, but need not
+    # recompress or upload the same immutable capsule a second time.
+    from pipeline_cache import inventory
+    contents = ({'outputs': state['outputs'], 'references': state['references']}
+                if stage not in ROOTFS else {str(p.relative_to(root)): inventory(p) for p in paths})
+    record['outputIdentity'] = hashlib.sha256(json.dumps(contents, sort_keys=True).encode()).hexdigest()
+    tag = 'arlinux-'+stage+'-'+data['identity'][:24]
+    repository = os.environ['GITHUB_REPOSITORY']
+    previous = subprocess.run(['gh','api',f'repos/{repository}/releases/tags/{tag}'], capture_output=True, text=True)
+    if not previous.returncode:
+        assets = json.loads(previous.stdout)['assets']
+        completed = next((a for a in assets if a['name'] == 'component.json'), None)
+        if completed:
+            expected = completed['digest'].removeprefix('sha256:')
+            saved = download(completed['browser_download_url'], output/'previous.json', expected)
+            prior = json.loads(saved.read_text())
+            if prior['identity'] != data['identity'] or prior.get('outputIdentity') != record['outputIdentity']:
+                raise ValueError('Published component differs from the verified rerun outputs')
+            print('OK identical published component '+stage, flush=True)
+            return
     archive = output / 'capsule.tar'
     # Toolchains, pinned checkouts and declared pipeline dependencies are
     # provisioned separately and must not be duplicated into every capsule.

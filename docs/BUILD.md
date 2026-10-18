@@ -17,6 +17,12 @@ Use Python with zstandard and authenticated gh. Component ownership, ARM64
 standard runner labels and dependencies are defined in
 `tools/build/github-components.json`. Each repository runs an independent
 workflow_dispatch and owns its own 10 GB cache. No WSL compilation is required.
+Request identities use source content and dependency identities rather than the
+integration commit alone. Actions caches retain stage archives, receipts and Linux
+GPU outputs. Root-owned scratch rootfs trees are deliberately excluded: their
+private directory permissions prevent the unprivileged Actions cache from saving.
+Guest ownership and modes stay inside snapshot.tar; only host cache files change
+owner after the privileged package stage.
 Only matching input/output hashes permit reuse; published component capsules
 preserve symlinks and modes. Keep download checksums and archive path safety,
 propagate real command failures, and validate APK behavior on a fresh instance.

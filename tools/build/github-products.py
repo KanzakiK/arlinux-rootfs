@@ -14,6 +14,7 @@ import time
 from threading import Event
 import urllib.request
 from artifact_download import download,sha256_file
+from component_inputs import request_identity, source_inputs
 
 
 def gh(*args, optional=False):
@@ -62,8 +63,8 @@ class Coordinator:
         manifest = self.state/request['identity']/'component.json'
         download(asset['browser_download_url'],manifest,digest[7:])
         record = json.loads(manifest.read_text())
-        for name in ('stage','identity','framework','android','dependencies'):
-            if record.get(name) != request[name]:
+        for name in ('stage','identity','android','dependencies','sourceInputs'):
+            if record.get(name) != request.get(name):
                 raise ValueError('Component release differs from the requested inputs: '+name)
         names={a['name'] for a in release['assets']}
         if any(part['name'] not in names for part in record['parts']):
@@ -72,9 +73,10 @@ class Coordinator:
             manifestUrl=asset['browser_download_url'],manifestSha256=digest[7:])
 
     def component(self, stage, dependencies):
-        request = dict(format=1,stage=stage,framework=self.framework,android=self.android,
-                       dependencies=dependencies)
-        request['identity']=hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest()
+        framework = Path(__file__).resolve().parents[2]
+        request = dict(format=2,stage=stage,framework=self.framework,android=self.android,
+                       dependencies=dependencies,sourceInputs=source_inputs(framework,self.framework,stage,self.plan))
+        request['identity']=request_identity(request)
         repository=self.plan['stages'][stage]['repository']
         result=self.existing(request)
         if result:

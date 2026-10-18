@@ -49,8 +49,8 @@ class CoordinatorTest(unittest.TestCase):
                 plan={'workflow':'arlinux-component.yml','stages':{'test':{'repository':'owner/component'}}}
                 coordinator=module.Coordinator(plan,'f'*40,'a'*40,Path(temporary),poll=0)
                 import hashlib,json
-                request=dict(format=1,stage='test',framework='f'*40,android='a'*40,dependencies=[])
-                identity=hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest()
+                request=dict(format=2,stage='test',framework='f'*40,android='a'*40,dependencies=[],sourceInputs={'fixture':'sources'})
+                identity=module.request_identity(request)
                 title='arlinux/test/'+identity
                 old=dict(databaseId=1,displayTitle=title,status='completed',conclusion='failure',url='old')
                 active=dict(databaseId=2,displayTitle=title,status='in_progress',conclusion=None,url='new')
@@ -58,7 +58,7 @@ class CoordinatorTest(unittest.TestCase):
                 initial=[active,old] if resume else [old]
                 with patch.object(coordinator,'existing',side_effect=[None,{'identity':identity}]), \
                      patch.object(coordinator,'runs',side_effect=[initial,[old],[done,old]]), \
-                     patch.object(module,'gh') as dispatch,patch.object(module,'api',return_value=[]):
+                     patch.object(module,'gh') as dispatch,patch.object(module,'api',return_value=[]), patch.object(module,'source_inputs',return_value={'fixture':'sources'}):
                     self.assertEqual(coordinator.component('test',[])['identity'],identity)
                     self.assertEqual(dispatch.call_count,0 if resume else 1)
                     if not resume:
