@@ -76,6 +76,13 @@ python tools/build/install-github-workflows.py --check
 Fork maintainers first update ownership in the component plan. Only public
 repositories and the declared standard runner labels are supported.
 
+Build completeness belongs to the dependency graph and its input/output hashes.
+Do not maintain parallel lists of required runtime features, DLLs or old package
+layouts, or rescan the same rootfs at multiple packaging layers. Read and copy
+the declared inputs directly, propagate command failures, and verify behavior
+in a fresh device instance. Download checksums, cache integrity, archive path
+safety and Android binary/signature requirements remain enforced.
+
 ## Build
 
 Run from this repository, using the exact pushed framework commit:
