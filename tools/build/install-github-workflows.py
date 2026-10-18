@@ -19,13 +19,23 @@ def api(path, payload=None, optional=False):
     return json.loads(result.stdout)
 
 
+def render_workflow(plan,template):
+    allowed={'ubuntu-24.04','ubuntu-24.04-arm','windows-latest'}
+    if any(stage['runner'] not in allowed for stage in plan['stages'].values()):
+        raise ValueError('Only the declared free standard runner labels are supported')
+    for marker,runner in (('@@ARM64_STAGES@@','ubuntu-24.04-arm'),('@@WINDOWS_STAGES@@','windows-latest')):
+        names=[name for name,stage in plan['stages'].items() if stage['runner']==runner]
+        template=template.replace(marker,json.dumps(names,separators=(',',':')))
+    return template.encode()
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check',action='store_true')
     args=parser.parse_args()
     directory=Path(__file__).resolve().parent
     plan=json.loads((directory/'github-components.json').read_text())
-    workflow=(directory/'github-component.workflow.yml').read_bytes()
+    workflow=render_workflow(plan,(directory/'github-component.workflow.yml').read_text())
     for repository in sorted({s['repository'] for s in plan['stages'].values()}):
         metadata=api('repos/'+repository)
         if metadata['private']:

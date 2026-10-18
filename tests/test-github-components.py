@@ -29,6 +29,17 @@ class ComponentTest(unittest.TestCase):
         self.assertEqual(plan['stages']['yibu']['runner'], 'ubuntu-24.04-arm')
         self.assertGreaterEqual(len({s['repository'] for s in plan['stages'].values()}),8)
         self.assertNotIn('workflow_call', (ROOT/'tools/build/github-component.workflow.yml').read_text())
+        spec=importlib.util.spec_from_file_location('workflow_installer',ROOT/'tools/build/install-github-workflows.py')
+        installer=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        rendered=installer.render_workflow(plan,(ROOT/'tools/build/github-component.workflow.yml').read_text()).decode()
+        self.assertNotIn('@@',rendered)
+        arm=[n for n,s in plan['stages'].items() if s['runner']=='ubuntu-24.04-arm']
+        self.assertIn(json.dumps(arm,separators=(',',':')),rendered)
+        self.assertEqual(rendered.count('uses: actions/checkout@'),1)
+        plan['stages']['yibu']['runner']='paid-larger-runner'
+        with self.assertRaisesRegex(ValueError,'free standard runner'):
+            installer.render_workflow(plan,rendered)
 
     def test_missing_dependency_cannot_silently_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:
