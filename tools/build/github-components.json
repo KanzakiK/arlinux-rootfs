@@ -17,7 +17,8 @@
       "repository": "taowen/arlinux-rootfs",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "bionic-x11": {
       "repository": "taowen/libX11",
@@ -25,13 +26,15 @@
       "dependencies": [
         "bionic-deps"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 2048
     },
     "wine-pulse": {
       "repository": "taowen/arlinux-rootfs",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "wine-pe": {
       "repository": "taowen/wine",
@@ -41,19 +44,22 @@
         "wine-pe-x86_64",
         "wine-pe-i386"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "fex": {
       "repository": "taowen/FEX",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 2048
     },
     "dxvk": {
       "repository": "taowen/dxvk",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 2048
     },
     "wine-pe-package": {
       "repository": "taowen/arlinux-rootfs",
@@ -63,13 +69,15 @@
         "fex",
         "dxvk"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "wine-tls": {
       "repository": "taowen/arlinux-rootfs",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "wine-graphics": {
       "repository": "taowen/mesa",
@@ -77,7 +85,8 @@
       "dependencies": [
         "bionic-x11"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 2048
     },
     "wine-vulkan": {
       "repository": "taowen/libhybris",
@@ -85,7 +94,8 @@
       "dependencies": [
         "wine-graphics"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 2048
     },
     "wine-bionic": {
       "repository": "taowen/wine",
@@ -97,7 +107,8 @@
         "wine-vulkan",
         "windows-fonts"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 1024
     },
     "steamworks": {
       "repository": "taowen/arlinux-rootfs",
@@ -105,19 +116,22 @@
       "dependencies": [
         "wine-bionic"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "windows-accessibility": {
       "repository": "taowen/arlinux-rootfs",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "windows-tray": {
       "repository": "taowen/arlinux-rootfs",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "runtime-support": {
       "repository": "taowen/arlinux-rootfs",
@@ -127,7 +141,8 @@
         "windows-accessibility",
         "windows-tray"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "wine-product": {
       "repository": "taowen/wine",
@@ -136,13 +151,15 @@
         "wine-bionic",
         "runtime-support"
       ],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 256
     },
     "windows-fonts": {
       "repository": "taowen/wine",
       "runner": "windows-latest",
       "dependencies": [],
-      "product": "vendor"
+      "product": "vendor",
+      "compilerCacheMiB": 256
     },
     "yibu": {
       "repository": "taowen/arlinux-yibu",
@@ -151,25 +168,29 @@
         "linux-mesa",
         "linux-hybris"
       ],
-      "product": "rootfs"
+      "product": "rootfs",
+      "compilerCacheMiB": 2048
     },
     "wine-pe-aarch64": {
       "repository": "taowen/wine",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 512
     },
     "wine-pe-x86_64": {
       "repository": "taowen/wine",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 512
     },
     "wine-pe-i386": {
       "repository": "taowen/wine",
       "runner": "ubuntu-24.04",
       "dependencies": [],
-      "product": "wine"
+      "product": "wine",
+      "compilerCacheMiB": 512
     },
     "debian": {
       "repository": "taowen/arlinux-debian",
@@ -178,7 +199,8 @@
         "linux-mesa",
         "linux-hybris"
       ],
-      "product": "rootfs"
+      "product": "rootfs",
+      "compilerCacheMiB": 2048
     },
     "arch": {
       "repository": "taowen/arlinux-arch",
@@ -187,7 +209,8 @@
         "linux-mesa",
         "linux-hybris"
       ],
-      "product": "rootfs"
+      "product": "rootfs",
+      "compilerCacheMiB": 2048
     },
     "omarchy": {
       "repository": "taowen/arlinux-omarchy",
@@ -196,7 +219,8 @@
         "linux-mesa",
         "linux-hybris"
       ],
-      "product": "rootfs"
+      "product": "rootfs",
+      "compilerCacheMiB": 2048
     },
     "plasma": {
       "repository": "taowen/arlinux-plasma",
@@ -205,7 +229,8 @@
         "linux-mesa",
         "linux-hybris"
       ],
-      "product": "rootfs"
+      "product": "rootfs",
+      "compilerCacheMiB": 2048
     },
     "lxqt": {
       "repository": "taowen/arlinux-lxqt",
@@ -214,19 +239,22 @@
         "linux-mesa",
         "linux-hybris"
       ],
-      "product": "rootfs"
+      "product": "rootfs",
+      "compilerCacheMiB": 2048
     },
     "linux-mesa": {
       "repository": "taowen/mesa",
       "runner": "ubuntu-24.04-arm",
       "dependencies": [],
-      "product": "graphics"
+      "product": "graphics",
+      "compilerCacheMiB": 2048
     },
     "linux-hybris": {
       "repository": "taowen/libhybris",
       "runner": "ubuntu-24.04-arm",
       "dependencies": [],
-      "product": "graphics"
+      "product": "graphics",
+      "compilerCacheMiB": 2048
     }
   }
 }

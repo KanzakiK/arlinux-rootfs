@@ -35,6 +35,9 @@ Yibu 在 ARM64 上原生安装 ARM64 软件包，不使用 QEMU 模拟 ARM64。
   `workflow_dispatch`，不能从 arlinux-rootfs 通过 `workflow_call` 调用。
 - 每个仓库共有 10 GB 免费缓存，同一仓库的多个架构和 job 共享额度；
   不是每个 job 各有 10 GB。保留默认容量上限，由 GitHub 淘汰旧缓存。
+- 固定下载单独使用仓库级共享 Cache key，不在每个 job 的缓存里重复存放
+  NDK、MinGW、Mono 和 Gecko。Wine 的大型完整工作树通过组件产物交付，
+  Actions 缓存主要保留有容量上限的增量编译结果。
 - 各仓库的薄工作流从 `tools/build/github-component.workflow.yml` 生成，
   `tools/build/install-github-workflows.py` 负责同步；不复制构建 recipe。
 - Linux runner 仍只通过 `build.sh` 分派至本仓库 `tools/build/` 的同一套

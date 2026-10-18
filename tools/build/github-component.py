@@ -116,20 +116,24 @@ def prepare(data, framework):
         out.write('ARLINUX_FRAMEWORK='+framework.as_posix()+'\n')
         out.write('ARLINUX_WORKSPACE='+root.as_posix()+'\n')
     if data['stage'] != 'windows-fonts':
-        paths = [str(root/'cache')]
+        paths = [str(root/'cache/ccache')]
         if data['stage'] in ROOTFS:
-            paths.append(str(framework/'build'))
+            paths += [str(root/'cache/rootfs'),str(framework/'build')]
         else:
-            paths.append(str(framework/'build/pipeline'/data['stage']))
+            # Large Wine work trees exceed a shared 10 GiB repository quota.
+            # Their immutable capsules carry complete outputs; Actions caches
+            # retain incremental compiler results instead of duplicating them.
+            if not data['stage'].startswith('wine-pe') and data['stage'] not in ('wine-bionic','wine-product'):
+                paths.append(str(framework/'build/pipeline'/data['stage']))
             if data['stage'] in LINUX_GPU:
-                paths.append(str(framework/'build/linux'))
+                paths += [str(root/'cache/rootfs'),str(framework/'build/linux')]
             if data['stage'].startswith('wine-pe-'):
                 paths.append(str(framework/'build/wine-pe/*/tools'))
                 paths.append(str(framework/'build/wine-pe/*/source'))
-            if data['stage'] == 'wine-bionic':
-                paths.append(str(framework/'build/wine-bionic'))
         with Path(os.environ['GITHUB_OUTPUT']).open('a') as out:
             out.write('cache-paths<<ARLINUX_CACHE_PATHS\n'+'\n'.join(paths)+'\nARLINUX_CACHE_PATHS\n')
+            if data['stage'] not in ROOTFS | LINUX_GPU:
+                out.write('vendor-key='+sha(framework/'tools/build/github-inputs.json')+'\n')
 
 
 def toolchains(root, framework):
@@ -176,7 +180,10 @@ def toolchains(root, framework):
             target.chmod(0o755)
         else:
             target.symlink_to(compiler)
-    run('ccache', '--max-size', '2G')
+    stage=json.loads(os.environ['ARLINUX_COMPONENT_REQUEST'])['stage']
+    plan=json.loads((framework/'tools/build/github-components.json').read_text())
+    run('ccache', '--max-size', str(plan['stages'][stage]['compilerCacheMiB'])+'M',
+        env=dict(os.environ,CCACHE_DIR=str(root/'cache/ccache')))
     return dict(format=1, framework=str(framework), wineSource=str(framework/'third_party/wine'),
         ndk=str(tools/'ndk'), mingw=str(launcher), addons=str(addons))
 
