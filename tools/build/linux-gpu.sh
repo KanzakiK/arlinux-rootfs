@@ -3,6 +3,8 @@ set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 jobs="${ARLINUX_JOBS:-$(nproc)}"
+component="${1:-all}"
+case "$component" in all|mesa|hybris) ;; *) echo 'Expected all, mesa or hybris.' >&2; exit 2 ;; esac
 cache_root="${ARLINUX_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/arlinux}"
 mesa_install="$repo/build/linux/mesa"
 hybris_stage="$repo/build/linux/libhybris"
@@ -12,6 +14,14 @@ mesa_cache="$cache_root/mesa-$mesa_revision-$mesa_changes"
 mesa_source="$mesa_cache/source"
 mesa_build="$mesa_cache/build"
 gpu_id="$({
+    uname -m
+    aarch64-linux-gnu-gcc --version
+    aarch64-linux-gnu-g++ --version
+    meson --version
+    aarch64-linux-gnu-pkg-config --modversion egl gl glesv2 libglvnd wayland-client x11
+    sha256sum "$(command -v aarch64-linux-gnu-gcc)" \
+        "$(aarch64-linux-gnu-gcc -print-prog-name=cc1)" \
+        "$(aarch64-linux-gnu-g++ -print-prog-name=cc1plus)"
     printf '%s\n' "$mesa_revision"
     printf '%s\n' "$mesa_changes"
     git -C "$repo/third_party/libhybris" rev-parse HEAD
@@ -28,7 +38,9 @@ gpu_id_file="$repo/build/linux/gpu.inputs.sha256"
 
 gpu_receipt="$repo/build/linux/gpu.outputs.json"
 verify_gpu_cache() {
-    python3 - "$repo" "$gpu_id" "$gpu_receipt" "$mesa_install" "$hybris_stage/install" <<'CACHE'
+    local receipt="${1:-$gpu_receipt}"
+    if [[ $# -gt 0 ]]; then shift; else set -- "$mesa_install" "$hybris_stage/install"; fi
+    python3 - "$repo" "$gpu_id" "$receipt" "$@" <<'CACHE'
 import json,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(sys.argv[1])/'tools/build'))
@@ -42,7 +54,7 @@ except (OSError, ValueError):
 raise SystemExit(0 if valid else 1)
 CACHE
 }
-if [[ -f "$gpu_receipt" ]] && verify_gpu_cache; then
+if [[ "$component" == all && -f "$gpu_receipt" ]] && verify_gpu_cache; then
     printf '%s\n' "$mesa_install" "$hybris_stage/install/usr/lib/hybris"
     exit 0
 fi
@@ -123,10 +135,8 @@ build_hybris() {
     popd >/dev/null
 }
 
-build_mesa
-build_hybris
-printf '%s\n' "$gpu_id" > "$gpu_id_file"
-python3 - "$repo" "$gpu_id" "$gpu_receipt" "$mesa_install" "$hybris_stage/install" <<'RECEIPT'
+write_gpu_receipt() {
+python3 - "$repo" "$gpu_id" "$@" <<'RECEIPT'
 import json,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(sys.argv[1])/'tools/build'))
@@ -136,4 +146,25 @@ pending.write_text(json.dumps({'format':1,'inputs':sys.argv[2],
                               'outputs':{path:inventory(path) for path in sys.argv[4:]}},sort_keys=True)+'\n')
 pending.replace(receipt)
 RECEIPT
+}
+mesa_receipt="$repo/build/linux/gpu.mesa.outputs.json"
+hybris_receipt="$repo/build/linux/gpu.hybris.outputs.json"
+if [[ "$component" == all || "$component" == mesa ]]; then
+    if ! verify_gpu_cache "$mesa_receipt" "$mesa_install"; then
+        [[ "${ARLINUX_REQUIRE_GPU_CACHE:-0}" != 1 ]] || { echo 'Missing or invalid Mesa component artifact.' >&2; exit 2; }
+        build_mesa
+        write_gpu_receipt "$mesa_receipt" "$mesa_install"
+    fi
+fi
+if [[ "$component" == all || "$component" == hybris ]]; then
+    if ! verify_gpu_cache "$hybris_receipt" "$hybris_stage/install"; then
+        [[ "${ARLINUX_REQUIRE_GPU_CACHE:-0}" != 1 ]] || { echo 'Missing or invalid libhybris component artifact.' >&2; exit 2; }
+        build_hybris
+        write_gpu_receipt "$hybris_receipt" "$hybris_stage/install"
+    fi
+fi
+if [[ "$component" == all ]]; then
+    printf '%s\n' "$gpu_id" > "$gpu_id_file"
+    write_gpu_receipt "$gpu_receipt" "$mesa_install" "$hybris_stage/install"
+fi
 printf '%s\n' "$mesa_install" "$hybris_stage/install/usr/lib/hybris"

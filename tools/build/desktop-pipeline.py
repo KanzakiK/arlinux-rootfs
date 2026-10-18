@@ -13,17 +13,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipeline_cache import Cache, digest, inventory, key, run, source_state, support_sources
 
 
-def compatibility_support(framework):
-    record = json.loads((framework / 'build/artifacts/wine/runtime.json').read_text())
-    if record.get('format') != 1 or record.get('supportSources') != support_sources(framework):
-        raise ValueError('Compatibility support is stale; build the independent Wine runtime first')
-    support = Path(record['support']).resolve(strict=True)
-    if not support.is_relative_to(framework / 'build/pipeline/runtime-support'):
-        raise ValueError('Compatibility support must be a verified runtime build-cache artifact')
-    stage = record['stages']['runtime-support']
-    if stage['outputs'] != inventory(support):
-        raise ValueError('Compatibility support does not match its build-cache receipt')
-    return support, stage
+def rootfs_sources(framework, product):
+    inputs = {name: inventory(framework / name) for name in (
+        'runtime/tools', 'tools/arlinux-app-data', 'examples', 'graphics-protocols')}
+    for name in ('third_party/mesa', 'third_party/libhybris',
+                 'third_party/android-headers', 'distributions/' + product):
+        inputs[name] = source_state(framework / name)
+    for name in ('linux-assets.sh', 'linux-gpu.sh', 'linux-aarch64.ini',
+                 'mesa-debs.py', 'mesa-arch.py', 'spark-store-deb.py', 'doctor.sh',
+                 'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py'):
+        inputs['tools/build/' + name] = inventory(framework / 'tools/build' / name)
+    return inputs
 
 
 def main():
@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--android-repo', required=True, type=Path)
     parser.add_argument('--distribution', default='yibu', choices=('yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'))
+    parser.add_argument('--target', choices=('linux-assets', 'rootfs-packages', 'desktop'), default='desktop')
     parser.add_argument('--rebuild', action='store_true')
     args = parser.parse_args()
     product = args.distribution
@@ -42,24 +43,29 @@ def main():
     if os.name != 'posix' or str(framework).startswith('/mnt/'):
         raise ValueError('Rootfs builds require the Linux filesystem in Linux/WSL')
     android = args.android_repo.resolve(strict=True)
-    support, support_record = compatibility_support(framework)
     env = {name: value for name, value in os.environ.items() if name in (
         'PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
         'http_proxy', 'https_proxy', 'no_proxy')}
-    env.update(ARLINUX_STEAMWORKS_PAYLOAD=str(support / 'steamworks'),
-               ARLINUX_WINDOWS_ACCESSIBILITY=str(support / 'windows-accessibility.exe'),
-               ARLINUX_WINDOWS_TRAY=str(support / 'windows-tray.exe'))
     cache_root = framework / 'build/pipeline'
     cache_root.mkdir(parents=True, exist_ok=True)
     with (cache_root / '.rootfs.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         cache = Cache(cache_root, args.rebuild)
-        common = dict(engine=digest(__file__), sources=source_state(framework), support=support_record, distribution=product)
         invoke = lambda *command: run(*command, cwd=framework, env=env)
+        if os.environ.get('ARLINUX_REQUIRE_GPU_CACHE'):
+            env['ARLINUX_REQUIRE_GPU_CACHE'] = os.environ['ARLINUX_REQUIRE_GPU_CACHE']
+        invoke('bash', 'tools/build/linux-gpu.sh')
+        gpu = {name: json.loads((framework / 'build/linux' / name).read_text())
+               for name in ('gpu.mesa.outputs.json', 'gpu.hybris.outputs.json')}
+        common = dict(engine=digest(__file__), sources=rootfs_sources(framework, product),
+                      gpu=gpu, distribution=product)
         def assets(out):
             invoke('bash', 'tools/build/linux-assets.sh', '--rebuild', product)
             shutil.copytree(framework / 'distributions' / product / 'build/assets', out, symlinks=True)
         assets = cache.stage('linux-assets', common, assets)
+        if args.target == 'linux-assets':
+            print('Completed Linux assets', flush=True)
+            return
         target = framework / 'distributions' / product / 'build/assets'
         if target.exists():
             shutil.rmtree(target)
@@ -78,7 +84,10 @@ def main():
             (out / 'seed.zip').unlink()
         packages = cache.stage('rootfs-packages', dict(assets=cache.records['linux-assets'],
             recipe={name: inventory(framework / 'tools/build' / name) for name in ('package-rootfs.py', 'package-rootfs.sh')},
-            qemu=subprocess.check_output(['qemu-aarch64-static', '--version'], text=True)), packages)
+            executor=('native-aarch64' if __import__('platform').machine() in ('aarch64', 'arm64') else subprocess.check_output(['qemu-aarch64-static', '--version'], text=True))), packages)
+        if args.target == 'rootfs-packages':
+            print('Completed Linux packages', flush=True)
+            return
         snapshot = packages / 'packages/snapshot.tar'
         inputs = dict(common, dependencies=cache.records.copy(), snapshot=digest(snapshot),
             transforms={name: inventory(android / 'tools/build' / name) for name in (

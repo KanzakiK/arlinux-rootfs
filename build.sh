@@ -6,6 +6,8 @@ cd "$repo"
 command="${1:---help}"
 shift || true
 case "$command" in
+  gpu) exec python3 tools/build/linux-gpu-component.py "$@" ;;
+  github) exec python3 tools/build/github-products.py "$@" ;;
   wine) exec python3 tools/build/wine-pipeline.py "$@" ;;
   rootfs) exec python3 tools/build/desktop-pipeline.py "$@" ;;
   publish-wine) exec python3 tools/publish-wine-latest.py "$@" --manifest "$repo/runtime/tools/windows-downloads.tsv" ;;

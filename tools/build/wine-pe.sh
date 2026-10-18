@@ -9,6 +9,15 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source_dir="$(realpath "$1")"
 compiler="$(realpath "$2")"
 export PATH="$compiler:$PATH"
+architecture="${ARLINUX_WINE_PE_ARCH:-all}"
+case "$architecture" in
+    all) pe_host=aarch64; pe_archs=arm64ec,aarch64,i386,x86_64; pe_win64=--enable-win64 ;;
+    aarch64) pe_host=aarch64; pe_archs=arm64ec,aarch64; pe_win64=--enable-win64 ;;
+    x86_64) pe_host=x86_64; pe_archs=x86_64; pe_win64=--enable-win64 ;;
+    i386) pe_host=i686; pe_archs=i386; pe_win64= ;;
+    *) echo 'Unsupported Wine PE architecture.' >&2; exit 2 ;;
+esac
+export ARLINUX_WINE_PE_ARCH="$architecture"
 destination="$(realpath -m "$3")"
 revision=46af030d975f331ff6304a34a6b91c6147285c6d
 [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$revision" ]] || {
@@ -21,9 +30,10 @@ mkdir -p "$repo/build/wine-pe"
 # JOBS and destination are deliberately not inputs: they do not change binaries.
 identity="$(python3 - "$repo" "$source_dir" "$compiler" <<'KEY'
 from pathlib import Path
-import hashlib,subprocess,sys
+import hashlib,subprocess,sys,os
 repo,source,compiler=map(Path,sys.argv[1:])
 h=hashlib.sha256()
+h.update(os.environ["ARLINUX_WINE_PE_ARCH"].encode())
 h.update(subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD']))
 inputs=[repo/'tools/build/wine-pe.sh',repo/'tools/build/refresh-wine-vkd3d.py',
         repo/'tools/build/prepare-wine-dcomp.sh',source/'dlls/combase/parameterized.c']
@@ -87,8 +97,8 @@ pkg-config --exists freetype2 || {
         tools/widl/all tools/winebuild/all tools/winegcc/all tools/wmc/all tools/wrc/all nls/all) \
     > "$stage/tools.log" 2>&1
 export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
-(cd "$stage/core" && if [[ ! -f Makefile ]]; then "$stage/source/configure" --host=aarch64-w64-mingw32 --enable-win64 \
-    --enable-archs=arm64ec,aarch64,i386,x86_64 --with-wine-tools="$stage/tools" \
+(cd "$stage/core" && if [[ ! -f Makefile ]]; then "$stage/source/configure" --host="$pe_host-w64-mingw32" $pe_win64 \
+    --enable-archs="$pe_archs" --with-wine-tools="$stage/tools" \
     --disable-tests --enable-winex11.drv --without-wayland --without-unwind --without-x --without-freetype --without-fontconfig --without-gnutls --without-opengl; fi) > "$stage/configure.log" 2>&1
 make -C "$stage/core" -j"${JOBS:-8}" > "$stage/build.log" 2>&1
 make -C "$stage/core" install DESTDIR="$stage/install" > "$stage/install.log" 2>&1

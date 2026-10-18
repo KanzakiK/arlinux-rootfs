@@ -17,14 +17,14 @@ class SourceTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
         self.metadata = {'originalSources': {}}
-        for name in ('wine', 'fex', 'dxvk'):
+        for name in ('wine', 'fex', 'dxvk', 'support'):
             path = self.directory / (name + '-source.tar.gz')
             path.write_bytes(name.encode())
             self.metadata['originalSources'][name] = {
                 'asset': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
     def test_complete_sources_are_returned_for_upload(self):
-        self.assertEqual(len(publish.component_source_archives(self.metadata, self.directory)), 3)
+        self.assertEqual(len(publish.component_source_archives(self.metadata, self.directory)), 4)
 
     def test_missing_or_corrupt_source_blocks_publication(self):
         path = self.directory / 'fex-source.tar.gz'

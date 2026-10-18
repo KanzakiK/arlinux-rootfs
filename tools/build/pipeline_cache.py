@@ -59,7 +59,9 @@ def source_state(repo):
         if header.startswith(b'160000 '):
             state[name] = source_state(path)
         else:
-            state[name] = inventory(path) if path.exists() or path.is_symlink() else None
+            # A deletion has the same content identity before and after commit.
+            if path.exists() or path.is_symlink():
+                state[name] = inventory(path)
     for raw in git('ls-files', '--others', '--exclude-standard', '-z').split(b'\0'):
         if raw:
             name = os.fsdecode(raw)

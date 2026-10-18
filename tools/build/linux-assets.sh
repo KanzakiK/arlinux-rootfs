@@ -19,29 +19,6 @@ gpu_inputs+="$(cd third_party/libhybris &&
     git ls-files --others --exclude-standard -z | sort -z | xargs -0 -r sha256sum)"
 
 ./tools/build/doctor.sh --quiet
-windows_accessibility="${ARLINUX_WINDOWS_ACCESSIBILITY:-$repo/build/windows-accessibility/windows-accessibility.exe}"
-[[ -f "$windows_accessibility" ]] || {
-    echo 'Build tools/build/windows-accessibility.sh LLVM_MINGW_BIN build/windows-accessibility first.' >&2
-    exit 2
-}
-
-
-windows_tray="${ARLINUX_WINDOWS_TRAY:-$repo/build/windows-tray/windows-tray.exe}"
-[[ -f "$windows_tray" ]] || { echo 'Build tools/build/windows-tray.sh first.' >&2; exit 2; }
-
-steamworks="${ARLINUX_STEAMWORKS_PAYLOAD:-$repo/build/steamworks-payload}"
-steamworks_files=(lsteambridge-server aarch64-windows/steam.exe aarch64-windows/lsteamclient.dll
-    aarch64-unix/lsteamclient.so aarch64-unix/steamclient.so aarch64-unix/steamclient64.so
-    i386-windows/lsteamclient.dll x86_64-windows/lsteamclient.dll
-    LICENSE.bridge LICENSE.lsteamclient upstream-revision)
-for entry in "${steamworks_files[@]}"; do
-    [[ -f "$steamworks/$entry" && ! -L "$steamworks/$entry" ]] || {
-        echo "Missing Steamworks payload $entry; build tools/build/steamworks-bridge.sh first." >&2
-        exit 2
-    }
-done
-
-
 # Runtime changes do not require downloading and unpacking the distribution
 # again. Cache only the unmodified seed, before adding libc or GPU payloads.
 seed_rootfs() (
@@ -95,8 +72,6 @@ input_id() {
                 guest tools product.json profile.json rootfs.lock.json \
                 | sort -z | xargs -0 -r sha256sum)
         git -C "distributions/$product" submodule status --recursive || true
-        (cd "$steamworks"; sha256sum "${steamworks_files[@]}")
-        sha256sum "$windows_accessibility"
         printf '%s\n' "$gpu_inputs"
         true
     } | sha256sum | cut -d' ' -f1
@@ -181,18 +156,11 @@ PY
     install -Dm644 runtime/tools/steam_fex.py "$rootfs/usr/lib/arlinux/steam_fex.py"
     install -Dm644 runtime/tools/steam_bionic.py "$rootfs/usr/lib/arlinux/steam_bionic.py"
     install -Dm644 runtime/tools/steamworks.py "$rootfs/usr/lib/arlinux/steamworks.py"
-    for entry in "${steamworks_files[@]}"; do
-        mode=644
-        case "$entry" in *.so|*.exe|lsteambridge-server) mode=755 ;; esac
-        install -Dm"$mode" "$steamworks/$entry" "$rootfs/usr/lib/arlinux/steamworks/$entry"
-    done
     install -Dm644 runtime/tools/steam_proxy.py "$rootfs/usr/lib/arlinux/steam_proxy.py"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm644 runtime/tools/windows_webview.py "$rootfs/usr/lib/arlinux/windows_webview.py"
     install -Dm644 runtime/tools/windows_tray.py "$rootfs/usr/lib/arlinux/windows_tray.py"
     install -Dm644 runtime/tools/windows_a11y.py "$rootfs/usr/lib/arlinux/windows_a11y.py"
-    install -Dm644 "$windows_accessibility" "$rootfs/usr/lib/arlinux/windows-accessibility.exe"
-    install -Dm644 "$windows_tray" "$rootfs/usr/lib/arlinux/windows-tray.exe"
     install -Dm755 runtime/tools/arlinux-windows "$rootfs/usr/bin/arlinux-windows"
     install -Dm644 runtime/tools/windows_apps.py "$rootfs/usr/lib/arlinux/windows_apps.py"
     install -Dm755 runtime/tools/arlinux-windows-app "$rootfs/usr/bin/arlinux-windows-app"

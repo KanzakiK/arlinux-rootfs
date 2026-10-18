@@ -4,7 +4,6 @@ from pathlib import Path
 import socket
 import windows
 
-CLIENT = Path('/usr/lib/arlinux/windows-tray.exe')
 
 
 def call(command):
@@ -12,7 +11,7 @@ def call(command):
     prefix = windows.storage() / 'prefix'
     if not (prefix / 'pfx/drive_c').is_dir():
         raise FileNotFoundError('Wine prefix is not initialized')
-    _, client = windows.request(root, prefix, CLIENT, stdio=True, timeout=8)
+    _, client = windows.request(root, prefix, root / 'files/lib/arlinux/windows-tray.exe', stdio=True, timeout=8)
     try:
         client.settimeout(6)
         client.sendall((command + '\n').encode())

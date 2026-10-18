@@ -1,0 +1,232 @@
+{
+  "format": 1,
+  "workflow": "arlinux-component.yml",
+  "workspace": "/opt/arlinux",
+  "cacheLimitGiB": 10,
+  "products": {
+    "wine": "wine-product",
+    "rootfs": "yibu",
+    "debian": "debian",
+    "arch": "arch",
+    "omarchy": "omarchy",
+    "plasma": "plasma",
+    "lxqt": "lxqt"
+  },
+  "stages": {
+    "bionic-deps": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "bionic-x11": {
+      "repository": "taowen/libX11",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "bionic-deps"
+      ],
+      "product": "wine"
+    },
+    "wine-pulse": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "wine-pe": {
+      "repository": "taowen/wine",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "wine-pe-aarch64",
+        "wine-pe-x86_64",
+        "wine-pe-i386"
+      ],
+      "product": "wine"
+    },
+    "fex": {
+      "repository": "taowen/FEX",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "dxvk": {
+      "repository": "taowen/dxvk",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "wine-pe-package": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "wine-pe",
+        "fex",
+        "dxvk"
+      ],
+      "product": "wine"
+    },
+    "wine-tls": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "wine-graphics": {
+      "repository": "taowen/mesa",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "bionic-x11"
+      ],
+      "product": "wine"
+    },
+    "wine-vulkan": {
+      "repository": "taowen/libhybris",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "wine-graphics"
+      ],
+      "product": "wine"
+    },
+    "wine-bionic": {
+      "repository": "taowen/wine",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "wine-pe-package",
+        "wine-tls",
+        "wine-pulse",
+        "wine-vulkan",
+        "windows-fonts"
+      ],
+      "product": "wine"
+    },
+    "steamworks": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "wine-bionic"
+      ],
+      "product": "wine"
+    },
+    "windows-accessibility": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "windows-tray": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "runtime-support": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "steamworks",
+        "windows-accessibility",
+        "windows-tray"
+      ],
+      "product": "wine"
+    },
+    "wine-product": {
+      "repository": "taowen/wine",
+      "runner": "ubuntu-24.04",
+      "dependencies": [
+        "wine-bionic",
+        "runtime-support"
+      ],
+      "product": "wine"
+    },
+    "windows-fonts": {
+      "repository": "taowen/wine",
+      "runner": "windows-latest",
+      "dependencies": [],
+      "product": "vendor"
+    },
+    "yibu": {
+      "repository": "taowen/arlinux-yibu",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [
+        "linux-mesa",
+        "linux-hybris"
+      ],
+      "product": "rootfs"
+    },
+    "wine-pe-aarch64": {
+      "repository": "taowen/wine",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "wine-pe-x86_64": {
+      "repository": "taowen/wine",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "wine-pe-i386": {
+      "repository": "taowen/wine",
+      "runner": "ubuntu-24.04",
+      "dependencies": [],
+      "product": "wine"
+    },
+    "debian": {
+      "repository": "taowen/arlinux-debian",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [
+        "linux-mesa",
+        "linux-hybris"
+      ],
+      "product": "rootfs"
+    },
+    "arch": {
+      "repository": "taowen/arlinux-arch",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [
+        "linux-mesa",
+        "linux-hybris"
+      ],
+      "product": "rootfs"
+    },
+    "omarchy": {
+      "repository": "taowen/arlinux-omarchy",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [
+        "linux-mesa",
+        "linux-hybris"
+      ],
+      "product": "rootfs"
+    },
+    "plasma": {
+      "repository": "taowen/arlinux-plasma",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [
+        "linux-mesa",
+        "linux-hybris"
+      ],
+      "product": "rootfs"
+    },
+    "lxqt": {
+      "repository": "taowen/arlinux-lxqt",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [
+        "linux-mesa",
+        "linux-hybris"
+      ],
+      "product": "rootfs"
+    },
+    "linux-mesa": {
+      "repository": "taowen/mesa",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [],
+      "product": "graphics"
+    },
+    "linux-hybris": {
+      "repository": "taowen/libhybris",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [],
+      "product": "graphics"
+    }
+  }
+}

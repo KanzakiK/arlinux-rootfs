@@ -1,154 +1,125 @@
 # 唯一构建与发布流程
 
-这是 ARLinux、Linux 发行版和 Bionic Wine 的唯一构建操作文档。开发调试与
-Release 使用同一套入口、依赖图、缓存校验及打包实现。其他文档只描述架构、
-兼容性或诊断，不维护第二套构建步骤。
+Android 总入口是 `arlinux/build.ps1`。开发、调试和 Release 使用同一入口；
+Android 原生组件和 APK 在主机编译，Linux 产品由 GitHub 的免费标准 runner
+编译。Windows 只需 PowerShell、Git、GitHub CLI、Python 和 Android 工具链，
+不需要 WSL、Linux NDK、Linux 编译目录或旧 rootfs ZIP。
 
-## 入口与产物
+## 产品边界
 
-Android 项目的总入口是仓库根目录 `arlinux/build.ps1`，实现为
-`arlinux/tools/build.ps1`。Windows 可以通过它调用 WSL；这不表示所有组件
-都要在 Windows 构建。Linux 产品的唯一分派入口是本仓库 `build.sh`。
-`tools/build/*.py`、`*.sh`、Gradle 和打包器均为内部阶段，不作为人工拼装流程。
+| 产品 | 构建位置 | 交付方式 |
+|---|---|---|
+| Yibu | `taowen/arlinux-yibu` 的 `ubuntu-24.04-arm` | 独立 ZIP、输入/输出收据 |
+| 其他发行版 | 各自 `taowen/arlinux-发行版` 的 ARM64 runner | 独立发行版 ZIP、收据 |
+| Bionic Wine | Wine、FEX、DXVK、Mesa、libhybris 等组件仓库的 x64 runner | 独立运行时、SHA-256、完整源码 |
+| Android | Android 项目所在主机 | Debug APK 或签名 Release APK |
 
-| 产品 | 执行环境与工具 | 实现归属 | 输出 |
-|---|---|---|---|
-| Android 原生组件、APK | 主机 Android JDK/SDK/NDK；当前 Windows 使用 MSYS2 Bash 辅助 | arlinux；compositor fork | Debug APK 或签名 Release APK |
-| Linux rootfs | Linux/WSL、Linux 交叉工具链、ARM64 QEMU、chroot | arlinux-rootfs | 独立发行版 ZIP 与构建收据 |
-| Bionic Wine | Linux/WSL、Linux Android NDK、LLVM-MinGW | arlinux-rootfs | 独立 Bionic Wine tar.gz、校验和、源码包、构建收据 |
+Yibu 不包含 Wine，也不等待 Wine 构建。Steam Windows 游戏和 Windows 启动器
+按需下载同一份 Bionic Wine。Steamworks 桥、Windows 无障碍和托盘二进制随
+Wine 提供，并从对应的下载运行时读取，不能重新放回 rootfs。
+更新上述产物边界后，必须先发布并更新匹配的 Wine 下载清单，再发布依赖新
+路径的 APK；不能让新版 rootfs 指向缺少配套组件的旧 Wine。
 
-rootfs 不使用 Windows 工具、Android NDK 或手机安装软件包。Wine 面向 Android
-Bionic，因此交叉编译需要 Linux 版 NDK；它不是 Linux rootfs，也不因为脚本
-放在本仓库就成为 rootfs 的一部分。Steam 和 Windows 启动器使用同一 Wine 运行时。
-Wine 相关的 Steamworks/无障碍辅助程序由 Wine 流水线编译，rootfs 只消费校验过
-的辅助产物。APK 内置 Yibu ZIP；Wine 运行时仍为独立下载，不嵌入 rootfs。
+Wine PE 拆成 ARM64/ARM64EC、x64、x86 三个独立编译任务，合并时检查重复文件
+的内容一致性。FEX、DXVK、TLS、音频和图形依赖按依赖图并行；只在必要的
+组装阶段汇合。Windows runner 只读取系统 Arial 厂商输入，不编译 Wine。
+Yibu 在 ARM64 上原生安装 ARM64 软件包，不使用 QEMU 模拟 ARM64。
 
-## 配置一次
+## 唯一脚本与工作流归属
 
-两个仓库及子模块必须位于固定提交；定制修改优先进入对应 fork。未修改的
-上游依赖可使用固定版本、校验 SHA-256 的源码归档。不要在构建时自动 pull
-源码，或用临时补丁、旧安装实例覆盖正式输入。
+- `arlinux/tools/build.ps1` 调度 Android 构建及远程 Linux 产品。
+- `tools/build/github-products.py` 是跨仓库协调器，可直接在 Windows Python
+  执行，通过 `gh workflow run --repo COMPONENT` 独立触发组件任务。
+- `tools/build/github-components.json` 是唯一组件仓库、runner 和依赖图定义。
+- 每个组件仓库的 `.github/workflows/arlinux-component.yml` 都是独立
+  `workflow_dispatch`，不能从 arlinux-rootfs 通过 `workflow_call` 调用。
+- 每个仓库共有 10 GB 免费缓存，同一仓库的多个架构和 job 共享额度；
+  不是每个 job 各有 10 GB。保留默认容量上限，由 GitHub 淘汰旧缓存。
+- 各仓库的薄工作流从 `tools/build/github-component.workflow.yml` 生成，
+  `tools/build/install-github-workflows.py` 负责同步；不复制构建 recipe。
+- Linux runner 仍只通过 `build.sh` 分派至本仓库 `tools/build/` 的同一套
+  Wine/rootfs recipe。`github-component.py` 负责主机准备、依赖校验和交付。
 
-Windows 安装 PowerShell 7、JDK、Android SDK、`arlinux/toolchain.json` 指定
-的 NDK、MSYS2 Bash/Python/Meson/Ninja。Android Python 使用原生 Windows Python
-（默认 `C:/tools/python3.exe`），不使用 MSYS Python。通过 `JAVA_HOME`、
-`ANDROID_HOME`、`ARLINUX_BASH`、`ARLINUX_PYTHON` 指定安装位置。
+所有请求固定 Android、构建框架与第三方源码提交；不在编译时自动 pull。
+定制修改优先提交到组件 fork，再更新子模块。未修改的厂商输入使用
+`tools/build/github-inputs.json` 固定 URL 和 SHA-256。
 
-WSL 使用 Linux 文件系统（例如 `/root/src/arlinux-rootfs`）；源码、NDK、
-LLVM-MinGW、编译目录不放在 `/mnt/c`。Windows 调度入口和 APK 输出可以在 Windows。
-Linux 需要以下软件包，以及本仓库锁定版本的源码/厂商 Mono、Gecko 输入：
+## 一次准备
 
-```sh
-sudo dpkg --add-architecture arm64
-sudo apt update
-sudo apt install autoconf automake libtool build-essential bison flex curl git \
-  cmake meson ninja-build patchelf pkg-config python3 python3-mako python3-zstandard \
-  debootstrap qemu-user-static binfmt-support util-linux zstd libarchive-tools jq \
-  gcc-aarch64-linux-gnu g++-aarch64-linux-gnu pkgconf:arm64 glslang-tools \
-  wayland-protocols libfreetype-dev libexpat1-dev \
-  libegl-dev:arm64 libgl-dev:arm64 libgles-dev:arm64 libglvnd-dev:arm64 \
-  libwayland-dev:arm64 libx11-dev:arm64 libx11-xcb-dev:arm64 libxcb1-dev:arm64
-```
+登录具备这些公开仓库 workflow 调度权限的 GitHub CLI：`gh auth login`。
+协调器使用本机已有认证，不把个人 token 写入 Git、产物或 runner 配置。
+组件工作流仅使用自身仓库的临时 `GITHUB_TOKEN` 发布组件产物。
 
-WSL 的 rootfs 包安装阶段需要 root、ARM64 binfmt 和私有 mount namespace。
-在 WSL 中配置默认执行用户为 root，或使用具备相应权限的 Linux 构建环境。
-不能用手机 Builder APK 代替。Wine 要求支持 ARM64X 的 LLVM-MinGW（LLVM 23+），
-Linux NDK 版本与 `arlinux/toolchain.json` 一致。
+主机保留 Android 项目 `toolchain.json` 指定的 JDK、SDK、NDK、MSYS2 辅助
+工具和原生 Windows Python。无需再填写 desktop-build.json、wine-build.json
+或配置 Linux/WSL 路径。远程 runner 的 NDK、LLVM-MinGW、Mono 和 Gecko 由
+固定下载清单准备，不消费 Windows 编译库。
 
-在 arlinux 中将 `tools/build/desktop-build.example.json` 复制到忽略的
-`build/desktop-build.json`，只配置 `format: 1` 和 Linux `framework` 路径。
-将 `tools/build/wine-build.example.json` 复制到 `build/wine-build.json`，配置
-相同 `framework`、干净且固定提交的 `wineSource`、Linux `ndk`、`mingw`、`addons`。
-`addons` 只含厂商 Mono/Gecko 输入，不能指向安装实例或 Wine prefix。
-Wine 还需要四款 Arial 文件；默认读取 `/mnt/c/Windows/Fonts`，其他环境通过
-`ARLINUX_WINDOWS_FONTS` 指定合法的输入目录。输入文件会记录哈希。
+组件 workflow 由维护者通过唯一模板安装；先提交推送所有构建源码和模板，
+再执行本仓库的 `tools/build/install-github-workflows.py`。同步使用各仓库默认
+分支，commit 带 `[skip ci]`；编译由协调器显式独立调度。
 
 ## 构建和安装
 
-以下命令均在 arlinux 根目录执行。Debug 与 Release 只改变配置，经过同一
-`Build-Native → Build-Apk` 调用链：原生组件、独立 Wine、rootfs、当前源码校验、
-同一个 Gradle 包装流程、APK 内 ZIP 哈希核对。Release 随后签名及校验。
+在 arlinux 根目录运行：
 
 ```powershell
 ./build.ps1 doctor
 ./build.ps1 build -Configuration Debug
 ./build.ps1 build -Configuration Release
-./build.ps1 build -Configuration Debug -Rebuild
+./build.ps1 rootfs
+./build.ps1 rootfs -Distribution omarchy
+./build.ps1 wine
 ./build.ps1 install -Serial DEVICE_SERIAL
 ./build.ps1 install -Configuration Release -Serial DEVICE_SERIAL -Apk EXACT_TESTED_APK
 ```
 
-构建不安装 APK、不修改设备实例、不发布。`install` 统一调用
-`tools/install-apk.sh`，包含 X300 安装确认处理。构建无需设备序列号。
-可用 `-LinuxDistro NAME`、`-DesktopConfig FILE`、`-WineConfig FILE` 选择本机环境。
-两个配置必须引用同一 arlinux-rootfs checkout。
+`build` 只构建 APK 必需的 Yibu；Wine 是独立产品，使用 `wine` 命令。
+可用 `-FrameworkRef COMMIT` 固定构建框架，用 `-GitHubParallel N` 控制独立
+workflow 并行数。Debug 与 Release 都走相同的原生依赖、Yibu、源码校验、
+Gradle 包装与内置 ZIP 哈希校验；Release 只增加签名和发布校验。
+构建不安装 APK、不修改设备实例、不上传 APK 或 Wine latest。
+`install` 仍统一调用 `tools/install-apk.sh`，保留 X300 的安装确认处理。
 
-只开发某类组件时使用总入口的目标命令；这些命令调用同一内部阶段，不维护
-替代打包方案。首次 rootfs 构建前先构建 Wine，准备匹配的兼容辅助程序。
+## 缓存与交付
 
-```powershell
-./build.ps1 native
-./build.ps1 wine
-./build.ps1 rootfs
-./build.ps1 rootfs -Distribution omarchy
-```
+GitHub Actions Cache 的免费额度为每仓库 10 GB。组件必须在对应仓库启动
+独立 workflow，其 cache 才归属该仓库；可复用 workflow 的调用不能实现
+缓存额度拆分。不要提高仓库的付费缓存上限，也不要使用收费 larger runner。
 
-Linux 开发者可以直接使用同一个 Linux 分派器，`--android-repo` 指向 Android
-源码（共享原生 recipe、WebView 商店集成和配置输入，不消费 Windows 编译产物）：
+使用标准 `actions/cache` 恢复对应组件输出、Make 工具及受限 ccache。缓存
+命中后仍检查输入、输出及引用目录哈希；缺少或损坏上游产物时拒绝偷偷
+重建整个依赖链。缓存丢失可重新构建，不从旧 ZIP、手机实例或旧 Wine 归档
+恢复安装状态。提交相同源码不应使内容缓存失效。
 
-```sh
-./build.sh doctor
-./build.sh wine --config /path/to/wine-build.json --android-repo /path/to/arlinux
-./build.sh rootfs --config /path/to/desktop-build.json --android-repo /path/to/arlinux \
-  --distribution yibu --output /path/to/default.zip
-./build.sh list
-./build.sh validate distributions/my-linux
-./build.sh verify /path/to/bundle.zip
-```
+Cache 与 Actions artifacts 是不同配额。跨仓库交付使用各组件仓库的不可变
+`arlinux-组件-输入标识` 预发布产物，包括固定请求、分块 SHA-256 与归档
+SHA-256。这类组件预发布不能覆盖应用 release、Wine latest 或下载清单。
+协调器下载后再次验证哈希和最终产品收据；tar 保留符号链接及可执行位。
 
-发行版始终从当前 seed 和 recipe 构建。带 `guest/build-desktop.sh` 的发行版
-通过 QEMU/chroot 安装桌面软件，再封装离线 ZIP；LXQt 当前保留其 seed/首次安装
-协议，由同一流水线封装，不声称它是完整离线桌面。不能把它当作内置 Yibu。
-
-## 缓存与可追溯性
-
-`arlinux-rootfs/build/pipeline/<stage>/<identity>/generation-*` 保存分阶段编译
-产物及收据；`arlinux/build/cache/native` 保存 Android 原生缓存收据。
-只在输入内容、输出及所引用编译目录哈希均吻合时复用；提交相同源码不会
-使内容缓存失效。失败构建不能覆盖成功收据。Wine 的 Make 缓存保留在原绝对
-路径；不能搬动带编译路径的 work tree 后冒充有效缓存。
-
-`-Rebuild` 绕过阶段复用，但仍允许复用校验过的不可变下载。
-旧 `out/rootfs` ZIP、手机实例导出、旧 Wine runtime 的局部重打包、手工覆盖的
-ZIP 都不是构建缓存；不支持恢复为流水线输入。更新 APK 不自动替换用户实例。
-
-| 输出 | 路径 |
+| 主机输出 | 路径 |
 |---|---|
 | APK 内置 Yibu | arlinux/build/cache/artifacts/desktop/default.zip、default.json |
-| 其他 rootfs | arlinux/build/cache/artifacts/rootfs/ID.zip、ID.json |
-| Debug APK | arlinux/out/arlinux-debug.apk、对应 .json 和 .desktop.json |
-| Release APK | arlinux/build/release/android/VERSION/arlinux-vVERSION-HASH.apk、对应收据 |
-| Wine | arlinux-rootfs/build/artifacts/wine/arlinux-wine-bionic.tar.gz、.sha256、源码包、runtime.json |
+| 其他发行版 | arlinux/build/cache/artifacts/rootfs/ID.zip、ID.json |
+| 下载的 Wine | arlinux/build/cache/artifacts/github/wine/ |
+| 各产品与调度记录 | arlinux/build/cache/artifacts/github/products.json、github-state/ |
+| 精确源码校验视图 | arlinux/build/cache/sources/arlinux-rootfs/COMMIT/ |
+| Debug APK | arlinux/out/arlinux-debug.apk、对应收据 |
+| Release APK | arlinux/build/release/android/VERSION/arlinux-vVERSION-HASH.apk |
 
-Gradle 拒绝缺少收据、缺模块或不匹配当前源码的内置 rootfs。APK 构建结束再次
-核对 `assets/default.zip`，必须与通过校验的流水线产物相同。
+源码校验视图来自固定提交的 Git checkout，只读使用；不能手工修改它后
+冒充 runner 的输入。Gradle 和 APK 打包结束时都验证内置发行版。
+LXQt 当前仍保留 seed/首次安装协议，不能声称它是完整离线 Yibu。
 
 ## 验收和发布
 
-遵循 arlinux/AGENTS.md 和诊断文档；设备测试删除被测实例，通过当前 APK 内置
-安装或导入流程重装，不能恢复旧 home/rootfs/prefix。只允许明确的账号认证
-备份例外及校验过的不可变厂商下载缓存。首次 Steam 安装/登录测试从无认证
-状态开始。验收离线首次启动、输入、应用和受影响功能；Steam 游戏需验收
-本项目 Bionic Wine、自定义兼容工具、GPU 和正常 Play 流程。发布器不代替验收。
+遵循 arlinux/AGENTS.md 与诊断文档。设备验收必须删除被测实例，从当前 APK
+内置发行版或当前产物导入全新实例；不能复用旧 home/rootfs/prefix。
+Steam 认证仅按测试规范允许的显式备份例外复用。验证首次离线桌面、中文
+输入、Downloads、应用及受影响功能；游戏另需验证本项目 Bionic Wine、
+自定义兼容工具、GPU 和正常 Play，不能用编译或单元测试代替设备验收。
 
-Release 版本号在 `arlinux/android/host/build.gradle`，发布说明在
-`arlinux/tools/release-notes/android-VERSION.txt`。签名材料保存在忽略的
-`.secrets/android-release-signing.env` 和 `android/keystores/arlinux-release.jks`；
-沿用现有证书。环境文件使用 `ARLINUX_RELEASE_STORE_PASSWORD`、
-`ARLINUX_RELEASE_KEY_PASSWORD`、`ARLINUX_RELEASE_KEY_ALIAS`，不记录到日志或 Git。
-Release 校验原生符号剥离、16 KB ELF/ZIP 对齐及 v1/v2/v3 签名。
-
-提交源码及子模块后，在 arlinux 根目录发布确切验收产物；不重建：
+主机的统一发布命令只消费已经测试的确切产物，不隐式重建：
 
 ```powershell
 ./build.ps1 publish -Apk EXACT_TESTED_RELEASE_APK
@@ -156,19 +127,11 @@ Release 校验原生符号剥离、16 KB ELF/ZIP 对齐及 v1/v2/v3 签名。
 ./build.ps1 publish-wine -Archive EXACT_TESTED_WINE_TAR_GZ
 ```
 
-Wine 发布使用本仓库同一个分派器的 `publish-wine` 阶段，验证配套源码包，上传
-至 `taowen/wine` latest 并更新 `runtime/tools/windows-downloads.tsv` 固定 SHA-256。
-发布新 Wine 后按当前源码重建 rootfs/APK，验收其首次自动下载路径。
-发布独立发行版使用 `./build.sh publish-rootfs ID TAG EXACT_TESTED_ZIP`，仅上传。
+沿用 `.secrets/android-release-signing.env` 与
+`android/keystores/arlinux-release.jks`，不输出签名密码。
+Release 检查符号剥离、16 KB ELF/ZIP 对齐和 v1/v2/v3 签名。
+Wine 发布器检查完整 Wine/FEX/DXVK/辅助程序源码，更新 `taowen/wine` latest
+与固定下载清单。发布组件预产物不等于完成设备验收或发布正式产品。
 
-APK 发布使用已登录的 Wrangler：`npm ci --prefix arlinux.com` 后检查
-`npm --prefix arlinux.com run whoami`。目标为 R2 `arlinux-downloads`；版本 APK
-和 latest 元数据上传后更新网站并部署。网络阻断 workers.dev 时可设置
-`ARLINUX_RELEASE_UPLOAD_ZONE=arlinux.com`；临时域名/Worker 随上传结束删除。
-检查 https://arlinux.com 和 https://download.arlinux.com/android/latest.json。
-
-## 维护边界
-
-删除的旧入口包括 `rootfs.ps1`、设备 Builder/prepare/offline 导出流程、独立的
-Release 构建逻辑、逐阶段手工拼装 Wine 和旧 ZIP/runtime 刷新器。不要重新引入。
-修复内部阶段后仍由上述入口构建和验收；诊断探针不是替代产品构建器。
+官网/Android 发布继续使用现有 Wrangler/R2 配置。发布后检查
+https://arlinux.com 和 https://download.arlinux.com/android/latest.json。

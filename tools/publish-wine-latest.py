@@ -13,7 +13,7 @@ import time
 
 def component_source_archives(metadata, directory):
     component_sources = []
-    for name in ('wine', 'fex', 'dxvk'):
+    for name in ('wine', 'fex', 'dxvk', 'support'):
         record = metadata.get('originalSources', {}).get(name, {})
         filename, expected = record.get('asset'), record.get('sha256')
         if not isinstance(filename, str) or Path(filename).name != filename or not expected:
@@ -58,6 +58,11 @@ def main():
         metadata = json.load(packed.extractfile('bionic-runtime.json'))
         if metadata.get('protocol') != 1 or metadata.get('libc') != 'bionic':
             raise ValueError('Expected the project Bionic Wine runtime')
+        if metadata.get('support') != {'protocol': 1, 'directory': 'files/lib/arlinux'}:
+            raise ValueError('Wine must own its matching Steamworks/accessibility/tray helpers')
+        required_helpers = ('windows-accessibility.exe', 'windows-tray.exe', 'steamworks/lsteambridge-server', 'steamworks/aarch64-unix/lsteamclient.so')
+        if any('files/lib/arlinux/'+name not in metadata.get('files', {}) for name in required_helpers):
+            raise ValueError('Wine archive is missing required helper binaries')
         required = ('directComposition', 'vkd3d', 'graphicsBuild')
         if any(not metadata.get(name) for name in required):
             raise ValueError('Runtime omits required build components: ' + ', '.join(required))

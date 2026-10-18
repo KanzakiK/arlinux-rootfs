@@ -14,7 +14,6 @@ import subprocess
 import sys
 import time
 
-OBSERVER = Path('/usr/lib/arlinux/windows-accessibility.exe')
 ROOT = '/org/a11y/atspi/accessible/root'
 PREFIX = '/org/a11y/atspi/accessible'
 NULL = '/org/a11y/atspi/null'
@@ -22,7 +21,7 @@ NULL = '/org/a11y/atspi/null'
 
 def ensure(root, prefix, name, env):
     """Start one accessibility adapter per prefix and desktop session."""
-    if not OBSERVER.is_file() or not env.get('AT_SPI_BUS_ADDRESS'):
+    if not env.get('AT_SPI_BUS_ADDRESS'):
         return
     state = Path(env['XDG_RUNTIME_DIR']) / 'windows-accessibility'
     state.mkdir(mode=0o700, exist_ok=True)
@@ -47,7 +46,8 @@ class Observer:
         import windows
         self.response, self.socket = windows.request(
             windows.runtime(env['ARLINUX_WINDOWS_RUNTIME']),
-            Path(env['ARLINUX_WINDOWS_PREFIX']), OBSERVER, stdio=True)
+            Path(env['ARLINUX_WINDOWS_PREFIX']),
+            windows.runtime(env['ARLINUX_WINDOWS_RUNTIME']) / 'files/lib/arlinux/windows-accessibility.exe', stdio=True)
         self.stdin = self.socket.makefile('wb', buffering=0)
         self.stdout = self.socket.makefile('rb', buffering=0)
         self.selector = selectors.DefaultSelector()

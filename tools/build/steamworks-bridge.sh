@@ -81,3 +81,5 @@ aarch64-w64-mingw32-clang -O2 -municode "$repo/native/steamworks/steam-launch.c"
 cp "$up/steam-bridge/LICENSE" "$output/LICENSE.bridge"
 cp "$src/LICENSE" "$output/LICENSE.lsteamclient"
 printf '%s\n' "$revision" > "$output/upstream-revision"
+tar --exclude=.git -czf "$output/steamworks-source.tar.gz" -C "$up" \
+    steam-bridge public-source/lsteamclient/work/proton/lsteamclient

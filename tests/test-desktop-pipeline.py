@@ -120,7 +120,7 @@ class WineGraphTest(unittest.TestCase):
         import tarfile
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            cache = pipeline.Cache(root / 'cache')
+            cache = wine_pipeline.ComponentCache(root / 'cache')
             (root / 'tools').mkdir()
             (root / 'arial.ttf').write_text('fixture font')
             (root / 'tools/wine_fonts.py').write_text(
@@ -128,6 +128,7 @@ class WineGraphTest(unittest.TestCase):
                 "def source_directory(): return Path(__file__).resolve().parents[1]\n")
             env, calls = {}, []
             paths = {name: root / name for name in ('wineSource', 'mingw', 'ndk', 'bionicPrefix', 'addons')}
+            paths['bionicPrefix'] = cache.stage('bionic-x11', {'fixture':'matching headers'}, lambda output: output.mkdir(parents=True))
             common = dict(sources={}, wineSources={'commit': 'pinned'}, pulseRecipe={})
             def invoke(*command):
                 calls.append(command)
@@ -169,11 +170,11 @@ class WineGraphTest(unittest.TestCase):
             archive = wine_pipeline.build_wine(cache, root, root, paths.copy(), common, invoke, env)
             self.assertEqual(archive.read_text(), 'Bionic Wine archive')
             self.assertTrue((archive.parent / 'pe-fex-source.tar.gz').is_file())
-            self.assertEqual(len(calls), 9)
+            self.assertEqual(len(calls), 11)
             self.assertNotIn('BIONIC_ARCHIVE', env)
             again = wine_pipeline.build_wine(cache, root, root, paths.copy(), common, invoke, env)
             self.assertEqual(archive, again)
-            self.assertEqual(len(calls), 9)
+            self.assertEqual(len(calls), 11)
 
 
 if __name__ == '__main__':

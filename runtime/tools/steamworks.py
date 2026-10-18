@@ -10,11 +10,11 @@ import time
 
 import windows
 
-PAYLOAD = Path('/usr/lib/arlinux/steamworks')
 
 
 @contextmanager
 def session(runtime, prefix, environment):
+    payload = runtime / 'files/lib/arlinux/steamworks'
     appid = environment.get('SteamAppId', '')
     if not appid.isascii() or not appid.isdecimal() or int(appid) == 0:
         raise ValueError('Steamworks needs a nonzero numeric SteamAppId')
@@ -26,7 +26,7 @@ def session(runtime, prefix, environment):
                 'aarch64-unix/lsteamclient.so', 'aarch64-windows/lsteamclient.dll',
                 'i386-windows/lsteamclient.dll',
                 'x86_64-windows/lsteamclient.dll']
-    if any(not (PAYLOAD/name).is_file() for name in required):
+    if any(not (payload/name).is_file() for name in required):
         raise RuntimeError('The Bionic Steamworks bridge is not installed')
     directory = Path(os.environ['XDG_RUNTIME_DIR'])/'steamworks'
     directory.mkdir(mode=0o700, exist_ok=True)
@@ -43,7 +43,7 @@ def session(runtime, prefix, environment):
         prefix.mkdir(parents=True, exist_ok=True)
         log = prefix/'steamworks.log'
         with log.open('w') as errors:
-            process = subprocess.Popen([str(PAYLOAD/'lsteambridge-server'), str(library)],
+            process = subprocess.Popen([str(payload/'lsteambridge-server'), str(library)],
                 env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=errors)
         try:
@@ -66,9 +66,9 @@ def session(runtime, prefix, environment):
             windows.initialize(runtime, prefix, environment)
             facade = prefix/'pfx/drive_c/Program Files (x86)/Steam'
             facade.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(PAYLOAD/'aarch64-windows/steam.exe', facade/'steam.exe')
-            shutil.copyfile(PAYLOAD/'i386-windows/lsteamclient.dll', facade/'steamclient.dll')
-            shutil.copyfile(PAYLOAD/'x86_64-windows/lsteamclient.dll', facade/'steamclient64.dll')
+            shutil.copyfile(payload/'aarch64-windows/steam.exe', facade/'steam.exe')
+            shutil.copyfile(payload/'i386-windows/lsteamclient.dll', facade/'steamclient.dll')
+            shutil.copyfile(payload/'x86_64-windows/lsteamclient.dll', facade/'steamclient64.dll')
             yield facade/'steam.exe'
         finally:
             if process.poll() is None:
