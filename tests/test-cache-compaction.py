@@ -10,6 +10,15 @@ spec.loader.exec_module(module)
 
 
 class CompactionTest(unittest.TestCase):
+    def test_architecture_stage_names_containing_underscores(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            obsolete=root/'wine-pe-x86_64'/('b'*64)
+            obsolete.mkdir(parents=True)
+            record=dict(inputs='a'*64,generation='generation-'+'1'*32,references={})
+            self.assertEqual(module.compact(root,{'wine-pe-x86_64': record}),1)
+            self.assertFalse(obsolete.exists())
+
     def test_reference_to_parent_directory_keeps_its_children(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)

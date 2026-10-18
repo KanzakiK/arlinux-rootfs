@@ -24,7 +24,7 @@ def compact(root, records):
         shutil.rmtree(path)
         removed += 1
     for name, record in records.items():
-        if not re.fullmatch('[a-z0-9-]+', name):
+        if not re.fullmatch('[a-z0-9_-]+', name):
             raise ValueError('Unsafe cache stage name')
         stage = root/name
         if not stage.is_dir() or stage.is_symlink():
