@@ -172,11 +172,11 @@ class Coordinator:
 
 
 def fetch_product(reference, output):
-    receipt=output/'download-receipt.json'
+    cache_receipt=output/'download-receipt.json'
     try:
-        saved=json.loads(receipt.read_text())
+        saved=json.loads(cache_receipt.read_text())
         if saved['reference']==reference and saved['files'] and all(
-                (output/name).is_file() and hashlib.sha256((output/name).read_bytes()).hexdigest()==expected
+                (output/name).is_file() and sha256_file(output/name)==expected
                 for name,expected in saved['files'].items()):
             print('OK verified local product '+output.name,flush=True)
             return
@@ -246,9 +246,9 @@ def fetch_product(reference, output):
             expected=(output/(archive.name+'.sha256')).read_text().split()[0]
             if digest!=expected:
                 raise ValueError('Wine checksum does not match the downloaded product')
-        files={p.relative_to(output).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
-               for p in output.rglob('*') if p.is_file() and p!=receipt}
-        receipt.write_text(json.dumps(dict(format=1,reference=reference,files=files),indent=2)+'\n')
+        files={p.relative_to(output).as_posix():sha256_file(p)
+               for p in output.rglob('*') if p.is_file() and p!=cache_receipt}
+        cache_receipt.write_text(json.dumps(dict(format=1,reference=reference,files=files),indent=2)+'\n')
 
 
 def main():
