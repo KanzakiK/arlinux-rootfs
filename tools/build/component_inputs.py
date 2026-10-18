@@ -27,3 +27,16 @@ def request_identity(data):
     if data.get('format') == 2:
         fields.pop('framework')
     return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+
+
+def package_inputs(common):
+    """Package preparation does not execute application Python or vendor downloads.
+
+    seal-rootfs refreshes those files from the current seed after restoring the
+    package snapshot. Keep installer shell scripts and native helper sources.
+    """
+    sources = dict(common['sources'])
+    sources['runtime/tools'] = {name: value for name, value in sources['runtime/tools'].items()
+        if not name.endswith(('.py', '.png', '.desktop'))
+        and not (name.startswith('windows-') and name.endswith('.tsv'))}
+    return dict(common, sources=sources)

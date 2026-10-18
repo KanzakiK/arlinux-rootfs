@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipeline_cache import Cache, digest, inventory, run, source_state
+from component_inputs import package_inputs
 
 
 def rootfs_sources(framework, product):
@@ -20,7 +21,7 @@ def rootfs_sources(framework, product):
         inputs[name] = source_state(framework / name)
     for name in ('linux-assets.sh', 'linux-gpu.sh', 'linux-aarch64.ini',
                  'mesa-debs.py', 'mesa-arch.py', 'doctor.sh',
-                 'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py', 'artifact_download.py'):
+                 'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py', 'artifact_download.py', 'component_inputs.py'):
         inputs['tools/build/' + name] = inventory(framework / 'tools/build' / name)
     return inputs
 
@@ -77,7 +78,7 @@ def main():
             invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'seed.zip')
             invoke('python3', 'tools/build/package-rootfs.py', out / 'seed.zip', out / 'packages')
             (out / 'seed.zip').unlink()
-        packages = cache.stage('rootfs-packages', dict(assets=cache.records['linux-assets'],
+        packages = cache.stage('rootfs-packages', dict(source=package_inputs(common),
             recipe={name: inventory(framework / 'tools/build' / name) for name in ('package-rootfs.py', 'package-rootfs.sh')},
             executor='native-aarch64'), packages)
         if args.target == 'rootfs-packages':
