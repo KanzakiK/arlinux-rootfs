@@ -23,6 +23,10 @@ GPU outputs. Root-owned scratch rootfs trees are deliberately excluded: their
 private directory permissions prevent the unprivileged Actions cache from saving.
 Guest ownership and modes stay inside snapshot.tar; only host cache files change
 owner after the privileged package stage.
+After successful publication, the workflow compacts the pipeline cache to the
+current input identity and generation of each completed stage. Older directories
+still referenced by the current build remain in place. This prevents restored
+historical snapshots from accumulating inside every newly saved Actions cache.
 Only matching input/output hashes permit reuse; published component capsules
 preserve symlinks and modes. Keep download checksums and archive path safety,
 propagate real command failures, and validate APK behavior on a fresh instance.
