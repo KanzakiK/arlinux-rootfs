@@ -348,6 +348,8 @@ def launch(executable, arguments=(), prefix=None):
     env = environment(root, prefix)
     import windows_a11y
     initialize(root, prefix, env)
+    import windows_webview
+    env = windows_webview.prepare(root, prefix, env)
     windows_a11y.ensure(root, prefix, executable.stem, env)
     if executable.suffix.lower() == '.lnk':
         return run(root, prefix, 'start.exe', [str(executable), *arguments], env=env, timeout=None).returncode

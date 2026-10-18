@@ -19,16 +19,20 @@ cross the host boundary; guest glibc loader and graphics paths do not.
 
 `STEAM_COMPAT_DATA_PATH` remains Steam's per-game metadata directory, not the
 Wine prefix. Steam prepares the pinned Bionic runtime before handing control to
-Valve. On Play, `windows_webview.prepare_game()` prepares supported game
+Valve. On Play, `windows_webview.prepare()` prepares the instance-wide browser
 dependencies and `steamworks.session()` supplies the Steamworks bridge. Discovery
 helpers without a game identity run without a Steamworks session. These paths
-share the Windows launcher's Wine prefix. Supported game-specific renderer
-arguments are applied by the adapter; explicit renderer selections are retained.
-Title matching, renderer arguments and browser flags are maintained in
-`runtime/tools/windows_compat.py`, rather than embedded in launch mechanisms.
-The fixed WebView2 runtime's Wine version identity is instance-wide; its browser
-arguments remain scoped to the matched host application. These are compatibility
-settings, not proof of GPU rendering or of a Chromium sandbox under Wine.
+share the Windows launcher's Wine prefix. The adapter does not inject engine
+arguments or create title-specific compatibility selections. User selections
+and launch arguments are retained.
+`runtime/tools/windows_compat.py` contains one instance-wide WebView2 policy,
+shared with Windows Launcher and built-in Windows apps. The fixed runtime,
+browser arguments and Wine version identity are identical for all hosts.
+Both registry views use the documented `*` policy for all WebView2 apps; see
+[Microsoft's loader override contract](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions).
+These settings do not prove GPU rendering or provide a Chromium sandbox under Wine.
+The first application launch prepares this common dependency even for an app
+that does not use WebView2; later launches reuse the verified installed copy.
 The patched Steam Proton adapter and its core build/install chain were removed.
 Implementation does not establish compatibility for every game: acceptance
 requires a fresh instance, hardware acceleration and actual Play/gameplay.

@@ -36,28 +36,28 @@ class WebViewTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'damaged'):
                     webview.install_into_prefix(prefix)
 
-    def test_unrelated_game_and_redistributable_skip_browser(self):
-        with patch.object(webview, 'ensure_runtime') as install:
-            for app, exe in [('42', '/games/我的小鲨鱼.exe'), ('2758540', '/redist/setup.exe')]:
-                env = {'SteamAppId': app}
-                self.assertEqual(webview.prepare_game(Path('/wine'), Path('/prefix'), exe, env), env)
-            install.assert_not_called()
-
-    def test_game_preparation_keeps_identity_and_checks_registry_failures(self):
-        env = {'SteamAppId': '2758540'}
+    def test_global_preparation_is_independent_of_game_identity(self):
         with patch.object(webview, 'install_into_prefix', return_value=Path('/prefix/pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application/runtime')), \
              patch.object(webview.windows, 'run') as run:
-            prepared = webview.prepare_game(Path('/wine'), Path('/prefix'), '/games/我的小鲨鱼.exe', env)
-            self.assertEqual(prepared['SteamAppId'], '2758540')
-            self.assertEqual(env, {'SteamAppId': '2758540'})
+            outputs = []
+            for env in ({}, {'SteamAppId': '2758540'}, {'SteamAppId': '42'}):
+                before = dict(env)
+                prepared = webview.prepare(Path('/wine'), Path('/prefix'), env)
+                outputs.append({key: value for key, value in prepared.items() if key.startswith('WEBVIEW2_')})
+                self.assertEqual(env, before)
+            self.assertEqual(outputs[0], outputs[1])
+            self.assertEqual(outputs[1], outputs[2])
             self.assertEqual(prepared['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'], r'C:\Program Files\Microsoft\EdgeWebView\Application\runtime')
             self.assertIn('--use-angle=vulkan', prepared['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'])
             self.assertNotIn('--disable-gpu ', prepared['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'])
-            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_count, 15)
             self.assertTrue(all(c.kwargs['check'] for c in run.call_args_list))
+            policy_calls = [call.args[3] for call in run.call_args_list if 'Policies' in call.args[3][1]]
+            self.assertTrue(all(args[args.index('/v') + 1] == '*' for args in policy_calls))
+            self.assertEqual({args[-1] for args in policy_calls}, {'/reg:64', '/reg:32'})
             run.side_effect = RuntimeError('registry failed')
             with self.assertRaises(RuntimeError):
-                webview.prepare_game(Path('/wine'), Path('/prefix'), '/games/我的小鲨鱼.exe', env)
+                webview.prepare(Path('/wine'), Path('/prefix'), {})
 
     def test_browser_path_does_not_expose_long_android_prefix(self):
         prefix = Path('/data/user/0/io.taowen.arlinux.dev/files/instances/yibu-test/home/'

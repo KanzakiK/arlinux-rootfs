@@ -12,7 +12,7 @@ class AdapterTest(unittest.TestCase):
    fake=types.SimpleNamespace(instance_prefix=lambda:Path('/instance/prefix'),ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append((a,k)) or types.SimpleNamespace(returncode=0)))
    environment={'STEAM_COMPAT_DATA_PATH':'/compat'}
    if identity is not None:environment['SteamAppId']=identity
-   with patch.dict(sys.modules,windows=fake,steamworks=None,windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,environment,clear=True):
+   with patch.dict(sys.modules,windows=fake,steamworks=None,windows_webview=types.SimpleNamespace(prepare=lambda r,p,env:self.fail('discovery must not prepare browser'))),patch.dict(os.environ,environment,clear=True):
     self.assertEqual(module.launch('run',['/helper.exe','--probe']),0)
    self.assertEqual(calls[0][0][2:],('/helper.exe',['--probe']))
    self.assertEqual(calls[0][0][1],Path('/instance/prefix'))
@@ -25,7 +25,7 @@ class AdapterTest(unittest.TestCase):
  def test_launch_arguments_identity_and_exit(self):
   calls=[]
   fake=types.SimpleNamespace(instance_prefix=lambda:Path('/instance/prefix'),ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append((a,k)) or types.SimpleNamespace(returncode=101)))
-  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/arlinux-shared/steam/compatdata/2758540','SteamAppId':'2758540','LD_LIBRARY_PATH':'/wrong/libc'},clear=True):
+  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare=lambda r,p,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/arlinux-shared/steam/compatdata/2758540','SteamAppId':'2758540','LD_LIBRARY_PATH':'/wrong/libc'},clear=True):
    self.assertEqual(module.launch('waitforexitandrun',['/games/我的小鲨鱼.exe','argument with spaces']),101)
   self.assertEqual(calls[0][0][2:],('/launcher.exe',['/games/我的小鲨鱼.exe','argument with spaces']));self.assertEqual(calls[0][1]['env'],{'SteamAppId':'2758540'})
   self.assertEqual(calls[0][0][1],Path('/instance/prefix'))
@@ -33,16 +33,16 @@ class AdapterTest(unittest.TestCase):
   calls=[]
   fake=types.SimpleNamespace(instance_prefix=lambda:Path('/instance/prefix'),ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append(k) or types.SimpleNamespace(returncode=0)))
   environment={'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1','LD_LIBRARY_PATH':'/guest/glibc','VK_ICD_FILENAMES':'/guest/icd.json','WINEDLLOVERRIDES':'d3d11=b'}
-  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,environment,clear=True):
+  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare=lambda r,p,env:env)),patch.dict(os.environ,environment,clear=True):
    self.assertEqual(module.launch('waitforexitandrun',['/games/Hell Clock.exe']),0)
   self.assertEqual(calls[0]['env'],{'SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1'})
- def test_expendabros_uses_d3d11_and_preserves_explicit_renderer(self):
+ def test_launch_never_injects_engine_specific_arguments(self):
   calls=[]
   fake=types.SimpleNamespace(instance_prefix=lambda:Path('/instance/prefix'),ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append(a) or types.SimpleNamespace(returncode=0)))
-  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare_game=lambda r,p,e,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'312990'},clear=True):
+  with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare=lambda r,p,env:env)),patch.dict(os.environ,{'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'312990'},clear=True):
    for args in (['/games/Expendabros.exe'],['/games/Expendabros.exe','-force-opengl'],['/games/Other.exe']):
     self.assertEqual(module.launch('run',args),0)
-  self.assertEqual(calls[0][3],['/games/Expendabros.exe','-force-d3d11'])
+  self.assertEqual(calls[0][3],['/games/Expendabros.exe'])
   self.assertEqual(calls[1][3],['/games/Expendabros.exe','-force-opengl'])
   self.assertEqual(calls[2][3],['/games/Other.exe'])
  def test_invalid_operations_and_prefix(self):
@@ -75,13 +75,15 @@ class AdapterTest(unittest.TestCase):
     self.assertEqual(mapping['2758540']['name'],'native')
     self.assertEqual(mapping['10']['name'],'third-party')
     self.assertEqual(module.default_config(updated),updated)
- def test_helltaker_default_preserves_explicit_native_choice(self):
+ def test_only_global_default_is_created_without_title_overrides(self):
   from steam import keyvalues
   base='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "CompatToolMapping" { %s } } } } }'
-  for entry,expected in [('',module.TOOL),('"0" { "name" "native" }',module.TOOL),('"1289310" { "name" "SteamLinuxRuntime_fex" }','SteamLinuxRuntime_fex')]:
+  for entry in ['', '"0" { "name" "native" }', '"1289310" { "name" "SteamLinuxRuntime_fex" }']:
    updated=module.default_config(base%entry)
    mapping=keyvalues(updated)['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
-   self.assertEqual(mapping['1289310']['name'],expected)
+   self.assertEqual(mapping['0']['name'],module.TOOL)
+   if '1289310' in entry:self.assertEqual(mapping['1289310']['name'],'SteamLinuxRuntime_fex')
+   else:self.assertEqual(set(mapping),{'0'})
    self.assertEqual(module.default_config(updated),updated)
  def test_first_install_has_default_before_first_login(self):
   from steam import keyvalues

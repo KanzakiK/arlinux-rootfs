@@ -1,7 +1,7 @@
 """On-demand Windows apps sharing the instance Bionic Wine prefix.
 
 Downloads come from the vendors, never from a copied development prefix.
-Power BI's WebView2 sandbox is disabled in the shared instance Wine prefix:
+The common WebView2 sandbox is disabled in the shared instance Wine prefix:
 Wine lacks the required Windows sandbox interception thunks. Android app
 isolation is not equivalent to browser sandboxing. First installation requires
 explicit consent. These applications are experimental on ARLinux.
@@ -22,7 +22,6 @@ import windows
 import windows_webview
 import shared
 
-from windows_compat import POWERBI_WEBVIEW_FLAGS
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 LICENSES = {
@@ -170,24 +169,10 @@ def install_powerbi(root, prefix):
     if not executable.is_file():
         raise RuntimeError('Power BI installer did not create PBIDesktop.exe; see installer logs in the prefix')
     restore_powerbi_accessibility(root, prefix)
-    # Elevated WebView hosts read the per-application policy instead of flags
-    # supplied only through environment variables.
-    run(reg, 'add', r'HKLM\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments',
-        '/v', 'PBIDesktop.exe', '/t', 'REG_SZ', '/d', POWERBI_WEBVIEW_FLAGS, '/f', '/reg:64')
     # Re-register oleacc after installers so IAccessible marshaling uses the
     # Accessibility typelib instead of an imported UIAutomation mapping.
     run(reg.parent / 'regsvr32.exe', '/s', 'oleacc.dll')
     return executable
-
-
-def powerbi_environment(prefix):
-    """Return WebView2 settings required for every Power BI launch."""
-    browser = windows_webview.install_into_prefix(prefix)
-    return {
-        'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER':
-            windows_webview.browser_windows_path(prefix, browser),
-        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': POWERBI_WEBVIEW_FLAGS,
-    }
 
 
 def ensure_powerbi_authentication():
@@ -291,9 +276,8 @@ def main():
     executable, prefix, cache = prepare(args.app, args.accept_license)
     root = windows.ensure_runtime()
     env = windows.environment(root, prefix)
-    if args.app == 'powerbi':
-        env.update(powerbi_environment(prefix))
     windows.initialize(root, prefix, env)
+    env = windows_webview.prepare(root, prefix, env)
     import windows_a11y
     windows_a11y.ensure(root, prefix, {'paintnet': 'Paint.NET', 'powerbi': 'Power BI Desktop', 'fontforge': 'FontForge'}[args.app], env)
     if args.app == 'paintnet':

@@ -4,7 +4,7 @@ The immutable vendor files are shared and copied into the one instance Wine
 prefix. Registry settings and GPU flags are applied there through ANGLE Vulkan.
 """
 import json
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -118,22 +118,22 @@ def browser_windows_path(prefix, browser):
     return 'C:\\' + str(relative).replace('/', '\\')
 
 
-def prepare_game(root, prefix, executable, environment):
-    """Apply only the tested title profile; ordinary games do not download Edge."""
+def prepare(root, prefix, environment):
+    """Apply one instance-wide browser policy, independent of game or EXE name."""
     env = dict(environment)
-    name = PureWindowsPath(str(executable)).name
-    profile = windows_compat.game_profile(env.get('SteamAppId'), executable)
-    if not profile or not profile.webview_flags:
-        return env
     browser = install_into_prefix(prefix)
-    # Elevated WebView hosts ignore environment browser switches. Use the
-    # documented per-host machine policy in the shared instance prefix.
-    windows.run(root, prefix, 'reg.exe', ['add',
-        r'HKLM\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments',
-        '/v', name, '/t', 'REG_SZ', '/d', profile.webview_flags, '/f'], check=True, timeout=120)
+    folder = browser_windows_path(prefix, browser)
+    # Elevated hosts may ignore environment overrides. Microsoft's '*' policy
+    # covers all hosts; set both views so x86 and x64 hosts see the same policy.
+    for view in ('/reg:64', '/reg:32'):
+        for policy, value in (('AdditionalBrowserArguments', windows_compat.WEBVIEW_FLAGS),
+                              ('BrowserExecutableFolder', folder)):
+            windows.run(root, prefix, 'reg.exe', ['add',
+                'HKLM\\Software\\Policies\\Microsoft\\Edge\\WebView2\\' + policy,
+                '/v', '*', '/t', 'REG_SZ', '/d', value, '/f', view], check=True, timeout=120)
     windows.run(root, prefix, 'reg.exe', ['add',
         r'HKCU\Software\Wine\AppDefaults\msedgewebview2.exe',
         '/v', 'Version', '/t', 'REG_SZ', '/d', windows_compat.WEBVIEW_WINE_VERSION, '/f'], check=True, timeout=60)
-    env['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = browser_windows_path(prefix, browser)
-    env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = profile.webview_flags
+    env['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = folder
+    env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = windows_compat.WEBVIEW_FLAGS
     return env
