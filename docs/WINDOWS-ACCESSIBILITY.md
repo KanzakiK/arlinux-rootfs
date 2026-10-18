@@ -35,20 +35,13 @@ again reuses the adapter. Application grouping follows the launcher's
 prefix name, so multiple applications sharing a prefix share that name.
 Steam/Proton game prefixes do not start this adapter.
 
-## Build
+## Build integration
 
-The observer is a native ARM64 Windows executable compiled with
-LLVM-MinGW. Build it before the Linux assets:
-
-```bash
-bash tools/build/windows-accessibility.sh /path/to/llvm-mingw/bin build/windows-accessibility
-bash tools/build/linux-assets.sh
-```
-
-The normal assets build packages `windows-accessibility.exe` and
-`windows_a11y.py`. `ARLINUX_WINDOWS_ACCESSIBILITY` can point to another
-compiled observer. The guest requires its existing Python D-Bus, PyGObject,
-AT-SPI and Wine runtime packages. No Wine DLL replacement is needed.
+The observer is an ARM64 Windows executable built by the independent Wine
+pipeline and consumed as a verified helper artifact by rootfs packaging.
+Use only [BUILD.md](BUILD.md); no separate observer build or assets override
+is a supported product build path. Runtime dependencies are Python D-Bus,
+PyGObject, AT-SPI and the shared Bionic Wine runtime.
 
 Validated on Xiaomi 15 with Paint.NET: enumerate menu/tool controls,
 open Settings by default action, close the dialog, write/read/restore the

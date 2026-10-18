@@ -13,7 +13,7 @@ done
 
 if [[ ${#missing[@]} -ne 0 ]]; then
   printf 'Missing build tools: %s\n' "${missing[*]}" >&2
-  printf 'See README.md for Debian/Ubuntu package names.\n' >&2
+  printf 'See docs/BUILD.md for Debian/Ubuntu package names.\n' >&2
   exit 2
 fi
 
@@ -25,7 +25,7 @@ for library in "${libraries[@]}"; do
 done
 if [[ ${#missing[@]} -ne 0 ]]; then
   printf 'Missing AArch64 development libraries: %s\n' "${missing[*]}" >&2
-  printf 'See README.md for Debian/Ubuntu package names.\n' >&2
+  printf 'See docs/BUILD.md for Debian/Ubuntu package names.\n' >&2
   exit 2
 fi
 

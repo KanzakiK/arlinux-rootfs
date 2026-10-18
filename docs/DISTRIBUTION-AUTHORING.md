@@ -44,51 +44,19 @@ my-linux/
     └── post-seed.sh        # optional
 ```
 
-Run `./build.sh validate distributions/my-linux` before a full build.
+Build, validate and publish through the single entry described in
+[BUILD.md](BUILD.md). Package preparation runs on Linux/WSL in a disposable
+QEMU/chroot tree. A distribution with a build-time package stage supplies
+`guest/build-desktop.sh`; consumer first boot only writes device-local settings.
+Never export a phone instance or use its home, credentials or prefix as a build
+input. The pipeline seals its own verified package cache and keeps legal notices,
+English/Chinese translations, Noto Sans CJK and DejaVu while trimming optional
+Serif CJK fonts, man pages and non-legal package documentation.
 
-For an offline-ready Debian desktop, install packages natively in a disposable
-Android build instance instead of emulating ARM64 on the build host:
-
-```sh
-./build.sh prepare debian
-# Import build/offline/debian/prepare.zip into a NEW build-only instance.
-# Let preparation finish, stop it, and export ONLY its rootfs as:
-# build/offline/debian/rootfs.tar
-./build.sh offline debian build/offline/debian/rootfs.tar
-```
-
-Use the same commands with `yibu` for the built-in workspace. Preparation files
-stay under `build/offline/<id>/`; the final installable ZIP is `out/<id>.zip`.
-Use `plasma` for the Debian KDE Plasma desktop. Its Plasma shell uses the
-host-provided Xwayland display and stacking window manager; it does not launch
-KWin, a display manager or a systemd user session. Dolphin, Konsole and Kate
-are prepared with the desktop packages. Validate a fresh offline import before
-publishing `plasma.zip`, including the desktop menu and application input.
-The snapshot argument is explicit: no file glob or experimental filename selects
-it. Package snapshots may be reused, but run `offline` after runtime changes;
-it rebuilds current assets and replaces framework code during sealing.
-
-The preparation ZIP explicitly invokes Debian's `guest/build-desktop.sh`.
-The final ZIP restores the local-only `guest/first-boot.sh`. Sealing removes
-device identities, host launchers, selected GPU overlays, logs and caches; the
-bundle retains both GPU overlays for selection on the destination phone.
-Offline desktop sealing retains English and Chinese translations, removes man
-pages and non-legal package documentation, and preserves copyright, license
-and attribution notices. It also omits Noto Serif CJK Regular and Bold, retaining
-Noto Sans CJK and DejaVu. Users can restore the CJK serif fonts with
-`sudo apt update && sudo apt install --reinstall fonts-noto-cjk`;
-no persistent font exclusion is set.
-Apply the same policy to an existing offline ZIP with
-`python3 tools/device-desktop.py compact out/yibu.zip out/yibu-compact.zip`;
-this recompresses the rootfs and regenerates its checksums without downloading
-or reinstalling packages. Other fonts, runtime libraries and application data
-in the image are not changed by compaction.
-Never use a personal instance or export its home directory. Keep network
-downloads in preparation; `guest/first-boot.sh` only writes device-local
-configuration. Do not bake in an Android package name, UID or instance directory.
-An offline-ready image writes `usr/share/arlinux/offline-desktop` containing `1`;
-the builder exports the same marker as a checksummed bundle asset. The marker
-declares a property, not a test: verify a fresh instance with networking disabled.
+An offline desktop declares `usr/share/arlinux/offline-desktop` containing `1`
+and a checksummed bundle marker. This is a format property; acceptance still
+requires a freshly installed instance tested offline. The marker must never be
+added to an incomplete seed merely to pass verification.
 
 ## `product.json`
 
@@ -284,7 +252,7 @@ semantics.
 Before publishing a distribution:
 
 1. `./build.sh validate distributions/<id>` succeeds.
-2. `./build.sh build <id>` succeeds from a clean x86-64 Linux checkout.
+2. The rootfs target in [BUILD.md](BUILD.md) succeeds from a clean x86-64 Linux checkout.
 3. `./build.sh verify out/<id>.zip` verifies every payload hash.
 4. The repository contains no host source paths, device serials, credentials,
    private submodules, or Windows-specific build commands.

@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a disposable device-build ZIP, or seal its rootfs snapshot for offline use.
-
-No ARM emulation is used here. Install the preparation ZIP in a fresh build-only
-instance, let its installer finish, stop the instance, then export its rootfs.
-Never supply a personal instance: home, credentials and application state must
-not be used as build inputs.
-"""
+"""Internal sealing stage for the WSL-built package cache. See docs/BUILD.md."""
 from __future__ import annotations
 
 import argparse
@@ -49,39 +43,6 @@ def omit_desktop_resource(name: str, directory: bool = False, symlink: str | Non
     return False
 
 
-def compact(bundle: Path, output: Path) -> None:
-    """Apply the sealing policy to an already prepared offline desktop without reinstalling it."""
-    with tempfile.TemporaryDirectory(prefix='arlinux-compact-') as temp:
-        original = Path(temp) / 'original.zst'
-        compressed = Path(temp) / 'rootfs.tar.zst'
-        with zipfile.ZipFile(bundle) as archive:
-            if 'offline-desktop' not in archive.namelist():
-                raise ValueError('Expected a prepared offline desktop')
-            with archive.open('rootfs.tar.zst') as source, original.open('wb') as target:
-                shutil.copyfileobj(source, target)
-        with original.open('rb') as source, compressed.open('wb') as dest:
-            reader = subprocess.Popen(['zstd', '-dc'], stdin=source, stdout=subprocess.PIPE)
-            writer = subprocess.Popen(['zstd', '-T4', '-19', '-c'], stdin=subprocess.PIPE, stdout=dest)
-            try:
-                with tarfile.open(fileobj=reader.stdout, mode='r|') as archive, tarfile.open(fileobj=writer.stdin, mode='w|') as target:
-                    for member in archive:
-                        if omit_desktop_resource(member.name, member.isdir(), member.linkname if member.issym() else None):
-                            continue
-                        target.addfile(member, archive.extractfile(member) if member.isfile() else None)
-                writer.stdin.close()
-                if reader.wait() or writer.wait():
-                    raise RuntimeError('rootfs compaction failed')
-            finally:
-                for process in (reader, writer):
-                    if process.poll() is None:
-                        process.kill()
-                        process.wait()
-        with compressed.open('rb') as stream:
-            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-        rewrite(bundle, output, {'rootfs.tar.zst': compressed, 'rootfs-seed-id': (digest + '\n').encode()})
-        print(f'Rootfs: {original.stat().st_size / 2**20:.2f} -> {compressed.stat().st_size / 2**20:.2f} MiB')
-
-
 def rewrite(seed: Path, output: Path, replacements: dict[str, bytes | Path]) -> None:
     verify(seed)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -103,17 +64,6 @@ def rewrite(seed: Path, output: Path, replacements: dict[str, bytes | Path]) -> 
         target.writestr('manifest.json', json.dumps(manifest, indent=2) + '\n')
     verify(pending)
     pending.replace(output)
-
-
-def prepare(seed: Path, output: Path) -> None:
-    with zipfile.ZipFile(seed) as archive:
-        if 'offline-desktop' in archive.namelist():
-            raise ValueError('Expected an unconfigured seed ZIP, not an offline desktop')
-        archive.getinfo('guest/build-desktop.sh')
-    rewrite(seed, output, {'guest/first-boot.sh': b'''#!/bin/sh
-set -eu
-/bin/sh /usr/lib/arlinux/guest/build-desktop.sh
-''', 'device-build': b'1\n'})
 
 
 def required_snapshot_files(distribution: str) -> set[str]:
@@ -305,7 +255,7 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                     compressor.wait()
         required = required_snapshot_files(distribution) | {'usr/bin/arlinux-opencode'}
         if not required <= seen:
-            raise ValueError('Incomplete device desktop: ' + ', '.join(sorted(required - seen)))
+            raise ValueError('Incomplete package-cache desktop: ' + ', '.join(sorted(required - seen)))
         with compressed.open('rb') as stream:
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         rewrite(seed, output, {'rootfs.tar.zst': compressed,
@@ -316,20 +266,10 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    preparation = sub.add_parser('prepare')
-    preparation.add_argument('seed', type=Path)
-    preparation.add_argument('output', type=Path)
     sealing = sub.add_parser('seal')
     sealing.add_argument('seed', type=Path)
     sealing.add_argument('snapshot', type=Path)
     sealing.add_argument('output', type=Path)
-    compaction = sub.add_parser('compact')
-    compaction.add_argument('bundle', type=Path)
-    compaction.add_argument('output', type=Path)
     args = parser.parse_args()
-    if args.command == 'prepare':
-        prepare(args.seed, args.output)
-    elif args.command == 'seal':
+    if args.command == 'seal':
         seal(args.seed, args.snapshot, args.output)
-    else:
-        compact(args.bundle, args.output)

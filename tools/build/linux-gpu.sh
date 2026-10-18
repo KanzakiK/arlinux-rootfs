@@ -26,14 +26,25 @@ gpu_id="$({
 } | sha256sum | cut -d' ' -f1)"
 gpu_id_file="$repo/build/linux/gpu.inputs.sha256"
 
-if [[ -f "$mesa_install/lib/libvulkan_freedreno.so" \
-      && -f "$hybris_stage/install/usr/lib/hybris/libVkLayer_hybris_compat.so" ]]; then
-    if [[ -f "$gpu_id_file" && "$(cat "$gpu_id_file")" == "$gpu_id" ]]; then
-        mkdir -p "$(dirname "$gpu_id_file")"
-        printf '%s\n' "$gpu_id" > "$gpu_id_file"
-        printf '%s\n' "$mesa_install" "$hybris_stage/install/usr/lib/hybris"
-        exit 0
-    fi
+gpu_receipt="$repo/build/linux/gpu.outputs.json"
+verify_gpu_cache() {
+    python3 - "$repo" "$gpu_id" "$gpu_receipt" "$mesa_install" "$hybris_stage/install" <<'CACHE'
+import json,sys
+from pathlib import Path
+sys.path.insert(0,str(Path(sys.argv[1])/'tools/build'))
+from pipeline_cache import inventory
+try:
+    record=json.loads(Path(sys.argv[3]).read_text())
+    valid=(record.get('format') == 1 and record.get('inputs') == sys.argv[2]
+           and record.get('outputs') == {path:inventory(path) for path in sys.argv[4:]})
+except (OSError, ValueError):
+    valid=False
+raise SystemExit(0 if valid else 1)
+CACHE
+}
+if [[ -f "$gpu_receipt" ]] && verify_gpu_cache; then
+    printf '%s\n' "$mesa_install" "$hybris_stage/install/usr/lib/hybris"
+    exit 0
 fi
 
 build_mesa() {
@@ -115,4 +126,14 @@ build_hybris() {
 build_mesa
 build_hybris
 printf '%s\n' "$gpu_id" > "$gpu_id_file"
+python3 - "$repo" "$gpu_id" "$gpu_receipt" "$mesa_install" "$hybris_stage/install" <<'RECEIPT'
+import json,sys
+from pathlib import Path
+sys.path.insert(0,str(Path(sys.argv[1])/'tools/build'))
+from pipeline_cache import inventory
+receipt=Path(sys.argv[3]); pending=receipt.with_suffix('.json.part')
+pending.write_text(json.dumps({'format':1,'inputs':sys.argv[2],
+                              'outputs':{path:inventory(path) for path in sys.argv[4:]}},sort_keys=True)+'\n')
+pending.replace(receipt)
+RECEIPT
 printf '%s\n' "$mesa_install" "$hybris_stage/install/usr/lib/hybris"

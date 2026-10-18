@@ -35,3 +35,11 @@
 [submodule "distributions/plasma"]
 	path = distributions/plasma
 	url = https://github.com/taowen/arlinux-plasma.git
+[submodule "third_party/libX11"]
+	path = third_party/libX11
+	url = https://github.com/taowen/libX11.git
+	branch = arlinux
+[submodule "third_party/libxshmfence"]
+	path = third_party/libxshmfence
+	url = https://github.com/taowen/libxshmfence.git
+	branch = arlinux

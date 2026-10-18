@@ -26,6 +26,9 @@ windows_accessibility="${ARLINUX_WINDOWS_ACCESSIBILITY:-$repo/build/windows-acce
 }
 
 
+windows_tray="${ARLINUX_WINDOWS_TRAY:-$repo/build/windows-tray/windows-tray.exe}"
+[[ -f "$windows_tray" ]] || { echo 'Build tools/build/windows-tray.sh first.' >&2; exit 2; }
+
 steamworks="${ARLINUX_STEAMWORKS_PAYLOAD:-$repo/build/steamworks-payload}"
 steamworks_files=(lsteambridge-server aarch64-windows/steam.exe aarch64-windows/lsteamclient.dll
     aarch64-unix/lsteamclient.so aarch64-unix/steamclient.so aarch64-unix/steamclient64.so
@@ -186,8 +189,10 @@ PY
     install -Dm644 runtime/tools/steam_proxy.py "$rootfs/usr/lib/arlinux/steam_proxy.py"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm644 runtime/tools/windows_webview.py "$rootfs/usr/lib/arlinux/windows_webview.py"
+    install -Dm644 runtime/tools/windows_tray.py "$rootfs/usr/lib/arlinux/windows_tray.py"
     install -Dm644 runtime/tools/windows_a11y.py "$rootfs/usr/lib/arlinux/windows_a11y.py"
     install -Dm644 "$windows_accessibility" "$rootfs/usr/lib/arlinux/windows-accessibility.exe"
+    install -Dm644 "$windows_tray" "$rootfs/usr/lib/arlinux/windows-tray.exe"
     install -Dm755 runtime/tools/arlinux-windows "$rootfs/usr/bin/arlinux-windows"
     install -Dm644 runtime/tools/windows_apps.py "$rootfs/usr/lib/arlinux/windows_apps.py"
     install -Dm755 runtime/tools/arlinux-windows-app "$rootfs/usr/bin/arlinux-windows-app"

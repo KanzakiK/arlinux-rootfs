@@ -108,6 +108,12 @@ class CacheTest(unittest.TestCase):
             self.assertNotEqual(second, pipeline.source_state(repo))
 
 
+spec_wine = importlib.util.spec_from_file_location('wine_pipeline',
+    Path(__file__).resolve().parents[1] / 'tools/build/wine-pipeline.py')
+wine_pipeline = importlib.util.module_from_spec(spec_wine)
+spec_wine.loader.exec_module(wine_pipeline)
+
+
 class WineGraphTest(unittest.TestCase):
     def test_source_chain_passes_matching_native_and_pe_inputs_and_reuses_stages(self):
         import json
@@ -160,12 +166,12 @@ class WineGraphTest(unittest.TestCase):
                     (out / 'prefix').mkdir()
                     if recipe == 'bionic-vulkan.py':
                         (out / 'libvulkan_android_desktop.so').touch()
-            archive = pipeline.build_wine(cache, root, root, paths.copy(), common, invoke, env)
+            archive = wine_pipeline.build_wine(cache, root, root, paths.copy(), common, invoke, env)
             self.assertEqual(archive.read_text(), 'Bionic Wine archive')
             self.assertTrue((archive.parent / 'pe-fex-source.tar.gz').is_file())
             self.assertEqual(len(calls), 9)
             self.assertNotIn('BIONIC_ARCHIVE', env)
-            again = pipeline.build_wine(cache, root, root, paths.copy(), common, invoke, env)
+            again = wine_pipeline.build_wine(cache, root, root, paths.copy(), common, invoke, env)
             self.assertEqual(archive, again)
             self.assertEqual(len(calls), 9)
 

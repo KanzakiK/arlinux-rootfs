@@ -29,7 +29,7 @@ if [[ -n "${BIONIC_DXVK_RUNTIME:-}" ]]; then
 fi
 if [[ "$vulkan_driver" == system ]]; then
     [[ -d "${BIONIC_DXVK_RUNTIME:-}" ]] || {
-        echo 'Build tools/build/bionic-dxvk.sh and set BIONIC_DXVK_RUNTIME.' >&2; exit 2;
+        echo 'Run ./build.sh wine; DXVK is a managed pipeline dependency.' >&2; exit 2;
     }
     [[ -f "${BIONIC_SYSTEM_VULKAN_ADAPTER:-}" ]] || {
         echo 'Build tools/build/bionic-vulkan.py and set BIONIC_SYSTEM_VULKAN_ADAPTER.' >&2; exit 2;
@@ -43,12 +43,13 @@ output="$(realpath -m "$8")"
 [[ -f "$source_dir/dlls/combase/parameterized.c" ]] || {
     echo 'Use the complete version-matched Wine source, including parameterized.c.' >&2; exit 2;
 }
-python3 - "$pe_runtime" <<'PY'
-import json, sys
+python3 - "$pe_runtime" "$fex_source" <<'PY'
+import json, subprocess, sys
 from pathlib import Path
 manifest = json.loads((Path(sys.argv[1]) / 'arlinux-runtime.json').read_text())
 assert manifest['wine_commit'] == '46af030d975f331ff6304a34a6b91c6147285c6d', 'Expected the packaged ARLinux Wine 11.19 runtime'
-assert manifest['fex_commit'] == '82510eb452b258959ef982be58a9c3c1bafc82a4', 'FEX PE modules differ from the native helper source'
+expected = subprocess.check_output(['git', '-C', sys.argv[2], 'rev-parse', 'HEAD'], text=True).strip()
+assert manifest['fex_commit'] == expected, 'FEX PE modules differ from the native helper source'
 PY
 python3 - "$fex_source" <<'PY'
 import hashlib, sys
@@ -96,6 +97,8 @@ patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-o
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-layered-alpha.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-transparent-initial.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-layered-minimize.patch"
+cp "$repo/runtime/tray/protocol.h" "$source_dir/programs/explorer/arlinux_tray.h"
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-tray-task.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-mmap-probe.patch"
 (cd "$source_dir/dlls/winevulkan" && python3 make_vulkan)
 cp "$fex_source/Source/Windows/UnixLib/"{FEXUnixLib.cpp,FEXUnixLib.h} "$stage/fex/"

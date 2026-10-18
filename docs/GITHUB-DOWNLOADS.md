@@ -5,6 +5,18 @@ OpenCode's right-edge hold entry and its desktop icon both call
 serves Windows installers and Bionic Wine. Keep routing policy here rather than
 adding a separate proxy in an app installer.
 
+On first installation, OpenCode resolves GitHub's official
+`anomalyco/opencode/releases/latest` endpoint at runtime. It selects the stable
+release's Linux ARM64 DEB on Debian or AArch64 RPM on Arch, requires the published
+SHA-256 digest, and downloads by immutable asset ID through the shared downloader.
+The old `opencode-downloads.tsv` pin is not used by this launcher. Metadata queries
+race the language-appropriate routes with a 10-second curl limit and 12-second
+process timeout. Failed or incomplete metadata stops installation with a retry
+message instead of silently installing an old version. Already installed OpenCode
+launches without this query; this is first-install selection, not an automatic
+upgrade mechanism. Run `python3 tests/test-opencode-latest.py` for selection,
+verification, routing and offline relaunch coverage.
+
 The host writes `/etc/arlinux-steam-language` for every prepared instance, even
 when Steam is not installed. Only `zh` enables SteamCommunity302 GitHub routes;
 other languages retain direct requests. Routes preserve the original HTTPS host,

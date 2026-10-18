@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ $# != 5 ]]; then
-    echo 'Usage: wine-bionic-graphics.sh MESA_SOURCE_OR_DASH NDK_ROOT NATIVE_PREFIX GRAPHICS_PROTOCOLS BUILD_DIRECTORY' >&2
+if [[ $# != 6 ]]; then
+    echo 'Usage: wine-bionic-graphics.sh MESA_SOURCE_OR_DASH NDK_ROOT NATIVE_PREFIX GRAPHICS_PROTOCOLS LIBXSHMFENCE_SOURCE BUILD_DIRECTORY' >&2
     exit 2
 fi
 mesa="$(realpath -m "$1")"
 ndk="$(realpath "$2")/toolchains/llvm/prebuilt/linux-x86_64"
 native="$(realpath "$3")"
 protocols="$(realpath "$4")"
-base="$(realpath -m "$5")"
+xshmfence="$(realpath "$5")"
+base="$(realpath -m "$6")"
 prefix="$base/prefix"
 driver="${BIONIC_VULKAN_DRIVER:-system}"
 opengl="${BIONIC_OPENGL:-zink}"
@@ -34,8 +35,17 @@ fetch() {
 # even when they are not dependencies of Mesa or the desktop Vulkan loader.
 build_xlib() {
     local name=$1 digest=$2
-    fetch "https://www.x.org/releases/individual/lib/$name.tar.xz" "$name.tar.xz" "$digest"
-    [[ -d "$base/$name" ]] || tar -xf "$base/$name.tar.xz" -C "$base"
+    if [[ "$name" == libxshmfence-arlinux ]]; then
+        [[ -z "$(git -C "$xshmfence" status --porcelain)" ]] || { echo 'libxshmfence must be a clean pinned fork checkout.' >&2; exit 2; }
+        if [[ ! -d "$base/$name" ]]; then
+            mkdir "$base/$name"
+            git -C "$xshmfence" archive HEAD | tar -xf - -C "$base/$name"
+            (cd "$base/$name" && ACLOCAL_PATH="$native/share/aclocal" autoreconf -fi)
+        fi
+    else
+        fetch "https://www.x.org/releases/individual/lib/$name.tar.xz" "$name.tar.xz" "$digest"
+        [[ -d "$base/$name" ]] || tar -xf "$base/$name.tar.xz" -C "$base"
+    fi
     (
         cd "$base/$name"
         export CC="$ndk/bin/aarch64-linux-android29-clang"
@@ -69,7 +79,7 @@ cmake -S "$base/Vulkan-Headers-1.4.357" -B "$base/headers-build-1.4.357" -DCMAKE
 cmake --install "$base/headers-build-1.4.357"
 python3 - "$mesa" "$base" "$native" "$ndk" "$protocols" "$driver" "$opengl" <<'PY'
 from pathlib import Path
-import re, shutil, sys
+import shutil, sys
 mesa, base, native, ndk, protocols = map(Path, sys.argv[1:6])
 source = base / 'mesa'
 if (sys.argv[6] != 'none' or sys.argv[7] == 'zink') and not source.exists():
@@ -83,21 +93,9 @@ if (sys.argv[6] != 'none' or sys.argv[7] == 'zink') and not source.exists():
     p.write_text(p.read_text().replace('#if DETECT_OS_ANDROID', '#if defined(__ANDROID__)')
                  .replace('#elif DETECT_OS_ANDROID', '#elif defined(__ANDROID__)'))
 prefix = base / 'prefix'
-# MSYS libtool metadata embeds /c/... paths. Adapt a private link view instead
-# of modifying the Windows-produced prefix (which remains a verified input).
-libdir = prefix / 'lib'
-native_libdir = native / 'lib'
-msys_native = re.sub(r'^/mnt/([a-z])/', r'/\1/', str(native))
-for p in native_libdir.iterdir():
-    target = libdir / p.name
-    if p.suffix == '.la':
-        target.write_text(p.read_text().replace(msys_native, str(native)).replace(str(native), str(prefix)))
-    elif ('.so' in p.name or p.suffix == '.a') and not target.exists():
-        target.symlink_to(p)
-for p in (native / 'lib/pkgconfig').glob('*.pc'):
-    value = p.read_text().replace(msys_native, str(native))
-    value = re.sub(r'^libdir=.*$', 'libdir=' + str(libdir), value, flags=re.M)
-    (prefix / 'lib/pkgconfig' / p.name).write_text(value)
+for directory in ('share/pkgconfig', 'lib/pkgconfig'):
+    for p in (native / directory).glob('*.pc'):
+        (prefix / 'lib/pkgconfig' / p.name).write_text(p.read_text())
 pc = protocols / 'arlinux-wsi-protocols.pc'
 (prefix / 'lib/pkgconfig' / pc.name).write_text(pc.read_text().replace('${pcfiledir}', str(protocols)))
 # Host protocol XML and its scanner are used for code generation.
@@ -132,6 +130,8 @@ build_xlib libXi-1.8.2 d0e0555e53d6e2114eabfa44226ba162d2708501a25e18d99cfb35c09
 build_xlib libXrender-0.9.12 b832128da48b39c8d608224481743403ad1691bf4e554e4be9c174df171d1b97
 build_xlib libXcomposite-0.4.6 fe40bcf0ae1a09070eba24088a5eb9810efe57453779ec1e20a55080c6dc2c87
 build_xlib libXxf86vm-1.1.6 96af414c73ce1d5449ad04be7f9f27fa8330f844b6dda843ef22e3e1befb3ee3
+# Mesa GLX/DRI synchronization is also an explicit Android prerequisite.
+build_xlib libxshmfence-arlinux fork
 cmake -S "$base/Vulkan-Loader-1.4.357" -B "$base/loader-build-1.4.357" -G Ninja \
     -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
     -DCMAKE_C_COMPILER="$ndk/bin/aarch64-linux-android29-clang" \

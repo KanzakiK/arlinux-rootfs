@@ -14,7 +14,7 @@ from unittest.mock import patch
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-spec = importlib.util.spec_from_file_location('device', Path(sys.path[0]) / 'device-desktop.py')
+spec = importlib.util.spec_from_file_location('device', Path(sys.path[0]) / 'seal-rootfs.py')
 device = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(device)
 

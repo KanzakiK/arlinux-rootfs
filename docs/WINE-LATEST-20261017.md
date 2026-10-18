@@ -1,5 +1,7 @@
 # Bionic Wine latest: 2026-10-17 audit
 
+Historical validation record only. Current procedures: [BUILD.md](BUILD.md).
+
 Runtime SHA-256:
 `6fe4aeb884ee1abcf9543247be900aab93ff652b39a29c6668aad04c11a92c41`
 

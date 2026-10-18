@@ -30,7 +30,8 @@ inputs=[repo/'tools/build/wine-pe.sh',repo/'tools/build/refresh-wine-vkd3d.py',
 inputs+=sorted((repo/'tools/patches/wine-staging-vkd3d').glob('*'))
 inputs+=[repo/'tools/patches/wine-dcomp-content-lifetime.patch',
          repo/'tools/patches/wine-dwrite-bitmap-cache.patch',
-         repo/'tools/patches/wine-keyboard-layout.patch']
+         repo/'tools/patches/wine-keyboard-layout.patch',
+         repo/'tools/patches/wine-bionic-tray-task.patch', repo/'runtime/tray/protocol.h']
 for path in inputs:
     h.update(path.name.encode());h.update(path.read_bytes())
 for name in ('clang','ld.lld'):
@@ -62,6 +63,8 @@ if [[ ! -f "$stage/source-ready" ]]; then
     bash "$repo/tools/build/prepare-wine-dcomp.sh" "$prepare/source"
     patch -d "$prepare/source" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-dwrite-bitmap-cache.patch"
     patch -d "$prepare/source" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-keyboard-layout.patch"
+    cp "$repo/runtime/tray/protocol.h" "$prepare/source/programs/explorer/arlinux_tray.h"
+    patch -d "$prepare/source" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-tray-task.patch"
     (cd "$prepare/source" && perl tools/make_requests)
     if [[ -d "$stage/source" ]]; then
         echo "Incomplete source preparation at $stage/source; inspect it before retrying." >&2
