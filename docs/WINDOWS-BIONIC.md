@@ -184,19 +184,19 @@ checks the helper source and header hashes before patching. The output contains
 checks ARM64 and the Android interpreter, and records file SHA-256 hashes.
 The dependencies opened dynamically by Wine are included explicitly.
 
-Install the output as app-owned `files/shared/windows-bionic/ID/`. Keep a
-separate Wine prefix. This is an experimental installation path; the existing
-`shared/windows/current.json` selection and `arlinux-windows` remain unchanged.
+Install the archive through `arlinux-windows --install BUNDLE --sha256 SHA256`.
+The runtime is stored immutably under `/arlinux-shared/windows-bionic/<sha256>`;
+application state remains in the single instance-level Wine prefix.
 
 ## Launch
 
 The desktop's Windows apps category includes **Windows Launcher**. Its window
-is provided by the Android host. Browse Home or Shared files, select an EXE,
-choose an installed Bionic Wine runtime, and open the application. The host
+is provided by the Android host. Select an EXE and open the application. The host
 keeps its working directory beside the EXE, and remembers recent applications.
 The phone file picker imports a standalone EXE into shared storage; applications
 with adjacent DLLs or resources should be copied as a complete directory first.
-The launcher uses a separate persistent prefix for each runtime. It reports
+The launcher and Steam games use `~/.local/share/arlinux/windows-bionic/prefix`
+(containing `pfx`), independent of the selected runtime version. It reports
 startup errors and early process exits, with a path to the native log.
 The distribution launcher downloads the pinned Bionic release on first use.
 
@@ -209,16 +209,13 @@ tawcroot's additional seccomp filter, which cannot be removed.
 From the desktop guest:
 
 ```bash
-python3 tools/windows-bionic.py --runtime ID \
-  --prefix /arlinux-shared/windows-bionic/ID/my-prefix \
-  --wait /absolute/path/to/application.exe
+arlinux-windows /absolute/path/to/application.exe
 ```
 
-Omit `--wait` for a GUI application. Builtins such as `notepad.exe` are also
-accepted. `BIONICX_FILES` identifies the Android backing directory; `--uid`
-overrides ownership discovery if a guest virtualizes stat results. Logs and
-exit status are written to `PREFIX/native-jobs/`. Stopping the host terminates
-its launchers and requests shutdown of the associated wineservers.
+The launcher resolves and verifies the pinned runtime automatically. Diagnostic
+launches should use the shared `windows` module rather than manually constructing
+host socket requests or selecting another Wine prefix. Stopping the host
+terminates its launchers and requests shutdown of the associated wineservers.
 
 Integrated authentication uses Samba's `ntlm_auth` from the active Linux
 instance. Power BI preparation installs the `winbind` package automatically,

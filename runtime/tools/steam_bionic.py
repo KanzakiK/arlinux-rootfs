@@ -159,10 +159,7 @@ def launch(verb, arguments):
     # Steam's compat-data directory contains the game files and metadata.  It
     # is not a Wine prefix: every Bionic-managed Windows app in this Linux
     # instance uses the same instance-level prefix and Program Files tree.
-    # Test doubles from older diagnostics may not expose the helper; the real
-    # Bionic windows module always does and therefore never uses game prefixes.
-    wine_prefix = (windows.instance_prefix() if hasattr(windows, 'instance_prefix')
-                   else Path(data))
+    wine_prefix = windows.instance_prefix()
     env = {name: os.environ[name] for name in ENVIRONMENT if name in os.environ}
     for name, value in env.items():
         if name.startswith('Steam') and not value.isdecimal():

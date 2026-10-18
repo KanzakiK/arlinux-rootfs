@@ -40,11 +40,6 @@ git clone --recurse-submodules https://github.com/taowen/arlinux-rootfs.git
 cd arlinux-rootfs
 ./build.sh doctor
 ./build.sh list
-mkdir -p build/proton-valve
-git clone https://github.com/ValveSoftware/wine.git build/proton-valve/wine
-git -C build/proton-valve/wine checkout e60892cc2398b0a83c332a2078c7b85e47bdb42b
-# Supply an LLVM-MinGW 23+ bin directory with ARM64X support.
-bash tools/build/proton-core.sh build/proton-valve/wine /path/to/llvm-mingw/bin build/linux/proton-core
 ./build.sh build debian
 ./build.sh verify out/debian.zip
 ```
@@ -54,11 +49,10 @@ written to `build/`, finished bundles to `out/`, and reusable downloads to
 `${XDG_CACHE_HOME:-$HOME/.cache}/arlinux`. Set `ARLINUX_CACHE_DIR` to move the
 cache.
 
-The version-matched Proton core is built once and reused by distribution builds.
-Set `ARLINUX_PROTON_CORE` to use another output directory from `proton-core.sh`.
-Only its small runtime files enter the rootfs. Publish the matching
-`wine-source.tar.gz`, `execmod.patch`, and `pack.json` alongside releases that
-contain these Wine binaries; the build verifies their checksums before packaging.
+For the complete desktop embedded in the Android APK, use the
+[desktop build pipeline](docs/DESKTOP-PIPELINE.md). It builds and caches the
+Bionic Wine dependencies together; distribution builds do not require a Proton
+core replacement or a Proton patch pack.
 
 Prebuilt ZIP bundles are published as release assets in each distribution's
 own GitHub repository: [Debian](https://github.com/taowen/arlinux-debian/releases),
@@ -87,7 +81,7 @@ arlinux-windows --install BUNDLE.tar.gz --sha256 SHA256
 
 Windows applications and Steam games share one instance-level Bionic Wine
 prefix (`~/.local/share/arlinux/windows-bionic/prefix`, containing `pfx`).
-`--prefix DIRECTORY` explicitly selects another data directory. Built-in
+An alternate `--prefix` is rejected; runtime updates do not create a new prefix. Built-in
 Paint.NET, Power BI and FontForge icons use the same runtime and Android launch
 service. FontForge downloads the checksum-pinned official Windows x64 installer
 on first click, installs unattended, then opens the editor. Later clicks launch
@@ -101,7 +95,7 @@ compatibility target. Existing glibc prefixes are not reused.
 Wine Windows modules are built with `tools/build/wine-pe.sh`, FEX PE modules
 with `tools/build/fex-windows.sh`, and the PE input with
 `tools/package-wine-pe.py`. These inputs contain no glibc native Wine backend.
-The host repository's `tools/build/wine-bionic.sh` builds the Android native
+This repository's `tools/build/wine-bionic.sh` builds the Android native
 backend and `tools/package-wine-bionic.py` packages matching Windows modules,
 Bionic libraries, Zink, system Vulkan WSI and the shared GPU compatibility layer.
 Publish the matching source archives alongside the binary runtime.

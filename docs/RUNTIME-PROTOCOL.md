@@ -48,8 +48,7 @@ application payloads, Bionic Wine/FEX/DXVK runtimes and Steam's prepared
 FEX graphics providers are also shared, keyed by content/version. Do not
 modify a published runtime while it is running.
 
-Steam's complete client, depots (Proton, FEX, Steam Linux Runtime), games,
-account configuration and library-local game prefixes live in
+Steam's complete client, Valve depots, games and account configuration live in
 `/arlinux-shared/steam`. Valve still owns downloads, updates and game launch.
 The launcher holds a cross-instance session lock. Repeated clicks in the same
 session forward to Valve; another instance must wait for Steam to close.
@@ -57,7 +56,9 @@ An existing stopped client can be moved into an empty shared installation;
 independent existing installations are never merged or overwritten.
 
 Each instance retains its own package database and native dependencies, HOME,
-Bionic Wine prefixes and documents. Game data stored outside the Steam
+Bionic Wine prefix and documents. Bionic Windows games and the Windows launcher
+share `~/.local/share/arlinux/windows-bionic/prefix` (containing `pfx`), not
+Steam's per-game compatdata directories. Game data stored outside the Steam
 library, such as Linux games' HOME configuration, remains instance-local.
 WPS and Windows
 app installers reuse shared downloads but install into their instance. Sharing
@@ -144,8 +145,8 @@ to the distribution package mirror and Valve's client CDN.
 Installation reads Valve's stable ARM64 KeyValues manifest,
 verifies the current native bootstrap's SHA-256 and stages it before writing
 client files. Valve's updater downloads and verifies the remaining components
-and owns its installation records. Downloads are cached under `$XDG_CACHE_HOME/arlinux/steam`;
-client files live under `$XDG_DATA_HOME/Steam` (normally `~/.local/share/Steam`).
+and owns its installation records. Verified bootstrap downloads and client files
+use the shared storage described above; client files live in `/arlinux-shared/steam`.
 GTK2, PipeWire, libnm, lsof and normal X11/audio dependencies are installed
 using Debian's apt. Arch uses pacman for available dependencies but requires
 GTK2 to be installed separately; it is no longer in the main repositories.
@@ -157,22 +158,25 @@ before starting Steam, so its runtime can discover native driver dependencies.
 The default is Valve's stable ARM64 channel. `--channel publicbeta` opts into
 the public beta; `--channel stable` returns to the stable client.
 
-The launcher directly runs `steamrtarm64/steam` and handles updater exit code
-42. It does not add sandbox/GPU arguments. ARM64 channel
+The Bash entry execs the Python preparation module, which execs
+`steamrtarm64/steam`; neither remains as a supervising parent. Android Kotlin
+owns updater/session monitoring and the package-wide explicit HTTP proxy.
+The launcher follows the system language and disables IPv6 for Steam. ARM64 channel
 discovery follows the approach demonstrated by
 [DroidDeck](https://github.com/Droid-Deck/DroidDeck/blob/main/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install).
 
 On Debian-based desktops, Steam retains ownership of compatibility selection.
 The launcher does not overwrite Valve's depot executables or rewrite
-user-selected Proton/FEX choices. It removes selections
-of the former `arlinux-fex` tool once, with a configuration backup.
+explicit per-game third-party or native Linux choices. Bionic Wine is the
+Windows default; former ARLinux Proton selections migrate to Bionic.
 
 Install **FEX-Emu** (3127680) and **Steam Linux Runtime 3.0 (sniper)** (1628350)
 through Steam. Restart the client after installing these prerequisites.
 The launcher prepares a private graphics provider under
-`$XDG_CACHE_HOME/arlinux/steam-fex`, using Valve's runtime and FEX thunks plus
-signed Debian Bookworm base libraries downloaded through APT from the Tsinghua
-mirror. It does not replace the desktop's ARM64 libraries.
+`/arlinux-shared/steam-fex`, using Valve's runtime and FEX thunks plus
+signed Debian Bookworm base libraries downloaded through APT. Chinese instances
+use the Tsinghua mirror; other languages use the official Debian mirror.
+It does not replace the desktop's ARM64 libraries.
 
 Valve's FEX tool and pressure-vessel use their standard graphics-provider and
 extra-directory interfaces. The non-isolating `bwrap` adapter supplies their
@@ -182,41 +186,20 @@ Android driver directories and libhybris's auxiliary linker remain available
 inside the runtime. FEX's GL/Vulkan thunks use the desktop's native GPU stack.
 Steam SDK links select x86-64 for `sdk64` and ARM64 for `sdkarm64`.
 Game and compatibility-tool support must be verified individually; native Linux
-game testing does not establish Windows/Proton support.
+game testing does not establish Windows game support.
 
-For Windows games, install **Proton 11.0 (ARM64)** (4628740) through Steam and
-restart the client. The launcher registers **Proton ARM64 (ARLinux compatibility)**
-when the bundled core pack matches the installed depot, and selects it as the
-Windows default before starting Steam. Existing Valve `proton_*` selections use
-the same adapter. Explicit third-party tools and Linux FEX selections are left
-alone. The original Steam configuration is backed up before the first change;
-it is never edited while the client is running. Use Steam's normal Play button.
-The verified
-version is `1791559733 proton-11.0-2e-arm64`; Astral Ascent's Windows build has
-been verified on Redmi/Adreno 650 with Turnip.
-
-Like [DroidDeck](https://github.com/Droid-Deck/DroidDeck/blob/main/tools/linuxfs/overlay/usr/local/bin/steam-compatibility),
-ARLinux registers an adapter around Valve's downloaded Proton. Version-matched
-core replacement is also used by DroidDeck's optional esync packs, but ARLinux's
-patch below addresses a different Android restriction; it is not DroidDeck's
-default Wine configuration. In ARLinux,
-a shadow directory reuses Valve's Proton, FEX and Windows DLLs. Only the Unix
-`ntdll.so` and `wineserver` are rebuilt from matching Valve Wine source; Wine
-loaders are copied unchanged so relative module lookup stays inside that tree.
-The PE-mapping patch requests execute permission before modifying executable
-file mappings, avoiding Android's denial of later `execmod`. Wine still applies
-its final section protections. Original and replacement hashes are checked on
-every launch; an unsupported Steam update is rejected rather than mixed with
-an old Wine core.
-
-This Windows tool invokes Valve's Proton directly, without pressure-vessel.
-It **does not provide namespace isolation**. Other compatibility selections and
-the Linux FEX graphics-provider path remain separate. Steam continues to own
-game installation, prefixes, launch arguments and compatibility selection.
+For Windows games, the launcher registers **ARLinux Bionic Wine** as a custom
+compatibility tool and prepares the pinned runtime before starting Valve.
+Steam's normal Play path prepares supported dependencies and the Steamworks
+bridge, then launches native Bionic Wine through the Android host. No Proton
+core replacement or patch pack is built or installed. See
+[Steam Bionic adapter](STEAM_BIONIC.md) for the shared prefix and launch contract.
+The Linux FEX graphics-provider path remains separate. Steam continues to own
+game installation, launch arguments and compatibility selection.
 
 ## Standalone Windows applications
 
-`arlinux-windows PROGRAM.exe` uses a separate native ARM64 Wine 11.19 runtime,
+`arlinux-windows PROGRAM.exe` uses the same native ARM64 Bionic Wine runtime as Steam,
 with FEX CPU modules for x86/x64 applications and DXVK for Direct3D. It does not
 use or replace Steam's Proton tools. Application compatibility is experimental.
 
@@ -237,8 +220,8 @@ The first launch downloads the pinned archive from the
 [ARLinux Wine release](https://github.com/taowen/wine/releases).
 `windows-downloads.tsv` records its HTTPS URL and SHA-256. The launcher verifies
 the archive before installing an immutable runtime under
-`/arlinux-shared/windows/runtimes/<sha256>`; each instance keeps its own Wine
-prefixes and installed applications. A manual install uses
+`/arlinux-shared/windows-bionic/<sha256>`; each instance keeps its one Wine
+prefix and installed applications. A manual install uses
 `arlinux-windows --install BUNDLE --sha256 SHA256`.
 
 The public [Wine fork](https://github.com/taowen/wine/tree/arlinux),
