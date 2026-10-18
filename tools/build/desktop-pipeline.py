@@ -30,7 +30,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
-    parser.add_argument('--android-repo', required=True, type=Path)
     parser.add_argument('--distribution', default='yibu', choices=('yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'))
     parser.add_argument('--target', choices=('linux-assets', 'rootfs-packages', 'desktop'), default='desktop')
     parser.add_argument('--rebuild', action='store_true')
@@ -42,7 +41,7 @@ def main():
     framework = Path(config['framework']).resolve(strict=True)
     if os.name != 'posix' or str(framework).startswith('/mnt/'):
         raise ValueError('Rootfs builds require the Linux filesystem in Linux/WSL')
-    android = args.android_repo.resolve(strict=True)
+    android = framework
     env = {name: value for name, value in os.environ.items() if name in (
         'PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
         'http_proxy', 'https_proxy', 'no_proxy')}

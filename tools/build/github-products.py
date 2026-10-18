@@ -203,9 +203,8 @@ def fetch_product(reference, output):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--framework-ref',default='main')
-    parser.add_argument('--android-ref',required=True)
     parser.add_argument('--distribution', choices=('yibu','debian','arch','omarchy','plasma','lxqt'), default='yibu')
-    parser.add_argument('--product',choices=('wine','rootfs','all'),default='all')
+    parser.add_argument('--product',choices=('wine','rootfs','audio','all'),default='all')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--parallel',type=int,default=8)
     parser.add_argument('--plan',action='store_true')
@@ -216,17 +215,16 @@ def main():
         print(json.dumps(plan,indent=2))
         return
     framework_sha=api('repos/taowen/arlinux-rootfs/commits/'+args.framework_ref)['sha']
-    android_sha=api('repos/taowen/arlinux/commits/'+args.android_ref)['sha']
     products=['wine','rootfs'] if args.product=='all' else [args.product]
     if args.distribution != 'yibu':
         plan['products']['rootfs'] = args.distribution
     state=args.output/'github-state'
-    coordinator=Coordinator(plan,framework_sha,android_sha,state)
+    coordinator=Coordinator(plan,framework_sha,None,state)
     result=coordinator.run(products,args.parallel)
     for name,reference in result.items():
         fetch_product(reference,args.output/name)
     (args.output/'products.json').write_text(json.dumps(dict(format=1,
-        framework=framework_sha,android=android_sha,products=result),indent=2)+'\n')
+        framework=framework_sha,products=result),indent=2)+'\n')
 
 
 if __name__=='__main__':

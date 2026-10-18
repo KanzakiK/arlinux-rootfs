@@ -172,7 +172,6 @@ def build_bionic_x11(cache, framework, ndk, base):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, type=Path)
-    parser.add_argument('--android-repo', required=True, type=Path)
     parser.add_argument('--target', choices=tuple(required_stages(None)))
     parser.add_argument('--require-dependencies', action='store_true')
     parser.add_argument('--rebuild', action='store_true')
@@ -182,7 +181,7 @@ def main():
     paths = {name: Path(config[name]).resolve(strict=True) for name in ('wineSource', 'mingw', 'ndk', 'addons')}
     if any(str(path).startswith('/mnt/') for path in paths.values()):
         raise ValueError('Wine build tools, vendor inputs and build trees must reside on the Linux filesystem')
-    android = args.android_repo.resolve(strict=True)
+    android = framework
     dirty = subprocess.check_output(['git', '-C', str(paths['wineSource']), 'status', '--porcelain', '--untracked-files=normal'])
     if dirty:
         raise ValueError('wineSource must be the pristine pinned checkout')

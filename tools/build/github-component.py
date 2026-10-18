@@ -34,7 +34,7 @@ def request():
     stage = plan['stages'].get(data.get('stage'))
     if not stage or os.environ.get('GITHUB_REPOSITORY') != stage['repository']:
         raise ValueError('Component must run in its owning repository')
-    for name in ('framework', 'android'):
+    for name in ('framework',):
         if not re.fullmatch('[0-9a-f]{40}', data.get(name, '')):
             raise ValueError('Expected a pinned ' + name + ' commit')
     identity = data.pop('identity')
@@ -73,7 +73,7 @@ def prepare(data, framework):
         root = Path('/opt/arlinux')
         run('sudo', 'mkdir', '-p', root)
         run('sudo', 'chown', '-R', f'{os.getuid()}:{os.getgid()}', root)
-        for name in ('framework', 'android'):
+        for name in ('framework',):
             shutil.move(str(framework.parent / name), root / name)
         framework = root / 'framework'
         # Only remove optional software on the ephemeral GitHub runner.
@@ -255,13 +255,13 @@ def build(data, framework):
             'ARLINUX_CACHE_DIR='+str(root/'cache/rootfs'),
             'ARLINUX_REQUIRE_GPU_CACHE=1',
             'bash', framework/'build.sh', 'rootfs', '--config', config,
-            '--android-repo', root/'android', '--distribution', stage, '--output', output)
+            '--distribution', stage, '--output', output)
     else:
         config.write_text(json.dumps(toolchains(root, framework)))
         env = dict(os.environ, ARLINUX_WINDOWS_FONTS=str(root/'vendor/fonts'), JOBS='4',
             CCACHE_DIR=str(root/'cache/ccache'), CCACHE_BASEDIR=str(framework))
         run('bash', framework/'build.sh', 'wine', '--config', config,
-            '--android-repo', root/'android', '--target', stage, '--require-dependencies', env=env)
+            '--target', stage, '--require-dependencies', env=env)
 
 
 def publish(data, framework):
