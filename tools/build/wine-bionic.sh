@@ -93,6 +93,7 @@ patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-d
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-wow64-images.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-opengl-unavailable.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-layered-alpha.patch"
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-transparent-initial.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-layered-minimize.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-mmap-probe.patch"
 (cd "$source_dir/dlls/winevulkan" && python3 make_vulkan)
@@ -139,6 +140,7 @@ done
     # winebus PE and Unix halves exchange private structures. Build the driver
     # from this same prepared source instead of reusing a potentially older PE.
     make -j"${JOBS:-8}" dlls/winebus.sys/{aarch64,i386,x86_64}-windows/winebus.sys
+    make -j"${JOBS:-8}" programs/explorer/{aarch64,i386,x86_64}-windows/explorer.exe
 ) > "$stage/build.log" 2>&1
 "$CXX" -std=c++17 -shared -fPIC -static-libstdc++ -O2 -Wl,-z,defs \
     -Wl,-z,max-page-size=16384 "$stage/fex/FEXUnixLib.cpp" -o "$stage/fex/libarm64ecfex.so"
