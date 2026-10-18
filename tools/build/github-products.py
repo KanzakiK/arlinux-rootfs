@@ -201,8 +201,7 @@ def fetch_product(reference, output):
         with archive.open('rb') as source:
             if hashlib.file_digest(source,'sha256').hexdigest()!=record['archiveSha256']:
                 raise ValueError('Product capsule SHA-256 mismatch')
-        audio=record['stage']=='wine-pulse'
-        product='audio' if audio else ('rootfs/'+record['stage']) if record['stage'] in ('yibu','debian','arch','omarchy','plasma','lxqt') else 'wine'
+        product='rootfs/'+record['stage']
         prefix='framework/build/artifacts/'+product+'/'
         output.mkdir(parents=True,exist_ok=True)
         with archive.open('rb') as source,zstandard.ZstdDecompressor().stream_reader(source) as decoded:
@@ -210,40 +209,21 @@ def fetch_product(reference, output):
                 for member in capsule:
                     if not member.isfile():
                         continue
-                    if audio:
-                        if not member.name.startswith('framework/build/pipeline/wine-pulse/') or '/output/android/' not in member.name:
-                            continue
-                        name=member.name.split('/output/android/',1)[1]
-                        if not name.startswith(('jni/arm64-v8a/','assets/pulseaudio/')):
-                            raise ValueError('Unexpected audio output')
-                    else:
-                        if not member.name.startswith(prefix):
-                            continue
-                        name=member.name[len(prefix):]
-                    if '\\' in name or ':' in name or any(p in ('','.','..') for p in name.split('/')) or (not audio and '/' in name):
+                    if not member.name.startswith(prefix):
+                        continue
+                    name=member.name[len(prefix):]
+                    if '\\' in name or ':' in name or any(p in ('','.','..') for p in name.split('/')) or '/' in name:
                         raise ValueError('Unsafe product archive member')
                     (output/name).parent.mkdir(parents=True,exist_ok=True)
                     with (output/name).open('wb') as dest:
                         import shutil
                         shutil.copyfileobj(capsule.extractfile(member),dest)
         (output/'github-component.json').write_text(json.dumps(record,indent=2)+'\n')
-        if audio:
-            files={str(p.relative_to(output)).replace('\\','/'):hashlib.sha256(p.read_bytes()).hexdigest()
-                   for folder in ('jni','assets') for p in (output/folder).rglob('*') if p.is_file()}
-            (output/'build-receipt.json').write_text(json.dumps(dict(format=1,component=reference,files=files),indent=2)+'\n')
-        elif product.startswith('rootfs/'):
-            receipt=json.loads((output/'default.json').read_text())
-            with (output/'default.zip').open('rb') as source:
-                digest=hashlib.file_digest(source,'sha256').hexdigest()
-            if digest!=receipt['desktopSha256']:
-                raise ValueError('Rootfs build receipt does not match the downloaded product')
-        else:
-            archive=output/'arlinux-wine-bionic.tar.gz'
-            with archive.open('rb') as source:
-                digest=hashlib.file_digest(source,'sha256').hexdigest()
-            expected=(output/(archive.name+'.sha256')).read_text().split()[0]
-            if digest!=expected:
-                raise ValueError('Wine checksum does not match the downloaded product')
+        receipt=json.loads((output/'default.json').read_text())
+        with (output/'default.zip').open('rb') as source:
+            digest=hashlib.file_digest(source,'sha256').hexdigest()
+        if digest!=receipt['desktopSha256']:
+            raise ValueError('Rootfs build receipt does not match the downloaded product')
         files={p.relative_to(output).as_posix():sha256_file(p)
                for p in output.rglob('*') if p.is_file() and p!=cache_receipt}
         cache_receipt.write_text(json.dumps(dict(format=1,reference=reference,files=files),indent=2)+'\n')
@@ -253,7 +233,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--framework-ref',default='main')
     parser.add_argument('--distribution', choices=('yibu','debian','arch','omarchy','plasma','lxqt'), default='yibu')
-    parser.add_argument('--product',choices=('wine','rootfs','audio','all'),default='all')
+    parser.add_argument('--product',choices=('rootfs','all'),default='all')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--parallel',type=int,default=8)
     parser.add_argument('--plan',action='store_true')
@@ -264,7 +244,7 @@ def main():
         print(json.dumps(plan,indent=2))
         return
     framework_sha=api('repos/taowen/arlinux-rootfs/commits/'+args.framework_ref)['sha']
-    products=['wine','rootfs','audio'] if args.product=='all' else [args.product]
+    products=['rootfs'] if args.product=='all' else [args.product]
     if args.distribution != 'yibu':
         plan['products']['rootfs'] = args.distribution
     state=args.output/'github-state'

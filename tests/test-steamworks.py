@@ -18,7 +18,7 @@ class SteamworksTest(unittest.TestCase):
     def test_launch_lifetime_and_fresh_prefix(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            payload = base/'payload'
+            payload = base/'wine/files/lib/arlinux/steamworks'
             for name in ['aarch64-windows/steam.exe', 'aarch64-unix/lsteamclient.so', 'aarch64-windows/lsteamclient.dll',
                          'i386-windows/lsteamclient.dll', 'x86_64-windows/lsteamclient.dll']:
                 file = payload/name
@@ -39,7 +39,7 @@ class SteamworksTest(unittest.TestCase):
             runtime.mkdir()
             prefix = base/'fresh-prefix'
             calls = []
-            with patch.object(module, 'PAYLOAD', payload), patch.object(module.windows, 'initialize',
+            with patch.object(module.windows, 'initialize',
                     side_effect=lambda *args: calls.append(args)), patch.dict(os.environ, {
                         'XDG_RUNTIME_DIR': str(runtime),
                         'STEAM_COMPAT_CLIENT_INSTALL_PATH': str(base/'steam')}):

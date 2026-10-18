@@ -12,7 +12,7 @@ import zipfile
 
 def prepare(seed, output):
     if os.geteuid() != 0:
-        raise RuntimeError('Rootfs package preparation requires root inside Linux/WSL')
+        raise RuntimeError('Rootfs package preparation requires root on the Linux runner')
     if str(output.resolve()).startswith('/mnt/'):
         raise ValueError('Rootfs build directories must use the Linux filesystem')
     framework = Path(__file__).resolve().parents[2]

@@ -45,8 +45,8 @@ my-linux/
 ```
 
 Build, validate and publish through the single entry described in
-[BUILD.md](BUILD.md). Package preparation runs on Linux/WSL in a disposable
-QEMU/chroot tree. A distribution with a build-time package stage supplies
+[BUILD.md](BUILD.md). Package preparation runs on an ARM64 GitHub-hosted runner
+in a disposable chroot tree. A distribution with a build-time package stage supplies
 `guest/build-desktop.sh`; consumer first boot only writes device-local settings.
 Never export a phone instance or use its home, credentials or prefix as a build
 input. The pipeline seals its own verified package cache and keeps legal notices,

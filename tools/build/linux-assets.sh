@@ -56,7 +56,7 @@ seed_rootfs() (
 
 input_id() {
     local product="$1"
-    local inputs=(runtime native/steamworks graphics-protocols examples tools/build tools/arlinux-app-data)
+    local inputs=(runtime third_party/libhybris/arlinux/graphics-protocols examples tools/build tools/arlinux-app-data)
     {
         git ls-files -s -- "${inputs[@]}"
         git diff --binary -- "${inputs[@]}"

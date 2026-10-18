@@ -31,7 +31,7 @@ gpu_id="$({
     git -C "$repo/third_party/android-headers" rev-parse HEAD
     (cd "$repo" && {
         sha256sum tools/build/linux-gpu.sh tools/build/linux-aarch64.ini
-        find graphics-protocols -type f -print0 | sort -z | xargs -0 sha256sum
+        find third_party/libhybris/arlinux/graphics-protocols -type f -print0 | sort -z | xargs -0 sha256sum
     })
 } | sha256sum | cut -d' ' -f1)"
 gpu_id_file="$repo/build/linux/gpu.inputs.sha256"
@@ -69,7 +69,7 @@ build_mesa() {
     mkdir -p "$mesa_build" "$mesa_install"
     local setup=(meson setup "$mesa_build" "$mesa_source"
         --cross-file "$repo/tools/build/linux-aarch64.ini"
-        -Dpkg_config_path="$repo/graphics-protocols"
+        -Dpkg_config_path="$repo/third_party/libhybris/arlinux/graphics-protocols"
         --prefix="$mesa_install" --libdir=lib --buildtype=release
         -Dauto_features=disabled -Dgallium-drivers=zink
         -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
@@ -81,7 +81,7 @@ build_mesa() {
         -Dxmlconfig=enabled -Dexpat=enabled -Dzlib=enabled
         -Dbuild-tests=false -Dtools= -Dvideo-codecs=)
     [[ -f "$mesa_build/build.ninja" ]] && setup+=(--reconfigure --clearcache)
-    PKG_CONFIG_PATH="$repo/graphics-protocols" "${setup[@]}"
+    PKG_CONFIG_PATH="$repo/third_party/libhybris/arlinux/graphics-protocols" "${setup[@]}"
     ninja -C "$mesa_build" -j"$jobs"
     rm -rf -- "$mesa_install"
     ninja -C "$mesa_build" install
@@ -108,7 +108,7 @@ build_hybris() {
         tar -xf - -C "$source"
     git -C "$repo/third_party/android-headers" archive HEAD | tar -xf - -C "$headers"
     pushd "$source/hybris" >/dev/null
-    export PKG_CONFIG_PATH="$repo/graphics-protocols"
+    export PKG_CONFIG_PATH="$repo/third_party/libhybris/arlinux/graphics-protocols"
     export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
     export CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++
     export AR=aarch64-linux-gnu-ar STRIP=aarch64-linux-gnu-strip

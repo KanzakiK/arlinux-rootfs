@@ -19,8 +19,8 @@ runners in their respective repositories.
 
 The only build and release guide is [docs/BUILD.md](docs/BUILD.md).
 `build.sh` coordinates independent component workflows on GitHub-hosted Linux
-runners. Distribution bundles and Bionic Wine remain separate products. See
-the guide for the current runner migration status and checkout requirements.
+ARM64 runners for distribution and Linux GPU components. Wine has its own
+integration and release pipeline in its source fork.
 
 Prebuilt ZIP bundles are published as release assets in each distribution's
 own GitHub repository: [Debian](https://github.com/taowen/arlinux-debian/releases),
@@ -121,13 +121,7 @@ for preserving all applicable notices in binary bundles.
 
 ## Bionic Wine runtime
 
-Wine PE/native compilation, FEX/DXVK integration, Vulkan adapter, patches,
-packaging and publication are maintained in this repository. See
-[the build and publication guide](docs/BUILD.md). Android host builds
-consume the resulting bundles and runtime download manifest.
-
-Bionic Wine packages the Windows build host's unmodified Arial family (regular,
-bold, italic and bold italic). WSL uses `/mnt/c/Windows/Fonts` by default; set
-`ARLINUX_WINDOWS_FONTS` for another input directory. All four files are required.
-The Wine build cache fingerprints these inputs and the runtime records their
-SHA-256 checksums. Fonts are copied into each Wine prefix before wineboot.
+Wine compilation, component integration, packaging and latest publication belong
+to the [Wine fork](https://github.com/taowen/wine/tree/arlinux/arlinux).
+This repository only provides application launchers that download the published
+runtime when needed. There is no Wine build dependency or Wine source checkout.

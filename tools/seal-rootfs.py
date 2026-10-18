@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Internal sealing stage for the WSL-built package cache. See docs/BUILD.md."""
+"""Internal sealing stage for the runner-built package cache. See docs/BUILD.md."""
 from __future__ import annotations
 
 import argparse

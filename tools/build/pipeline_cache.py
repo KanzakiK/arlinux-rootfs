@@ -127,13 +127,3 @@ class Cache:
 def run(*args, cwd, env):
     print('> ' + ' '.join(map(str, args)), flush=True)
     subprocess.run(list(map(str, args)), cwd=cwd, env=env, check=True)
-
-
-
-def support_sources(framework):
-    required = ('native/steamworks', 'runtime/accessibility',
-                'tools/build/steamworks-bridge.sh', 'tools/build/windows-accessibility.sh')
-    optional = ('runtime/tray', 'tools/build/windows-tray.sh', 'runtime/tray/protocol.h')
-    result = {name: inventory(framework / name) for name in required}
-    result.update({name: inventory(framework / name) if (framework / name).exists() else None for name in optional})
-    return result

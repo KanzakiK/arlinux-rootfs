@@ -4,164 +4,14 @@
   "workspace": "/opt/arlinux",
   "cacheLimitGiB": 10,
   "products": {
-    "wine": "wine-product",
     "rootfs": "yibu",
     "debian": "debian",
     "arch": "arch",
     "omarchy": "omarchy",
     "plasma": "plasma",
-    "lxqt": "lxqt",
-    "audio": "wine-pulse"
+    "lxqt": "lxqt"
   },
   "stages": {
-    "bionic-deps": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "bionic-x11": {
-      "repository": "taowen/libX11",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "bionic-deps"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 2048
-    },
-    "wine-pulse": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "wine-pe": {
-      "repository": "taowen/wine",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "wine-pe-aarch64",
-        "wine-pe-x86_64",
-        "wine-pe-i386"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "fex": {
-      "repository": "taowen/FEX",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 2048
-    },
-    "dxvk": {
-      "repository": "taowen/dxvk",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 2048
-    },
-    "wine-pe-package": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "wine-pe",
-        "fex",
-        "dxvk"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "wine-tls": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "wine-graphics": {
-      "repository": "taowen/mesa",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "bionic-x11"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 2048
-    },
-    "wine-vulkan": {
-      "repository": "taowen/libhybris",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "wine-graphics"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 2048
-    },
-    "wine-bionic": {
-      "repository": "taowen/wine",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "wine-pe-package",
-        "wine-tls",
-        "wine-pulse",
-        "wine-vulkan",
-        "windows-fonts"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 1024
-    },
-    "steamworks": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "wine-bionic"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "windows-accessibility": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "windows-tray": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "runtime-support": {
-      "repository": "taowen/arlinux-rootfs",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "steamworks",
-        "windows-accessibility",
-        "windows-tray"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "wine-product": {
-      "repository": "taowen/wine",
-      "runner": "ubuntu-24.04",
-      "dependencies": [
-        "wine-bionic",
-        "runtime-support"
-      ],
-      "product": "wine",
-      "compilerCacheMiB": 256
-    },
-    "windows-fonts": {
-      "repository": "taowen/wine",
-      "runner": "windows-latest",
-      "dependencies": [],
-      "product": "vendor",
-      "compilerCacheMiB": 256
-    },
     "yibu": {
       "repository": "taowen/arlinux-yibu",
       "runner": "ubuntu-24.04-arm",
@@ -171,27 +21,6 @@
       ],
       "product": "rootfs",
       "compilerCacheMiB": 2048
-    },
-    "wine-pe-aarch64": {
-      "repository": "taowen/wine",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 512
-    },
-    "wine-pe-x86_64": {
-      "repository": "taowen/wine",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 512
-    },
-    "wine-pe-i386": {
-      "repository": "taowen/wine",
-      "runner": "ubuntu-24.04",
-      "dependencies": [],
-      "product": "wine",
-      "compilerCacheMiB": 512
     },
     "debian": {
       "repository": "taowen/arlinux-debian",

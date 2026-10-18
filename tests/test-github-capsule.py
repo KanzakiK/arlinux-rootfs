@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools/build'))
-from wine_graph import ComponentCache,ComponentComplete
+from pipeline_cache import Cache
 
 spec=importlib.util.spec_from_file_location('github_component',ROOT/'tools/build/github-component.py')
 component=importlib.util.module_from_spec(spec)
@@ -26,7 +26,7 @@ class CapsuleTest(unittest.TestCase):
             root=Path(temporary)
             framework=root/'framework'
             pipeline=framework/'build/pipeline'
-            cache=ComponentCache(pipeline,target='bionic-deps')
+            cache=Cache(pipeline)
             def build(output):
                 output.mkdir()
                 binary=output/'binary'
@@ -44,9 +44,11 @@ class CapsuleTest(unittest.TestCase):
                 tools.mkdir()
                 (tools/'include').symlink_to(headers)
                 (output/'build-state.json').write_text(json.dumps({'tools':str(tools)}))
-            with self.assertRaises(ComponentComplete):
-                cache.stage('bionic-deps',{'source':'one'},build)
-            data=dict(format=1,stage='bionic-deps',identity='a'*64,
+            output=cache.stage('linux-hybris',{'source':'one'},build)
+            descriptor=framework/'build/artifacts/components/linux-hybris.json'
+            descriptor.parent.mkdir(parents=True,exist_ok=True)
+            descriptor.write_text(json.dumps(dict(output=str(output),records=cache.records)))
+            data=dict(format=1,stage='linux-hybris',identity='a'*64,
                       framework='b'*40,android='c'*40,dependencies=[])
             env=dict(ARLINUX_WORKSPACE=str(root),GITHUB_REPOSITORY='taowen/arlinux-rootfs')
             with patch.dict(os.environ,env),patch.object(component,'run') as runner, \
@@ -70,16 +72,16 @@ class CapsuleTest(unittest.TestCase):
             with patch.object(component,'download',download):
                 component.import_dependency(root,reference)
                 component.import_dependency(root,reference)
-            restored=ComponentCache(pipeline,target='wine-graphics',require_dependencies=True)
-            output=restored.stage('bionic-deps',{'source':'one'},lambda _:self.fail('Unexpected rebuild'))
+            restored=Cache(pipeline)
+            output=restored.stage('linux-hybris',{'source':'one'},lambda _:self.fail('Unexpected rebuild'))
             self.assertTrue(os.access(output/'binary',os.X_OK))
             self.assertEqual((output/'git-object.idx').stat().st_mode & 0o777,0o444)
             self.assertEqual(os.readlink(output/'absolute-link'),str(output/'binary'))
             self.assertEqual(os.readlink(output/'dangling-source-link'),'missing-source-note.md')
             self.assertFalse((output/'dangling-source-link').exists())
             (output/'binary').write_bytes(b'corrupt')
-            with self.assertRaisesRegex(RuntimeError,'dependency artifact'):
-                restored.stage('bionic-deps',{'source':'one'},lambda _:self.fail('Unexpected rebuild'))
+            with self.assertRaisesRegex(RuntimeError,'Corrupt cache requires rebuild'):
+                restored.stage('linux-hybris',{'source':'one'},lambda _:(_ for _ in ()).throw(RuntimeError('Corrupt cache requires rebuild')))
 
 
 if __name__=='__main__':unittest.main()

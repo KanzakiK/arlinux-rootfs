@@ -12,8 +12,7 @@ class BuildDispatchTest(unittest.TestCase):
                               text=True, capture_output=True)
 
     def test_product_help_uses_current_pipelines(self):
-        for target, expected in [('rootfs', '--distribution'), ('wine', '--config'),
-                                  ('publish-wine', '--check')]:
+        for target, expected in [('rootfs', '--distribution')]:
             with self.subTest(target=target):
                 result = self.call(target, '--help')
                 self.assertEqual(result.returncode, 0, result.stderr)

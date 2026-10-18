@@ -14,7 +14,7 @@ from pipeline_cache import Cache, digest, inventory, run, source_state
 
 def rootfs_sources(framework, product):
     inputs = {name: inventory(framework / name) for name in (
-        'runtime/tools', 'tools/arlinux-app-data', 'examples', 'graphics-protocols')}
+        'runtime/tools', 'tools/arlinux-app-data', 'examples', 'third_party/libhybris/arlinux/graphics-protocols')}
     for name in ('third_party/mesa', 'third_party/libhybris',
                  'third_party/android-headers', 'distributions/' + product):
         inputs[name] = source_state(framework / name)

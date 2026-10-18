@@ -18,7 +18,7 @@ def main():
     inputs=dict(component=args.component,engine=digest(__file__),
         recipe=inventory(framework/'tools/build/linux-gpu.sh'),
         cross=inventory(framework/'tools/build/linux-aarch64.ini'),
-        protocols=inventory(framework/'graphics-protocols'),
+        protocols=inventory(framework/'third_party/libhybris/arlinux/graphics-protocols'),
         sources={p:source_state(framework/p) for p in
             ('third_party/mesa','third_party/libhybris','third_party/android-headers')},
         architecture=platform.machine(),

@@ -24,22 +24,6 @@
 [submodule "distributions/yibu"]
 	path = distributions/yibu
 	url = https://github.com/taowen/arlinux-yibu.git
-[submodule "third_party/proton"]
-	path = third_party/proton
-	url = https://github.com/taowen/arlinux-proton.git
-	branch = arlinux
-[submodule "third_party/wine"]
-	path = third_party/wine
-	url = https://github.com/taowen/wine.git
-	branch = arlinux
 [submodule "distributions/plasma"]
 	path = distributions/plasma
 	url = https://github.com/taowen/arlinux-plasma.git
-[submodule "third_party/libX11"]
-	path = third_party/libX11
-	url = https://github.com/taowen/libX11.git
-	branch = arlinux
-[submodule "third_party/libxshmfence"]
-	path = third_party/libxshmfence
-	url = https://github.com/taowen/libxshmfence.git
-	branch = arlinux

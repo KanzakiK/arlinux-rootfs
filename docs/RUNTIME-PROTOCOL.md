@@ -228,11 +228,10 @@ The public [Wine fork](https://github.com/taowen/wine/tree/arlinux),
 [FEX fork](https://github.com/taowen/FEX/tree/arlinux), and
 [DXVK fork](https://github.com/taowen/dxvk/tree/arlinux) contain the integration
 sources. Every binary release includes the corresponding source archives.
-Build Wine with `tools/build/wine-standalone.sh third_party/wine LLVM_MINGW_BIN OUTPUT`,
-then build FEX and DXVK with `tools/build/fex-windows.sh` and
-`tools/build/dxvk-windows.sh`. `tools/package-wine.py --help` lists the complete
-runtime packaging inputs. Build tools run on Linux; the runtime is downloaded
-on demand rather than bundled into the APK.
+Wine integration, component dispatch and runtime publication are owned by the
+[Wine fork](https://github.com/taowen/wine/blob/arlinux/arlinux/BUILD.md).
+Distribution builds do not consume Wine sources or build outputs. The launcher
+downloads the published runtime on demand.
 
 ## Hosted Android applications
 
