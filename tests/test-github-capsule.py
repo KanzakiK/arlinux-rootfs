@@ -32,6 +32,7 @@ class CapsuleTest(unittest.TestCase):
                 binary=output/'binary'
                 binary.write_bytes(b'compiled ELF fixture')
                 binary.chmod(0o755)
+                os.link(binary, output/'binary-hardlink')
                 readonly=output/'git-object.idx'
                 readonly.write_bytes(b'readonly git object fixture')
                 readonly.chmod(0o444)
@@ -69,12 +70,14 @@ class CapsuleTest(unittest.TestCase):
                 return real_download(source.as_uri(),output,expected)
             reference=dict(identity='a'*64,manifestUrl='https://example.invalid/component.json',
                            manifestSha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
-            with patch.object(component,'download',download):
+            with patch.object(component,'download',download), \
+                 patch.object(component,'run',side_effect=AssertionError('Import must not materialize an uncompressed TAR')):
                 component.import_dependency(root,reference)
                 component.import_dependency(root,reference)
             restored=Cache(pipeline)
             output=restored.stage('linux-hybris',{'source':'one'},lambda _:self.fail('Unexpected rebuild'))
             self.assertTrue(os.access(output/'binary',os.X_OK))
+            self.assertTrue(os.path.samefile(output/'binary',output/'binary-hardlink'))
             self.assertEqual((output/'git-object.idx').stat().st_mode & 0o777,0o444)
             self.assertEqual(os.readlink(output/'absolute-link'),str(output/'binary'))
             self.assertEqual(os.readlink(output/'dangling-source-link'),'missing-source-note.md')

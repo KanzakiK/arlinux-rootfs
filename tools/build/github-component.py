@@ -62,8 +62,9 @@ def prepare(data, framework):
     framework = root / 'framework'
     # Only remove optional software on the ephemeral GitHub runner.
     # Never run this cleanup in a workstation or self-hosted environment.
-    run('sudo', 'rm', '-rf', '/usr/share/dotnet', '/usr/local/lib/android',
-        '/opt/ghc', '/usr/local/share/boost', '/opt/hostedtoolcache/CodeQL')
+    if data['stage'] in LINUX_GPU:
+        run('sudo', 'rm', '-rf', '/usr/share/dotnet', '/usr/local/lib/android',
+            '/opt/ghc', '/usr/local/share/boost', '/opt/hostedtoolcache/CodeQL')
     packages = ['autoconf', 'automake', 'libtool', 'build-essential', 'bison', 'flex',
         'curl', 'git', 'cmake', 'ninja-build', 'patchelf', 'pkg-config', 'python3',
         'python3-venv', 'python3-pip', 'python3-mako', 'python3-zstandard',
@@ -130,8 +131,6 @@ def import_dependency(root, dependency, visited=None):
                 shutil.copyfileobj(source, dest)
     if sha(archive) != record['archiveSha256']:
         raise ValueError('Reassembled component checksum mismatch')
-    decoded = directory / 'capsule.tar'
-    run('zstd', '-q', '-d', '-f', archive, '-o', decoded)
     def capsule_filter(member, destination):
         original_link = None
         if member.issym() and member.linkname.startswith('/'):
@@ -141,7 +140,7 @@ def import_dependency(root, dependency, visited=None):
             original_link = member.linkname
             member = member.replace(linkname=os.path.relpath(target, root/Path(member.name).parent))
         filtered = tarfile.data_filter(member, destination)
-        if filtered.isfile():
+        if filtered.isfile() or filtered.islnk():
             # Git pack objects are read-only. Restoring over a prior Actions
             # cache must replace the file before writing, then restore its
             # exact original mode for the build-cache receipt to match.
@@ -150,13 +149,15 @@ def import_dependency(root, dependency, visited=None):
                 existing.unlink()
             filtered=filtered.replace(mode=member.mode & 0o777)
         return filtered.replace(linkname=original_link) if original_link else filtered
-    with tarfile.open(decoded) as source:
-        # Capsules use paths relative to the one fixed build workspace.
+    def checked_members(source):
         for member in source:
             if member.name.startswith('/') or '..' in Path(member.name).parts:
                 raise ValueError('Unsafe component capsule path')
-        source.extractall(root, filter=capsule_filter)
-    decoded.unlink()
+            yield member
+    import zstandard
+    with archive.open('rb') as compressed, zstandard.ZstdDecompressor().stream_reader(compressed) as decoded:
+        with tarfile.open(fileobj=decoded, mode='r|') as source:
+            source.extractall(root, members=checked_members(source), filter=capsule_filter)
     archive.unlink()
     for part in record['parts']:
         (directory/part['name']).unlink()
