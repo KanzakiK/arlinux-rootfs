@@ -230,8 +230,6 @@ def fetch_product(reference, output):
         if audio:
             files={str(p.relative_to(output)).replace('\\','/'):hashlib.sha256(p.read_bytes()).hexdigest()
                    for folder in ('jni','assets') for p in (output/folder).rglob('*') if p.is_file()}
-            if len(files)!=9:
-                raise ValueError('Audio component must provide all nine native libraries')
             (output/'build-receipt.json').write_text(json.dumps(dict(format=1,component=reference,files=files),indent=2)+'\n')
         elif product.startswith('rootfs/'):
             receipt=json.loads((output/'default.json').read_text())

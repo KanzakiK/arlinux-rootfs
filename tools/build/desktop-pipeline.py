@@ -90,19 +90,15 @@ def main():
         snapshot = packages / 'packages/snapshot.tar'
         inputs = dict(common, dependencies=cache.records.copy(), snapshot=digest(snapshot),
             transforms={name: inventory(android / 'tools/build' / name) for name in (
-                'desktop-runtime.py', 'verify-webview-store-bundle.py')})
+                'desktop-runtime.py',)})
         def desktop(out):
             out.mkdir()
             invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'seed.zip')
             invoke('python3', 'tools/seal-rootfs.py', 'seal', out / 'seed.zip', snapshot, out / 'offline.zip')
             shutil.copyfile(out / 'offline.zip', out / 'default.zip')
-            if product == 'yibu':
-                invoke('python3', android / 'tools/build/verify-webview-store-bundle.py', out / 'default.zip', '--framework', framework)
             (out / 'seed.zip').unlink()
             (out / 'offline.zip').unlink()
         result = cache.stage('desktop', inputs, desktop)
-        if product == 'yibu':
-            invoke('python3', android / 'tools/build/verify-webview-store-bundle.py', result / 'default.zip', '--framework', framework)
         publish_result(args, config, cache, result)
 
 

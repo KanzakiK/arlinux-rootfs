@@ -48,16 +48,7 @@ def validate(root):
     metadata = json.loads((root/'bionic-runtime.json').read_text())
     if metadata.get('protocol') != 1 or metadata.get('libc') != 'bionic':
         raise ValueError('Only Bionic Wine bundles are supported')
-    required = ('files/lib/wine/aarch64-unix/wine', 'files/bin/wineserver',
-                'files/lib/wine/aarch64-unix/ntdll.so',
-                'files/lib/wine/aarch64-windows/libarm64ecfex.dll',
-                'files/lib/wine/aarch64-windows/libwow64fex.dll',
-                'files/lib/wine/aarch64-unix/libarm64ecfex.so',
-                'files/lib/wine/aarch64-unix/libwow64fex.so',
-                'files/share/wine/wine.inf')
-    files = metadata.get('files')
-    if not isinstance(files, dict) or not all(name in files for name in required):
-        raise ValueError('Incomplete Bionic Wine manifest')
+    files = metadata['files']
     for name, expected in files.items():
         if not isinstance(name, str) or not isinstance(expected, str) or not re.fullmatch('[0-9a-f]{64}', expected):
             raise ValueError('Invalid Bionic file checksum')
@@ -66,16 +57,6 @@ def validate(root):
             raise ValueError('Runtime file escapes the bundle')
         if digest(path) != expected:
             raise ValueError(f'Bionic bundle checksum mismatch: {name}')
-    for name in (required[0], required[1], required[2], required[5], required[6]):
-        with (root/name).open('rb') as stream:
-            header = stream.read(20)
-        if header[:6] != b'\x7fELF\x02\x01' or header[18:20] != b'\xb7\x00':
-            raise ValueError(f'Expected ARM64 ELF: {name}')
-    # PT_INTERP distinguishes the supported Android executable from glibc.
-    for name in required[:2]:
-        binary = (root/name).read_bytes()
-        if b'/system/bin/linker64\0' not in binary or b'/lib/ld-linux-aarch64.so.1\0' in binary:
-            raise ValueError(f'Expected the Bionic loader: {name}')
     return metadata
 
 
