@@ -27,6 +27,11 @@ After successful publication, the workflow compacts the pipeline cache to the
 current input identity and generation of each completed stage. Older directories
 still referenced by the current build remain in place. This prevents restored
 historical snapshots from accumulating inside every newly saved Actions cache.
+The `arlinux-v2-` cache namespace allows saving compacted entries while retaining
+the previous namespace as a verified restore seed. The two-attempt
+[Yibu check](https://github.com/taowen/arlinux-yibu/actions/runs/39146117964)
+passed in 147 and 95 seconds, with a 9-second build step each time. Its saved
+cache decreased from 2,359,330,124 to 620,977,341 bytes, with identical output.
 Only matching input/output hashes permit reuse; published component capsules
 preserve symlinks and modes. Keep download checksums and archive path safety,
 propagate real command failures, and validate APK behavior on a fresh instance.
