@@ -12,10 +12,13 @@ import tempfile
 
 import shared
 import windows
-import windows_compat
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 DOWNLOAD = 'webview2-fixed-arm64'
+WEBVIEW_FLAGS = (
+    '--no-sandbox --use-angle=vulkan --disable-gpu-compositing '
+    '--disable-direct-composition --disable-features=SkiaGraphite,kRemoveRedirectionBitmap'
+)
 
 
 def verified_browser(destination, expected):
@@ -126,14 +129,11 @@ def prepare(root, prefix, environment):
     # Elevated hosts may ignore environment overrides. Microsoft's '*' policy
     # covers all hosts; set both views so x86 and x64 hosts see the same policy.
     for view in ('/reg:64', '/reg:32'):
-        for policy, value in (('AdditionalBrowserArguments', windows_compat.WEBVIEW_FLAGS),
+        for policy, value in (('AdditionalBrowserArguments', WEBVIEW_FLAGS),
                               ('BrowserExecutableFolder', folder)):
             windows.run(root, prefix, 'reg.exe', ['add',
                 'HKLM\\Software\\Policies\\Microsoft\\Edge\\WebView2\\' + policy,
                 '/v', '*', '/t', 'REG_SZ', '/d', value, '/f', view], check=True, timeout=120)
-    windows.run(root, prefix, 'reg.exe', ['add',
-        r'HKCU\Software\Wine\AppDefaults\msedgewebview2.exe',
-        '/v', 'Version', '/t', 'REG_SZ', '/d', windows_compat.WEBVIEW_WINE_VERSION, '/f'], check=True, timeout=60)
     env['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = folder
-    env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = windows_compat.WEBVIEW_FLAGS
+    env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = WEBVIEW_FLAGS
     return env

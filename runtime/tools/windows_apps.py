@@ -108,7 +108,7 @@ def install_powerbi(root, prefix):
                         timeout=3600, check=True)
         return result
 
-    reg, cfg = system / 'reg.exe', system / 'winecfg.exe'
+    reg = system / 'reg.exe'
     # Remove Wine Mono through its registered uninstaller, not fabricated keys.
     listing = run(system / 'uninstaller.exe', '--list', capture=True)
     for line in listing.stdout.splitlines():
@@ -136,29 +136,26 @@ def install_powerbi(root, prefix):
 
     if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
         print('Installing Microsoft .NET 4.0 and 4.8…', flush=True)
-        try:
-            if not native_clr.is_file() or not microsoft_shims():
-                # Remove Wine's placeholder registration only when the real CLR
-                # is absent. Do not claim an installed Microsoft version.
-                if not native_clr.is_file():
-                    for view in ('/reg:32', '/reg:64'):
-                        key = r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4'
-                        existing = windows.run(root, prefix, reg, ['query', key, view],
-                                               env=env, capture=True)
-                        if existing.returncode == 0:
-                            run(reg, 'delete', key, '/f', view)
-                run(cfg, '/v', 'winxp')
-                run(download('dotnet40'), '/q', '/norestart', '/log', r'C:\dotnet40.log',
-                    environment={'WINEDLLOVERRIDES': 'fusion=b'})
-                if not microsoft_shims():
-                    raise RuntimeError('Microsoft .NET 4.0 did not install both CLR activation shims')
-                run(reg, 'add', r'HKCU\Software\Wine\DllOverrides', '/v', 'mscoree',
-                    '/t', 'REG_SZ', '/d', 'native,builtin', '/f')
-            run(cfg, '/v', 'win7')
-            run(download('dotnet48'), '/q', '/norestart', '/log', r'C:\dotnet48.log',
+        # The shared instance stays Windows 10 throughout installation. A vendor
+        # failure must surface, not change another application's OS identity.
+        if not native_clr.is_file() or not microsoft_shims():
+            # Remove Wine's placeholder registration only when the real CLR
+            # is absent. Do not claim an installed Microsoft version.
+            if not native_clr.is_file():
+                for view in ('/reg:32', '/reg:64'):
+                    key = r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4'
+                    existing = windows.run(root, prefix, reg, ['query', key, view],
+                                           env=env, capture=True)
+                    if existing.returncode == 0:
+                        run(reg, 'delete', key, '/f', view)
+            run(download('dotnet40'), '/q', '/norestart', '/log', r'C:\dotnet40.log',
                 environment={'WINEDLLOVERRIDES': 'fusion=b'})
-        finally:
-            run(cfg, '/v', 'win10')
+            if not microsoft_shims():
+                raise RuntimeError('Microsoft .NET 4.0 did not install both CLR activation shims')
+            run(reg, 'add', r'HKCU\Software\Wine\DllOverrides', '/v', 'mscoree',
+                '/t', 'REG_SZ', '/d', 'native,builtin', '/f')
+        run(download('dotnet48'), '/q', '/norestart', '/log', r'C:\dotnet48.log',
+            environment={'WINEDLLOVERRIDES': 'fusion=b'})
         release = run(reg, 'query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
                       '/v', 'Release', '/reg:64', capture=True)
         match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
@@ -238,13 +235,6 @@ def prepare(app, accepted=False):
         root = windows.ensure_runtime()
         windows.initialize(root, prefix, windows.environment(root, prefix))
         if app == 'paintnet':
-            env = windows.environment(root, prefix)
-            system = prefix / 'pfx/drive_c/windows/system32'
-            # Match the vendor setup: Windows 11 and ClearType, with the
-            # runtime's version-matched DXVK already installed by initialize.
-            windows.run(root, prefix, system / 'winecfg.exe', ['/v', 'win11'], env=env, check=True)
-            windows.run(root, prefix, system / 'reg.exe', ['add', r'HKCU\Control Panel\Desktop',
-                        '/v', 'FontSmoothingType', '/t', 'REG_DWORD', '/d', '2', '/f'], env=env, check=True)
             # Atomic extraction leaves retryable downloads, not half-ready apps.
             application = prefix / 'pfx/drive_c/Program Files/Paint.NET'
             if not (application / 'paintdotnet.exe').is_file():

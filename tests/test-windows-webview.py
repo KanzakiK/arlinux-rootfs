@@ -50,7 +50,7 @@ class WebViewTests(unittest.TestCase):
             self.assertEqual(prepared['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'], r'C:\Program Files\Microsoft\EdgeWebView\Application\runtime')
             self.assertIn('--use-angle=vulkan', prepared['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'])
             self.assertNotIn('--disable-gpu ', prepared['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'])
-            self.assertEqual(run.call_count, 15)
+            self.assertEqual(run.call_count, 12)
             self.assertTrue(all(c.kwargs['check'] for c in run.call_args_list))
             policy_calls = [call.args[3] for call in run.call_args_list if 'Policies' in call.args[3][1]]
             self.assertTrue(all(args[args.index('/v') + 1] == '*' for args in policy_calls))

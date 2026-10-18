@@ -25,9 +25,11 @@ helpers without a game identity run without a Steamworks session. These paths
 share the Windows launcher's Wine prefix. The adapter does not inject engine
 arguments or create title-specific compatibility selections. User selections
 and launch arguments are retained.
-`runtime/tools/windows_compat.py` contains one instance-wide WebView2 policy,
-shared with Windows Launcher and built-in Windows apps. The fixed runtime,
-browser arguments and Wine version identity are identical for all hosts.
+`runtime/tools/windows_webview.py` owns one instance-wide WebView2 policy,
+shared with Windows Launcher and built-in Windows apps. The fixed runtime and
+browser arguments are identical for all hosts. Android's prefix initialization
+owns the Windows 10 version identity, 144-DPI initial setting and ClearType;
+neither app installers nor WebView2 preparation change the Windows version.
 Both registry views use the documented `*` policy for all WebView2 apps; see
 [Microsoft's loader override contract](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions).
 These settings do not prove GPU rendering or provide a Chromium sandbox under Wine.
