@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$1" && pwd)"
 key="$2"
-export PATH=/usr/local/bin:/usr/bin:/bin
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 source "$ROOT/tools/build/ndk-env.sh"
 for tool in git make autoconf automake libtoolize autopoint intltoolize pkg-config python; do
     command -v "$tool" >/dev/null || {

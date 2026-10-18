@@ -52,6 +52,10 @@ Yibu 在 ARM64 上原生安装 ARM64 软件包，不使用 QEMU 模拟 ARM64。
 登录具备这些公开仓库 workflow 调度权限的 GitHub CLI：`gh auth login`。
 协调器使用本机已有认证，不把个人 token 写入 Git、产物或 runner 配置。
 组件工作流仅使用自身仓库的临时 `GITHUB_TOKEN` 发布组件产物。
+Linux 组件不读取私有 Android 仓库。共享 NDK recipe、音频输入和发行版校验器
+由本公开仓库唯一维护；Android 本机构建引用同一份固定提交的 recipe。
+Android 音频也由 x64 Linux runner 编译，通过 `audio` 产品下载后验证全部
+九个库的哈希及 16 KB 对齐；Gradle 不再隐式调用 WSL。
 
 主机保留 Android 项目 `toolchain.json` 指定的 JDK、SDK、NDK、MSYS2 辅助
 工具和原生 Windows Python。无需再填写 desktop-build.json、wine-build.json

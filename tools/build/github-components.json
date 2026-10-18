@@ -10,7 +10,8 @@
     "arch": "arch",
     "omarchy": "omarchy",
     "plasma": "plasma",
-    "lxqt": "lxqt"
+    "lxqt": "lxqt",
+    "audio": "wine-pulse"
   },
   "stages": {
     "bionic-deps": {

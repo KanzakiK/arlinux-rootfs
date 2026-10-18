@@ -18,7 +18,7 @@ done
 cp -a "$sources/tools/build/stubs" "$work/tools/build/"
 export ARLINUX_DIR="$work" ANDROID_NDK_HOME="$ndk" NDK_PREFIX="$output/prefix" JOBS="${JOBS:-8}"
 unset ANDROID_HOME ANDROID_SDK_ROOT ARLINUX_BASH NINJA CC CXX CFLAGS CXXFLAGS LDFLAGS PKG_CONFIG_PATH PKG_CONFIG_LIBDIR
-export PATH="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:/usr/local/bin:/usr/bin:/bin"
+export PATH="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
 for recipe in ndk-wayland ndk-deps ndk-xcb; do
     bash "$work/tools/build/$recipe.sh"
 done

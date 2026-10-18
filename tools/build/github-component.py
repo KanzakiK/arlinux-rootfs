@@ -86,7 +86,7 @@ def prepare(data, framework):
             'debootstrap', 'qemu-user-static', 'binfmt-support', 'util-linux', 'zstd',
             'libarchive-tools', 'jq', 'gcc-aarch64-linux-gnu', 'g++-aarch64-linux-gnu',
             'glslang-tools', 'wayland-protocols', 'libfreetype-dev', 'libexpat1-dev',
-            'libwayland-dev', 'libx11-dev', 'libx11-xcb-dev', 'libxcb1-dev',
+            'libwayland-dev', 'libwayland-egl-backend-dev', 'libx11-dev', 'libx11-xcb-dev', 'libxcb1-dev',
             'libegl-dev', 'libgl-dev', 'libgles-dev', 'libglvnd-dev', 'libvulkan-dev',
             'libdrm-dev', 'libxrandr-dev', 'libxfixes-dev', 'libxshmfence-dev',
             'libxxf86vm-dev', 'libxcb-dri3-dev', 'libxcb-present-dev', 'libxcb-sync-dev',
@@ -95,7 +95,7 @@ def prepare(data, framework):
         run('sudo', 'apt-get', 'install', '-y', '--no-install-recommends', *packages,
             env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'))
         run('python3', '-m', 'venv', root / 'python')
-        run(root / 'python/bin/pip', 'install', 'meson==1.12.0', 'mako==1.3.10', 'zstandard==0.25.0')
+        run(root / 'python/bin/pip', 'install', 'meson==1.12.0', 'mako==1.3.10', 'packaging==25.0', 'zstandard==0.25.0')
         bin_dir = root / 'bin'
         bin_dir.mkdir(exist_ok=True)
         cross = bin_dir / 'aarch64-linux-gnu-pkg-config'
@@ -366,4 +366,14 @@ if __name__ == '__main__':
     parser.add_argument('action', choices=('prepare','build','publish'))
     args = parser.parse_args()
     data, framework = request()
-    globals()[args.action](data, framework)
+    try:
+        globals()[args.action](data, framework)
+    except subprocess.CalledProcessError:
+        # Existing recipes retain detailed compiler logs in their work trees.
+        # Surface them when a hosted build fails so diagnosis needs no SSH.
+        candidates=[p for p in (framework/'build').rglob('*.log') if p.is_file()]
+        for path in sorted(candidates,key=lambda p:p.stat().st_mtime,reverse=True)[:8]:
+            print('::group::'+str(path),flush=True)
+            print('\n'.join(path.read_text(errors='replace').splitlines()[-60:]),flush=True)
+            print('::endgroup::',flush=True)
+        raise

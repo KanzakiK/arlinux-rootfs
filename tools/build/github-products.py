@@ -15,7 +15,14 @@ import urllib.request
 
 
 def gh(*args, optional=False):
-    result = subprocess.run(['gh', *map(str,args)], capture_output=True, text=True)
+    attempts=4 if args[0] in ('api','run') else 1
+    for attempt in range(attempts):
+        result = subprocess.run(['gh', *map(str,args)], capture_output=True, text=True)
+        if not result.returncode or not any(message in result.stderr.lower() for message in
+                ('timeout','timed out','connection','eof','502','503','504','tls handshake')):
+            break
+        if attempt+1<attempts:
+            time.sleep(2**attempt)
     if result.returncode:
         if optional:
             return None
@@ -170,22 +177,39 @@ def fetch_product(reference, output):
         with archive.open('rb') as source:
             if hashlib.file_digest(source,'sha256').hexdigest()!=record['archiveSha256']:
                 raise ValueError('Product capsule SHA-256 mismatch')
-        product=('rootfs/'+record['stage']) if record['stage'] in ('yibu','debian','arch','omarchy','plasma','lxqt') else 'wine'
+        audio=record['stage']=='wine-pulse'
+        product='audio' if audio else ('rootfs/'+record['stage']) if record['stage'] in ('yibu','debian','arch','omarchy','plasma','lxqt') else 'wine'
         prefix='framework/build/artifacts/'+product+'/'
         output.mkdir(parents=True,exist_ok=True)
         with archive.open('rb') as source,zstandard.ZstdDecompressor().stream_reader(source) as decoded:
             with tarfile.open(fileobj=decoded,mode='r|') as capsule:
                 for member in capsule:
-                    if not member.name.startswith(prefix) or not member.isfile():
+                    if not member.isfile():
                         continue
-                    name=member.name[len(prefix):]
-                    if '/' in name or '\\' in name or name in ('','.','..'):
+                    if audio:
+                        if not member.name.startswith('framework/build/pipeline/wine-pulse/') or '/output/android/' not in member.name:
+                            continue
+                        name=member.name.split('/output/android/',1)[1]
+                        if not name.startswith(('jni/arm64-v8a/','assets/pulseaudio/')):
+                            raise ValueError('Unexpected audio output')
+                    else:
+                        if not member.name.startswith(prefix):
+                            continue
+                        name=member.name[len(prefix):]
+                    if '\\' in name or ':' in name or any(p in ('','.','..') for p in name.split('/')) or (not audio and '/' in name):
                         raise ValueError('Unsafe product archive member')
+                    (output/name).parent.mkdir(parents=True,exist_ok=True)
                     with (output/name).open('wb') as dest:
                         import shutil
                         shutil.copyfileobj(capsule.extractfile(member),dest)
         (output/'github-component.json').write_text(json.dumps(record,indent=2)+'\n')
-        if product.startswith('rootfs/'):
+        if audio:
+            files={str(p.relative_to(output)).replace('\\','/'):hashlib.sha256(p.read_bytes()).hexdigest()
+                   for folder in ('jni','assets') for p in (output/folder).rglob('*') if p.is_file()}
+            if len(files)!=9:
+                raise ValueError('Audio component must provide all nine native libraries')
+            (output/'build-receipt.json').write_text(json.dumps(dict(format=1,component=reference,files=files),indent=2)+'\n')
+        elif product.startswith('rootfs/'):
             receipt=json.loads((output/'default.json').read_text())
             with (output/'default.zip').open('rb') as source:
                 digest=hashlib.file_digest(source,'sha256').hexdigest()
@@ -215,7 +239,7 @@ def main():
         print(json.dumps(plan,indent=2))
         return
     framework_sha=api('repos/taowen/arlinux-rootfs/commits/'+args.framework_ref)['sha']
-    products=['wine','rootfs'] if args.product=='all' else [args.product]
+    products=['wine','rootfs','audio'] if args.product=='all' else [args.product]
     if args.distribution != 'yibu':
         plan['products']['rootfs'] = args.distribution
     state=args.output/'github-state'
