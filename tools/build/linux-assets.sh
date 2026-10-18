@@ -209,6 +209,11 @@ PY
       "$rootfs/usr/lib/arlinux/"
     install -Dm644 tools/arlinux-app-data/org.arlinux.HostedInput.service \
       "$rootfs/usr/share/dbus-1/services/org.arlinux.HostedInput.service"
+    install -Dm644 tools/arlinux-app-data/arlinux-hosted.xml \
+      "$rootfs/usr/share/ibus/component/arlinux-hosted.xml"
+    install -Dm644 tools/arlinux-app-data/90-arlinux-ibus.gschema.override \
+      "$rootfs/usr/share/glib-2.0/schemas/90-arlinux-ibus.gschema.override"
+    glib-compile-schemas "$rootfs/usr/share/glib-2.0/schemas"
     cp -a "$product_dir/guest/." "$rootfs/usr/lib/arlinux/guest/"
     if [[ "$product" == yibu || "$product" == debian || "$product" == plasma ]]; then
         mkdir -p "$rootfs/usr/lib/arlinux/mesa-packages"

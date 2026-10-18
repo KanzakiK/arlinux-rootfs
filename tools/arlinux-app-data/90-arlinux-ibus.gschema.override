@@ -1,0 +1,4 @@
+[org.freedesktop.ibus.general]
+preload-engines=['arlinux-hosted']
+engines-order=['arlinux-hosted']
+use-system-keyboard-layout=true

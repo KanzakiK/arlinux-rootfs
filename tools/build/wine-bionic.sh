@@ -85,6 +85,7 @@ patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-dwrite-b
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-keyboard-layout.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-dwrite-transformed-hinting.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-pulse.patch"
+patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-utf8-locale.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-shared-storage-security.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-arm64-apc-context.patch"
 patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-local-focus.patch"

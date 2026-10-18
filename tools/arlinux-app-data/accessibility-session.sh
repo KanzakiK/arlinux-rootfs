@@ -10,6 +10,13 @@ printf '%s\n' "$DBUS_SESSION_BUS_ADDRESS" > "$XDG_RUNTIME_DIR/desktop-session-bu
 dbus-send --session --print-reply --dest=org.arlinux.HostedInput \
     /org/arlinux/HostedInput org.freedesktop.DBus.Peer.Ping >/dev/null
 
+# Native Wayland clients use the compositor text-input protocol. Start Debian's
+# adapter after HostedInput has registered its engine; otherwise ibus-ui-gtk3
+# exits when it observes a session with no global engine yet.
+if [ -x /usr/libexec/ibus-ui-gtk3 ]; then
+    env -u GTK_IM_MODULE -u QT_IM_MODULE /usr/libexec/ibus-ui-gtk3 \
+        --enable-wayland-im >"$XDG_RUNTIME_DIR/ibus-wayland.log" 2>&1 &
+fi
 if command -v dbus-send >/dev/null 2>&1; then
     tries=0
     address=

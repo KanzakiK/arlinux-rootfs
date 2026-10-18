@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component>
+ <name>org.freedesktop.IBus.ArlinuxHosted</name>
+ <description>Android hosted input</description>
+ <exec>/usr/bin/python3 /usr/lib/arlinux/hosted-ime.py</exec>
+ <version>1</version><license>GPL-3.0-or-later</license><author>ARLinux</author><homepage></homepage><textdomain></textdomain>
+ <engines><engine><name>arlinux-hosted</name><longname>Hosted input</longname><description>Text from Android input method</description><language>en</language><license>GPL-3.0-or-later</license><author>ARLinux</author><layout>us</layout></engine></engines>
+</component>

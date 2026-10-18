@@ -263,7 +263,7 @@ def session_bus():
         # IBus normally tracks its parent's lifetime. A desktop autostart entry
         # is not that lifetime owner; use its upstream daemon mode, not retries.
         if not bus.is_connected() and not IBus.get_address():
-            subprocess.run(['ibus-daemon', '--daemonize', '--single', '--xim',
+            subprocess.run(['ibus-daemon', '--daemonize', '--single', '--xim', '--panel', 'disable',
                             '--emoji-extension=disable'], check=True, timeout=15)
         if not bus.is_connected():
             ready.run()
