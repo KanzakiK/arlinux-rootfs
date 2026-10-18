@@ -110,7 +110,7 @@ build_hybris() {
     pushd "$source/hybris" >/dev/null
     export PKG_CONFIG_PATH="$repo/third_party/libhybris/arlinux/graphics-protocols"
     export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
-    export CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++
+    export CC='ccache aarch64-linux-gnu-gcc' CXX='ccache aarch64-linux-gnu-g++'
     export AR=aarch64-linux-gnu-ar STRIP=aarch64-linux-gnu-strip
     export RANLIB=aarch64-linux-gnu-ranlib LD=aarch64-linux-gnu-ld
     export NM=aarch64-linux-gnu-nm OBJDUMP=aarch64-linux-gnu-objdump
