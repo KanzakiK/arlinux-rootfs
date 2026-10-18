@@ -26,5 +26,22 @@ owner after the privileged package stage.
 Only matching input/output hashes permit reuse; published component capsules
 preserve symlinks and modes. Keep download checksums and archive path safety,
 propagate real command failures, and validate APK behavior on a fresh instance.
+Local coordinators hold a cross-process lock per content identity until the
+component is published. Concurrent invocations share the result instead of
+dispatching the same workflow twice; process exit automatically releases locks.
+Pinned full commit references do not need an extra GitHub commit-resolution call.
+
+Application runtime files and the final sealing recipe do not belong to the APT
+snapshot identity. The snapshot tracks its package callback, installer recipes,
+bundle packer, distribution and GPU inputs. The desktop stage separately tracks
+the sealing and bundle recipes. This prevents compression changes from silently
+reusing stale archives or unnecessarily reinstalling packages after the cache
+schema has been populated.
+
+Final rootfs compression uses Zstandard level 12 with four threads. A Windows
+compression-only benchmark of a real 638,197,760-byte tar stream measured level
+19 at 126.1 seconds / 156,531,220 bytes and level 12 at 7.6 seconds /
+174,929,387 bytes. Both round trips matched the original SHA-256. These are
+compression timings under local load, not total hosted workflow timings.
 Do not maintain redundant feature/file presence lists or rescan the same rootfs
 at multiple packaging layers. Publish only the exact validated bundle.

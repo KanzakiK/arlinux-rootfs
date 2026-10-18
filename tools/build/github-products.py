@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Dispatch independent repository workflows from Windows or Linux, without WSL."""
 import argparse
+from contextlib import contextmanager
+import errno
+import os
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import hashlib
 import json
@@ -36,6 +39,41 @@ def gh(*args, optional=False):
 def api(path, optional=False):
     value = gh('api', path, optional=optional)
     return json.loads(value) if value else None
+
+
+@contextmanager
+def request_lock(path, stopped):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a+b') as lock:
+        if not path.stat().st_size:
+            lock.write(b'0')
+            lock.flush()
+        deadline = time.monotonic() + 8*60*60
+        while True:
+            try:
+                lock.seek(0)
+                if os.name == 'nt':
+                    import msvcrt
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as error:
+                if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                    raise
+                if stopped.wait(0.25):
+                    raise RuntimeError('Local coordinator stopped while waiting for a component')
+                if time.monotonic() > deadline:
+                    raise TimeoutError('Timed out waiting for component request lock')
+        try:
+            yield
+        finally:
+            lock.seek(0)
+            if os.name == 'nt':
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 class Coordinator:
@@ -77,6 +115,11 @@ class Coordinator:
         request = dict(format=2,stage=stage,framework=self.framework,android=self.android,
                        dependencies=dependencies,sourceInputs=source_inputs(framework,self.framework,stage,self.plan))
         request['identity']=request_identity(request)
+        with request_lock(self.state/request['identity']/'dispatch.lock', self.stopped):
+            return self._component(request)
+
+    def _component(self, request):
+        stage = request['stage']
         repository=self.plan['stages'][stage]['repository']
         result=self.existing(request)
         if result:
@@ -245,7 +288,8 @@ def main():
     if args.plan:
         print(json.dumps(plan,indent=2))
         return
-    framework_sha=api('repos/taowen/arlinux-rootfs/commits/'+args.framework_ref)['sha']
+    framework_sha=(args.framework_ref if re.fullmatch('[0-9a-f]{40}',args.framework_ref)
+                   else api('repos/taowen/arlinux-rootfs/commits/'+args.framework_ref)['sha'])
     products=['rootfs'] if args.product=='all' else [args.product]
     if args.distribution != 'yibu':
         plan['products']['rootfs'] = args.distribution

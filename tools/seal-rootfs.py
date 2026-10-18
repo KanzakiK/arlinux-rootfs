@@ -181,7 +181,7 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
         if refresh_schemas:
             schemas.mkdir()
         with compressed.open('wb') as dest:
-            compressor = subprocess.Popen(['zstd', '-T4', '-19', '-c'], stdin=subprocess.PIPE, stdout=dest)
+            compressor = subprocess.Popen(['zstd', '-T4', '-12', '-c'], stdin=subprocess.PIPE, stdout=dest)
             try:
                 with tarfile.open(snapshot, 'r|') as source, tarfile.open(fileobj=compressor.stdin, mode='w|') as target:
                     for member in source:

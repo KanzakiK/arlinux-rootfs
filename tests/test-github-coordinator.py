@@ -15,6 +15,27 @@ spec.loader.exec_module(module)
 
 
 class CoordinatorTest(unittest.TestCase):
+    def test_concurrent_coordinators_dispatch_identical_request_once(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with tempfile.TemporaryDirectory() as temporary:
+            plan={'workflow':'component.yml','stages':{'test':{'repository':'owner/component'}}}
+            state=Path(temporary)
+            coordinators=[module.Coordinator(plan,'f'*40,None,state,poll=0) for _ in range(2)]
+            result={'identity':'verified'}
+            done=dict(databaseId=1,displayTitle='',status='completed',conclusion='success',url='run')
+            def runs(repository):
+                done['displayTitle']='arlinux/test/'+module.request_identity(dict(
+                    format=2,stage='test',framework='f'*40,android=None,dependencies=[],sourceInputs={}))
+                return [done] if dispatch.call_count else []
+            with patch.object(module.Coordinator,'existing',side_effect=[None,result,result]), \
+                 patch.object(module.Coordinator,'runs',side_effect=runs), \
+                 patch.object(module,'gh') as dispatch, patch.object(module,'api',return_value=[]), \
+                 patch.object(module,'source_inputs',return_value={}):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    futures=[executor.submit(c.component,'test',[]) for c in coordinators]
+                    self.assertEqual([f.result() for f in futures],[result,result])
+                self.assertEqual(dispatch.call_count,1)
+
     def test_local_product_cache_is_verified_before_skipping_download(self):
         import zstandard
         with tempfile.TemporaryDirectory() as temporary:

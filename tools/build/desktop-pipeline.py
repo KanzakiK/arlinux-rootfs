@@ -2,6 +2,8 @@
 """Build the Linux rootfs independently of Android NDK and Bionic Wine builds."""
 import argparse
 import fcntl
+import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -78,14 +80,16 @@ def main():
             invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'seed.zip')
             invoke('python3', 'tools/build/package-rootfs.py', out / 'seed.zip', out / 'packages')
             (out / 'seed.zip').unlink()
-        packages = cache.stage('rootfs-packages', dict(source=package_inputs(common),
-            recipe={name: inventory(framework / 'tools/build' / name) for name in ('package-rootfs.py', 'package-rootfs.sh')},
+        package_engine = hashlib.sha256(inspect.getsource(packages).encode()).hexdigest()
+        packages = cache.stage('rootfs-packages', dict(source=package_inputs(dict(common, engine=package_engine)),
+            recipe={name: inventory(framework / name) for name in ('tools/bundle.py', 'tools/build/package-rootfs.py', 'tools/build/package-rootfs.sh')},
             executor='native-aarch64'), packages)
         if args.target == 'rootfs-packages':
             print('Completed Linux packages', flush=True)
             return
         snapshot = packages / 'packages/snapshot.tar'
-        inputs = dict(common, dependencies=cache.records.copy(), snapshot=digest(snapshot))
+        inputs = dict(common, dependencies=cache.records.copy(), snapshot=digest(snapshot),
+                      recipe={name: inventory(framework / name) for name in ('tools/seal-rootfs.py', 'tools/bundle.py')})
         def desktop(out):
             out.mkdir()
             invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'seed.zip')
