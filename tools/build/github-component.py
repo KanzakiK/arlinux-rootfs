@@ -91,7 +91,7 @@ def prepare(data, framework):
             'libxxf86vm-dev', 'libxcb-dri3-dev', 'libxcb-present-dev', 'libxcb-sync-dev',
             'libxcb-glx0-dev', 'libxcb-dri2-0-dev', 'libxcb-shm0-dev',
             'libxcb-xfixes0-dev', 'libxcb-randr0-dev', 'libxdamage-dev', 'libxext-dev',
-            'libelf-dev', 'libudev-dev', 'libgbm-dev', 'gperf',
+            'libelf-dev', 'libudev-dev', 'libgbm-dev', 'gperf', 'libglib2.0-dev', 'libglib2.0-dev-bin',
             'ccache', 'gettext', 'libgettextpo-dev', 'libssl-dev', 'unzip', 'autopoint', 'intltool', 'python-is-python3']
         run('sudo', 'apt-get', 'update')
         run('sudo', 'apt-get', 'install', '-y', '--no-install-recommends', *packages,
