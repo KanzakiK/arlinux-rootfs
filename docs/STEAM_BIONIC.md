@@ -24,6 +24,11 @@ dependencies and `steamworks.session()` supplies the Steamworks bridge. Discover
 helpers without a game identity run without a Steamworks session. These paths
 share the Windows launcher's Wine prefix. Supported game-specific renderer
 arguments are applied by the adapter; explicit renderer selections are retained.
+Title matching, renderer arguments and browser flags are maintained in
+`runtime/tools/windows_compat.py`, rather than embedded in launch mechanisms.
+The fixed WebView2 runtime's Wine version identity is instance-wide; its browser
+arguments remain scoped to the matched host application. These are compatibility
+settings, not proof of GPU rendering or of a Chromium sandbox under Wine.
 The patched Steam Proton adapter and its core build/install chain were removed.
 Implementation does not establish compatibility for every game: acceptance
 requires a fresh instance, hardware acceleration and actual Play/gameplay.

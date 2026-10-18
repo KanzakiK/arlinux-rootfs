@@ -248,22 +248,26 @@ def environment(root, prefix):
     return env
 
 
-def request(root, prefix, executable, arguments=(), overrides='', stdio=False, diagnostics=None):
+def request(root, prefix, executable, arguments=(), overrides='', stdio=False, diagnostics=None, timeout=300):
+    exe = str(executable)
+    if exe.startswith('/'):
+        exe = str(host_path(exe))
+    argv = [str(host_path(value)) if str(value).startswith('/') and
+        not re.fullmatch('/[A-Za-z][A-Za-z0-9:_-]*', str(value)) else str(value)
+        for value in arguments]
+    payload = dict(runtime=root.name, prefix=str(host_path(prefix/'pfx')), exe=exe,
+                   args=argv, dllOverrides=overrides, stdio=stdio)
+    if diagnostics:
+        payload['environment'] = diagnostics
+    return _host_request(payload, timeout, stdio)
+
+
+def _host_request(payload, timeout=10, stdio=False):
     files = Path(os.environ['BIONICX_FILES']).resolve()
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    client.settimeout(300)
+    client.settimeout(timeout)
     try:
         client.connect('\0arlinux-windows-' + str(files.stat().st_uid))
-        exe = str(executable)
-        if exe.startswith('/'):
-            exe = str(host_path(exe))
-        argv = [str(host_path(value)) if str(value).startswith('/') and
-            not re.fullmatch('/[A-Za-z][A-Za-z0-9:_-]*', str(value)) else str(value)
-            for value in arguments]
-        payload = dict(runtime=root.name, prefix=str(host_path(prefix/'pfx')), exe=exe,
-                       args=argv, dllOverrides=overrides, stdio=stdio)
-        if diagnostics:
-            payload['environment'] = diagnostics
         client.sendall(json.dumps(payload).encode()+b'\n')
         line = bytearray()
         while len(line) <= 32768:
@@ -293,17 +297,37 @@ def initialize(root, prefix, env=None):
     run(root, prefix, 'cmd.exe', ['/c', 'exit', '0'], env=env, check=True)
 
 
+def cancel_job(job):
+    """Stop one recorded launcher, not its shared wineserver or detached children."""
+    if not isinstance(job, str) or not re.fullmatch(r'[0-9a-f-]{36}', job):
+        raise ValueError('Invalid Windows job identity')
+    result = _host_request({'operation': 'cancel-job', 'job': job})
+    if result.get('ok') is not True or result.get('scope') != 'launcher':
+        raise RuntimeError('Windows host did not acknowledge launcher cancellation')
+
+
+class WindowsWaitTimeout(TimeoutError):
+    """Waiting expired; ownership is explicit and the task has not been cancelled."""
+    def __init__(self, response):
+        self.job = response['job']
+        self.log = guest_path(response['log'])
+        super().__init__(f'Windows wait timed out; job {self.job} may still be running; log: {self.log}')
+
+    def cancel_launcher(self):
+        cancel_job(self.job)
+
+
 def run(root, prefix, executable, arguments=(), env=None, check=False, capture=False, timeout=600):
     env = env or {}
     diagnostics = {name: env[name] for name in ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG',
         'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
         'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER', 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS') if name in env}
     response = request(root, prefix, executable, arguments, env.get('WINEDLLOVERRIDES', ''), diagnostics=diagnostics)
-    deadline = time.monotonic()+timeout
+    deadline = time.monotonic()+timeout if timeout is not None else None
     exit_path = guest_path(response['exit'])
     while not exit_path.is_file():
-        if time.monotonic() >= deadline:
-            raise RuntimeError('Windows process timed out; log: '+str(guest_path(response['log'])))
+        if deadline is not None and time.monotonic() >= deadline:
+            raise WindowsWaitTimeout(response)
         time.sleep(.2)
     output = guest_path(response['log']).read_text(errors='replace')
     code = int(exit_path.read_text())
@@ -326,8 +350,8 @@ def launch(executable, arguments=(), prefix=None):
     initialize(root, prefix, env)
     windows_a11y.ensure(root, prefix, executable.stem, env)
     if executable.suffix.lower() == '.lnk':
-        return run(root, prefix, 'start.exe', [str(executable), *arguments], env=env).returncode
-    return run(root, prefix, executable, arguments, env=env).returncode
+        return run(root, prefix, 'start.exe', [str(executable), *arguments], env=env, timeout=None).returncode
+    return run(root, prefix, executable, arguments, env=env, timeout=None).returncode
 
 
 def main():

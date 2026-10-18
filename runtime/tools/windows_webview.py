@@ -12,11 +12,10 @@ import tempfile
 
 import shared
 import windows
+import windows_compat
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 DOWNLOAD = 'webview2-fixed-arm64'
-FLAGS = ('--no-sandbox --use-angle=vulkan --disable-gpu-compositing '
-         '--disable-direct-composition --disable-features=SkiaGraphite,kRemoveRedirectionBitmap')
 
 
 def verified_browser(destination, expected):
@@ -81,19 +80,31 @@ def install_into_prefix(prefix):
     see one canonical ``C:\\Program Files\\Microsoft\\EdgeWebView`` tree.
     """
     browser = ensure_runtime()
-    # Keep the helper easy to unit-test with a mocked immutable store.  The
-    # real ensure_runtime() always returns an existing verified directory.
-    if not browser.is_dir():
-        return browser
+    if not browser.is_dir() or not (browser/'msedgewebview2.exe').is_file():
+        raise RuntimeError('Verified WebView2 browser directory is missing')
     destination = (prefix/'pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application'
                    /browser.name)
-    executable = destination/'msedgewebview2.exe'
-    if not executable.is_file():
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.parent/(f'.{browser.name}.tmp')
-        shutil.rmtree(temporary, ignore_errors=True)
-        shutil.copytree(browser, temporary)
-        temporary.replace(destination)
+    # Serialize prefix publication, not the shared immutable download. Never
+    # remove another launch's staging directory or replace a partial tree.
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with shared.locked(destination.parent/'.install.lock'):
+        expected = {p.relative_to(browser): shared.digest(p)
+                    for p in browser.rglob('*') if p.is_file()}
+        def complete(tree):
+            return (not tree.is_symlink() and tree.is_dir() and
+                    all(not (tree/name).is_symlink() and (tree/name).is_file()
+                        and shared.digest(tree/name) == checksum
+                        for name, checksum in expected.items()))
+        if destination.exists() or destination.is_symlink():
+            if not complete(destination):
+                raise RuntimeError('Installed WebView2 runtime is damaged; reinstall the instance')
+            return destination
+        with tempfile.TemporaryDirectory(prefix='.install-', dir=destination.parent) as temporary:
+            stage = Path(temporary)/'browser'
+            shutil.copytree(browser, stage)
+            if not complete(stage):
+                raise RuntimeError('WebView2 copy integrity check failed')
+            stage.rename(destination)
     return destination
 
 
@@ -111,17 +122,18 @@ def prepare_game(root, prefix, executable, environment):
     """Apply only the tested title profile; ordinary games do not download Edge."""
     env = dict(environment)
     name = PureWindowsPath(str(executable)).name
-    if env.get('SteamAppId') != '2758540' or name.lower() != '我的小鲨鱼.exe':
+    profile = windows_compat.game_profile(env.get('SteamAppId'), executable)
+    if not profile or not profile.webview_flags:
         return env
     browser = install_into_prefix(prefix)
     # Elevated WebView hosts ignore environment browser switches. Use the
-    # documented per-host machine policy, confined to this game's Wine prefix.
+    # documented per-host machine policy in the shared instance prefix.
     windows.run(root, prefix, 'reg.exe', ['add',
         r'HKLM\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments',
-        '/v', name, '/t', 'REG_SZ', '/d', FLAGS, '/f'], check=True, timeout=120)
+        '/v', name, '/t', 'REG_SZ', '/d', profile.webview_flags, '/f'], check=True, timeout=120)
     windows.run(root, prefix, 'reg.exe', ['add',
         r'HKCU\Software\Wine\AppDefaults\msedgewebview2.exe',
-        '/v', 'Version', '/t', 'REG_SZ', '/d', 'win8', '/f'], check=True, timeout=60)
+        '/v', 'Version', '/t', 'REG_SZ', '/d', windows_compat.WEBVIEW_WINE_VERSION, '/f'], check=True, timeout=60)
     env['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = browser_windows_path(prefix, browser)
-    env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = FLAGS
+    env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = profile.webview_flags
     return env

@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'runtime/tools'))
@@ -11,6 +12,30 @@ import windows_webview as webview
 
 
 class WebViewTests(unittest.TestCase):
+    def test_missing_browser_is_an_error_not_a_test_shortcut(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(webview, 'ensure_runtime', return_value=Path(temp)/'missing'):
+                with self.assertRaisesRegex(RuntimeError, 'directory is missing'):
+                    webview.install_into_prefix(Path(temp)/'prefix')
+
+    def test_concurrent_prefix_publication_and_corrupt_copy_rejection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            browser = base/'vendor/runtime'
+            browser.mkdir(parents=True)
+            (browser/'msedgewebview2.exe').write_bytes(b'vendor executable')
+            (browser/'resource.pak').write_bytes(b'resources')
+            prefix = base/'prefix'
+            with patch.object(webview, 'ensure_runtime', return_value=browser):
+                with ThreadPoolExecutor(max_workers=2) as workers:
+                    installed = list(workers.map(webview.install_into_prefix, [prefix, prefix]))
+                self.assertEqual(installed[0], installed[1])
+                self.assertEqual((installed[0]/'resource.pak').read_bytes(), b'resources')
+                self.assertFalse(list(installed[0].parent.glob('.install-*')))
+                (installed[0]/'resource.pak').unlink()
+                with self.assertRaisesRegex(RuntimeError, 'damaged'):
+                    webview.install_into_prefix(prefix)
+
     def test_unrelated_game_and_redistributable_skip_browser(self):
         with patch.object(webview, 'ensure_runtime') as install:
             for app, exe in [('42', '/games/我的小鲨鱼.exe'), ('2758540', '/redist/setup.exe')]:
@@ -21,7 +46,6 @@ class WebViewTests(unittest.TestCase):
     def test_game_preparation_keeps_identity_and_checks_registry_failures(self):
         env = {'SteamAppId': '2758540'}
         with patch.object(webview, 'install_into_prefix', return_value=Path('/prefix/pfx/drive_c/Program Files/Microsoft/EdgeWebView/Application/runtime')), \
-             patch.object(webview.windows, 'host_path', return_value=Path('/private/browser')), \
              patch.object(webview.windows, 'run') as run:
             prepared = webview.prepare_game(Path('/wine'), Path('/prefix'), '/games/我的小鲨鱼.exe', env)
             self.assertEqual(prepared['SteamAppId'], '2758540')

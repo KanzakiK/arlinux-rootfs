@@ -8,9 +8,10 @@ import json
 import os
 import re
 import shutil
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 import sys
 import tempfile
+import windows_compat
 
 TOOL = 'arlinux-wine-bionic'
 ENVIRONMENT = ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG', 'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
@@ -116,12 +117,10 @@ def default_config(text):
             entry.setdefault('priority', '75' if app == '0' else '250')
             mapping[app] = entry
             changed = True
-    # Helltaker's native Unity/Mono build exits during reload under FEX.
-    # Its Windows build works through our Bionic Steamworks bridge.
-    # Preserve any explicit per-game choice, including native FEX.
-    if '1289310' not in mapping:
-        mapping['1289310'] = {'name': TOOL, 'config': '', 'priority': '250'}
-        changed = True
+    for appid in windows_compat.WINDOWS_DEFAULTS:
+        if appid not in mapping:
+            mapping[appid] = {'name': TOOL, 'config': '', 'priority': '250'}
+            changed = True
     if not changed:
         return text
     def encode(data, indent):
@@ -164,12 +163,7 @@ def launch(verb, arguments):
     for name, value in env.items():
         if name.startswith('Steam') and not value.isdecimal():
             raise ValueError('Invalid Steam game identity: '+name)
-    # This old Unity player defaults to D3D9, whose pipelines fail on Mali.
-    # Its shipped D3D11 renderer keeps hardware acceleration through DXVK.
-    if (env.get('SteamAppId') == '312990' and
-            PureWindowsPath(str(arguments[0])).name.lower() == 'expendabros.exe' and
-            not any(arg.lower().startswith('-force-') for arg in arguments[1:])):
-        arguments = [*arguments, '-force-d3d11']
+    arguments = windows_compat.renderer_arguments(env.get('SteamAppId'), arguments)
     root = windows.ensure_runtime()
     from windows_webview import prepare_game
     env = prepare_game(root, wine_prefix, arguments[0], env)

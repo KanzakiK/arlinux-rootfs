@@ -22,7 +22,7 @@ import windows
 import windows_webview
 import shared
 
-POWERBI_WEBVIEW_FLAGS = '--no-sandbox --use-angle=d3d11'
+from windows_compat import POWERBI_WEBVIEW_FLAGS
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 LICENSES = {

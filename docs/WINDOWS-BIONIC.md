@@ -193,8 +193,9 @@ application state remains in the single instance-level Wine prefix.
 The desktop's Windows apps category includes **Windows Launcher**. Its window
 is provided by the Android host. Select an EXE and open the application. The host
 keeps its working directory beside the EXE, and remembers recent applications.
-The phone file picker imports a standalone EXE into shared storage; applications
-with adjacent DLLs or resources should be copied as a complete directory first.
+The phone file picker resolves a local EXE in place, retaining access to adjacent
+DLLs and resources after the required Android file-access grant. It does not
+import an isolated EXE copy or support arbitrary remote document providers.
 The launcher and Steam games use `~/.local/share/arlinux/windows-bionic/prefix`
 (containing `pfx`), independent of the selected runtime version. It reports
 startup errors and early process exits, with a path to the native log.
@@ -216,6 +217,15 @@ The launcher resolves and verifies the pinned runtime automatically. Diagnostic
 launches should use the shared `windows` module rather than manually constructing
 host socket requests or selecting another Wine prefix. Stopping the host
 terminates its launchers and requests shutdown of the associated wineservers.
+
+GUI launches wait without an arbitrary application lifetime limit. Diagnostic
+`windows.run(..., timeout=SECONDS)` calls have a bounded wait after launch
+acknowledgement. `WindowsWaitTimeout` retains the job identity and log path;
+it does not claim the application exited. Its explicit `cancel_launcher()`
+operation stops only that recorded launcher, never the shared wineserver or
+unrelated Windows applications. Detached children are not covered by launcher
+cancellation. Host launch acknowledgement and prefix preparation are separately
+bounded. Prefix/runtime updates require closing active Windows launchers first.
 
 Integrated authentication uses Samba's `ntlm_auth` from the active Linux
 instance. Power BI preparation installs the `winbind` package automatically,
