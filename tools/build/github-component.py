@@ -171,11 +171,17 @@ def toolchains(root, framework):
         alias.symlink_to('wine-mono-11.3.0')
     launcher = tools / 'mingw-ccache/bin'
     launcher.mkdir(parents=True, exist_ok=True)
+    # clang-scan-deps constructs a driver from the compiler path without
+    # executing its wrapper, so the complete MinGW sysroot must remain visible.
+    for entry in (tools/'mingw').iterdir():
+        target=launcher.parent/entry.name
+        if entry.name!='bin' and not target.exists():
+            target.symlink_to(entry,target_is_directory=entry.is_dir())
     for compiler in (tools/'mingw/bin').iterdir():
         target = launcher/compiler.name
         if target.exists() or target.is_symlink():
             continue
-        if 'clang' in compiler.name and compiler.is_file():
+        if (compiler.name in ('clang','clang++') or compiler.name.endswith(('-clang','-clang++'))) and compiler.is_file():
             target.write_text('#!/bin/sh\nexec ccache "'+str(compiler)+'" "$@"\n')
             target.chmod(0o755)
         else:
