@@ -138,6 +138,10 @@ class WineGraphTest(unittest.TestCase):
                     out = Path(env['ARLINUX_PULSE_WORK']) / 'prefix'
                     out.mkdir(parents=True)
                 elif recipe == 'package-wine-pe.py':
+                    merged = Path(command[command.index('--wine') + 1])
+                    self.assertEqual((merged/'files/include/wine/iaccessible2.h').read_text(), 'generated aarch64 header')
+                    for arch in ('aarch64', 'x86_64', 'i386'):
+                        self.assertEqual((merged/f'files/lib/wine/{arch}-windows/test.dll').read_text(), arch)
                     source = out.parent / 'dummy'
                     source.write_text('PE modules')
                     with tarfile.open(out, 'w:gz') as archive:
@@ -148,7 +152,13 @@ class WineGraphTest(unittest.TestCase):
                     tools = out / 'tools'
                     tools.mkdir(parents=True)
                     (tools / 'winegcc').write_text('matching compiler')
-                    (out / 'files/lib/wine').mkdir(parents=True)
+                    arch = env['ARLINUX_WINE_PE_ARCH']
+                    modules = out / f'files/lib/wine/{arch}-windows'
+                    modules.mkdir(parents=True)
+                    (modules/'test.dll').write_text(arch)
+                    header = out/'files/include/wine/iaccessible2.h'
+                    header.parent.mkdir(parents=True)
+                    header.write_text('generated '+arch+' header')
                     (out / 'build-state.json').write_text(json.dumps({'tools': str(tools)}))
                 elif recipe == 'wine-bionic.sh':
                     out.mkdir()

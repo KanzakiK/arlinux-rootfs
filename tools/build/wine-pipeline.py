@@ -66,29 +66,12 @@ def build_wine(cache, framework, android, paths, common, invoke, env):
                 env.pop('ARLINUX_WINE_PE_ARCH', None)
         pe_parts[arch] = stage('wine-pe-' + arch, compile_pe)
     def merge_pe(out):
-        out.mkdir()
-        for arch, part in pe_parts.items():
-            for source in sorted(part.rglob('*')):
-                if source.is_dir() and not source.is_symlink():
-                    continue
-                relative = source.relative_to(part)
-                destination = out / relative
-                if destination.exists() or destination.is_symlink():
-                    if relative.as_posix() in ('build-state.json', 'wine-source.tar.gz'):
-                        continue
-                    if source.is_symlink() != destination.is_symlink():
-                        raise ValueError('Conflicting Wine PE file type: ' + str(relative))
-                    if source.is_symlink():
-                        if os.readlink(source) != os.readlink(destination):
-                            raise ValueError('Conflicting Wine PE link: ' + str(relative))
-                    elif digest(source) != digest(destination):
-                        raise ValueError('Conflicting Wine PE data: ' + str(relative))
-                    continue
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                if source.is_symlink():
-                    destination.symlink_to(os.readlink(source))
-                else:
-                    shutil.copy2(source, destination)
+        # Common headers, data and host tools come from the ARM64 build.
+        # Other jobs contribute only their architecture's Windows modules.
+        shutil.copytree(pe_parts['aarch64'], out, symlinks=True)
+        for arch in ('x86_64', 'i386'):
+            relative = Path('files/lib/wine') / (arch + '-windows')
+            shutil.copytree(pe_parts[arch] / relative, out / relative, symlinks=True)
     wine = stage('wine-pe', merge_pe, tuple('wine-pe-'+a for a in pe_parts))
     tools = Path(json.loads((wine / 'build-state.json').read_text())['tools']) if wine else None
     fex = stage('fex', lambda out: invoke('bash', 'tools/build/fex-windows.sh', paths['mingw'], out))
