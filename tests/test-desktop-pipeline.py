@@ -115,6 +115,11 @@ class WineGraphTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             cache = pipeline.Cache(root / 'cache')
+            (root / 'tools').mkdir()
+            (root / 'arial.ttf').write_text('fixture font')
+            (root / 'tools/wine_fonts.py').write_text(
+                "from pathlib import Path\nFILES = ('arial.ttf',)\n"
+                "def source_directory(): return Path(__file__).resolve().parents[1]\n")
             env, calls = {}, []
             paths = {name: root / name for name in ('wineSource', 'mingw', 'ndk', 'bionicPrefix', 'addons')}
             common = dict(sources={}, wineSources={'commit': 'pinned'}, pulseRecipe={})

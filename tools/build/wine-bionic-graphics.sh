@@ -73,7 +73,8 @@ import shutil, sys
 mesa, base, native, ndk, protocols = map(Path, sys.argv[1:6])
 source = base / 'mesa'
 if (sys.argv[6] != 'none' or sys.argv[7] == 'zink') and not source.exists():
-    shutil.copytree(mesa, source, ignore=shutil.ignore_patterns('.git', 'build', 'build-*', 'autom4te.cache'))
+    shutil.copytree(mesa, source, symlinks=True,
+                    ignore=shutil.ignore_patterns('.git', 'build', 'build-*', 'autom4te.cache'))
     for name in ['src/util/detect_os.h', 'include/vulkan/vk_android_native_buffer.h']:
         p = source / name
         p.write_text(p.read_text().replace('#if defined(__ANDROID__) || defined(ANDROID)', '#if 0')

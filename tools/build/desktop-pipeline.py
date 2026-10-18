@@ -305,7 +305,9 @@ def main():
         shutil.copytree(built_assets, target_assets, symlinks=True)
         inputs = dict(common, dependencies=cache.records.copy(),
                       assets=inventory(framework / 'distributions/yibu/build/assets'),
-                      transform=digest(android / 'tools/build/webview-store-bundle.py'))
+                      transform=digest(android / 'tools/build/webview-store-bundle.py'),
+                      sourceAudit={name: inventory(android / 'tools/build' / name) for name in
+                                   ('desktop-runtime.py', 'verify-webview-store-bundle.py')})
         if not args.prepare:
             inputs['snapshot'] = digest(snapshot)
         inputs['preparation'] = args.prepare

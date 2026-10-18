@@ -186,7 +186,10 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                 name = member.name.removeprefix('./').rstrip('/')
                 if (not name.startswith('usr/lib/arlinux/') and name not in wrappers
                         and not name.startswith('usr/share/applications/arlinux-')
-                        and not name.startswith('usr/share/pixmaps/arlinux-')):
+                        and not name.startswith('usr/share/pixmaps/arlinux-')
+                        and name not in ('usr/share/dbus-1/services/org.arlinux.HostedInput.service',
+                                         'usr/share/ibus/component/arlinux-hosted.xml',
+                                         'usr/share/glib-2.0/schemas/90-arlinux-ibus.gschema.override')):
                     continue
                 if member.isdir():
                     continue
@@ -207,12 +210,16 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                                     stdout=subprocess.PIPE, check=True)
             with tarfile.open(fileobj=io.BytesIO(result.stdout)) as tar:
                 gpu_files.update(m.name.removeprefix('./') for m in tar if not m.isdir())
+    schema_prefix = 'usr/share/glib-2.0/schemas/'
+    refresh_schemas = schema_prefix + '90-arlinux-ibus.gschema.override' in managed
     dropped = {
         'etc/machine-id', 'etc/resolv.conf', 'var/lib/dbus/machine-id',
         'etc/pulse/client.conf.d/arlinux.conf', 'usr/bin/arlinux-app', 'usr/bin/sudo',
         'usr/share/applications/arlinux-app.desktop',
         'usr/share/arlinux/desktop-packages-installed',
     } | gpu_files | managed.keys()
+    if refresh_schemas:
+        dropped.add(schema_prefix + 'gschemas.compiled')
     prefixes = ('var/cache/', 'var/log/', 'var/tmp/', 'var/lib/apt/lists/',
                 'var/run', 'var/lock', 'usr/lib/mesa/', 'usr/lib/hybris/',
                 'usr/lib/arlinux/')
@@ -220,6 +227,9 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
     seen = set()
     with tempfile.TemporaryDirectory(prefix='arlinux-seal-') as temp:
         compressed = Path(temp) / 'rootfs.tar.zst'
+        schemas = Path(temp) / 'schemas'
+        if refresh_schemas:
+            schemas.mkdir()
         with compressed.open('wb') as dest:
             compressor = subprocess.Popen(['zstd', '-T4', '-19', '-c'], stdin=subprocess.PIPE, stdout=dest)
             try:
@@ -230,6 +240,10 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                             raise ValueError('Unsafe snapshot entry: ' + name)
                         if name == 'opt/OpenCode' or name.startswith('opt/OpenCode/'):
                             raise ValueError('OpenCode must be installed on demand, not exported in the offline desktop')
+                        schema_data = None
+                        if refresh_schemas and name.startswith(schema_prefix) and member.isfile() and name.endswith(('.xml', '.override')):
+                            schema_data = source.extractfile(member).read()
+                            (schemas / Path(name).name).write_bytes(schema_data)
                         if name.split('/')[0] not in allowed or name in dropped or name.startswith(prefixes):
                             continue
                         if omit_desktop_resource(name, member.isdir(), member.linkname if member.issym() else None):
@@ -242,7 +256,7 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                         member.uid = member.gid = member.mtime = 0
                         member.uname = member.gname = ''
                         member.pax_headers = {}
-                        body = source.extractfile(member) if member.isfile() else None
+                        body = io.BytesIO(schema_data) if schema_data is not None else source.extractfile(member) if member.isfile() else None
                         if name in ('etc/passwd', 'etc/group', 'etc/passwd-', 'etc/group-'):
                             data = b''.join(line for line in body if not line.startswith(b'arlinux:'))
                             body = io.BytesIO(data)
@@ -262,6 +276,21 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                         member.uname = member.gname = ''
                         member.pax_headers = {}
                         target.addfile(member, io.BytesIO(data) if data is not None else None)
+                        seen.add(name)
+                    if refresh_schemas:
+                        # The package cache owns schema definitions, while this
+                        # build owns overrides. Compile both together; a seed's
+                        # compiled database may predate installed GUI packages.
+                        for name, (member, data) in managed.items():
+                            if name.startswith(schema_prefix) and member.isfile() and name.endswith(('.xml', '.override')):
+                                (schemas / Path(name).name).write_bytes(data)
+                        subprocess.run(['glib-compile-schemas', '--strict', str(schemas)], check=True)
+                        data = (schemas / 'gschemas.compiled').read_bytes()
+                        name = schema_prefix + 'gschemas.compiled'
+                        member = tarfile.TarInfo('./' + name)
+                        member.mode = 0o644
+                        member.size = len(data)
+                        target.addfile(member, io.BytesIO(data))
                         seen.add(name)
                     for name in ('etc/machine-id',):
                         member = tarfile.TarInfo('./' + name)
