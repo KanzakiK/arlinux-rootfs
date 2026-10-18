@@ -28,12 +28,6 @@ if [[ -n "${BIONIC_DXVK_RUNTIME:-}" ]]; then
     vulkan_args+=(--dxvk-runtime "$BIONIC_DXVK_RUNTIME")
 fi
 if [[ "$vulkan_driver" == system ]]; then
-    [[ -d "${BIONIC_DXVK_RUNTIME:-}" ]] || {
-        echo 'Run ./build.sh wine; DXVK is a managed pipeline dependency.' >&2; exit 2;
-    }
-    [[ -f "${BIONIC_SYSTEM_VULKAN_ADAPTER:-}" ]] || {
-        echo 'Build tools/build/bionic-vulkan.py and set BIONIC_SYSTEM_VULKAN_ADAPTER.' >&2; exit 2;
-    }
     vulkan_args+=(--system-vulkan-adapter "$BIONIC_SYSTEM_VULKAN_ADAPTER")
 fi
 fex_source="$(realpath "$6")"

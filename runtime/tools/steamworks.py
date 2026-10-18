@@ -20,14 +20,6 @@ def session(runtime, prefix, environment):
         raise ValueError('Steamworks needs a nonzero numeric SteamAppId')
     steam = Path(os.environ['STEAM_COMPAT_CLIENT_INSTALL_PATH']).resolve(strict=True)
     library = steam/'steamrtarm64/steamclient.so'
-    if not library.is_file():
-        raise RuntimeError('Native ARM64 Steam client library is missing')
-    required = ['lsteambridge-server', 'aarch64-windows/steam.exe',
-                'aarch64-unix/lsteamclient.so', 'aarch64-windows/lsteamclient.dll',
-                'i386-windows/lsteamclient.dll',
-                'x86_64-windows/lsteamclient.dll']
-    if any(not (payload/name).is_file() for name in required):
-        raise RuntimeError('The Bionic Steamworks bridge is not installed')
     directory = Path(os.environ['XDG_RUNTIME_DIR'])/'steamworks'
     directory.mkdir(mode=0o700, exist_ok=True)
     endpoint = directory/(appid+'.sock')

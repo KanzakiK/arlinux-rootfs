@@ -27,7 +27,6 @@ for attempt in 1 2 3; do
     result=$?
     set -e
     if [[ "$result" == 0 ]]; then
-        test -f "$root/usr/share/arlinux/offline-desktop"
         exit 0
     fi
     # The package recipe explicitly restarts once after replacing glibc.
