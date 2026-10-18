@@ -68,7 +68,7 @@ def prepare(data, framework):
         packages = ['autoconf', 'automake', 'libtool', 'build-essential', 'bison', 'flex',
             'curl', 'git', 'cmake', 'ninja-build', 'patchelf', 'pkg-config', 'python3',
             'python3-venv', 'python3-pip', 'python3-mako', 'python3-zstandard',
-            'debootstrap', 'qemu-user-static', 'binfmt-support', 'util-linux', 'zstd',
+            'debootstrap', 'util-linux', 'zstd',
             'libarchive-tools', 'jq', 'gcc-aarch64-linux-gnu', 'g++-aarch64-linux-gnu',
             'glslang-tools', 'wayland-protocols', 'libfreetype-dev', 'libexpat1-dev',
             'libwayland-dev', 'libwayland-egl-backend-dev', 'libx11-dev', 'libx11-xcb-dev', 'libxcb1-dev',

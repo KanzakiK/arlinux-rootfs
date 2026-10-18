@@ -3,7 +3,6 @@
 import argparse
 import importlib.util
 import os
-import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,8 +20,6 @@ def prepare(seed, output):
     bundle = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bundle)
     bundle.verify(seed)
-    if platform.machine() not in ('aarch64', 'arm64') and not Path('/proc/sys/fs/binfmt_misc/qemu-aarch64').is_file():
-        raise RuntimeError('Install qemu-user-static and enable qemu-aarch64 binfmt in WSL')
     output.mkdir(parents=True)
     with tempfile.TemporaryDirectory(prefix='package-rootfs-', dir=output.parent) as temporary:
         root = Path(temporary) / 'rootfs'

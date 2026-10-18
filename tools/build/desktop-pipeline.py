@@ -83,7 +83,7 @@ def main():
             (out / 'seed.zip').unlink()
         packages = cache.stage('rootfs-packages', dict(assets=cache.records['linux-assets'],
             recipe={name: inventory(framework / 'tools/build' / name) for name in ('package-rootfs.py', 'package-rootfs.sh')},
-            executor=('native-aarch64' if __import__('platform').machine() in ('aarch64', 'arm64') else subprocess.check_output(['qemu-aarch64-static', '--version'], text=True))), packages)
+            executor='native-aarch64'), packages)
         if args.target == 'rootfs-packages':
             print('Completed Linux packages', flush=True)
             return
