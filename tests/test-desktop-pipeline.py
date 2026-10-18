@@ -9,6 +9,7 @@ spec = importlib.util.spec_from_file_location('desktop_build',
     Path(__file__).resolve().parents[1] / 'tools/build/desktop-pipeline.py')
 pipeline = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pipeline)
+from pipeline_cache import key as cache_key
 
 
 class CacheTest(unittest.TestCase):
@@ -77,9 +78,9 @@ class CacheTest(unittest.TestCase):
                 out.mkdir()
                 (out / 'library').write_text('v1')
             cache.stage('bridge', {'source': 'v1'}, build)
-            first = pipeline.key(cache.records)
+            first = cache_key(cache.records)
             cache.stage('bridge', {'source': 'v2'}, build)
-            self.assertNotEqual(first, pipeline.key(cache.records))
+            self.assertNotEqual(first, cache_key(cache.records))
 
     def test_prepared_source_under_ignored_build_is_not_empty(self):
         with tempfile.TemporaryDirectory() as temporary:

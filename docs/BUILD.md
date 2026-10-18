@@ -1,9 +1,14 @@
 # Build and release guide
 
-This is the canonical guide for the public Linux distribution, graphics, audio,
-and Bionic Wine pipelines. All compilation runs on Linux GitHub-hosted runners.
-The public entry point is this repository's `build.sh`. Recipes, coordination,
-validation, and publishing are maintained in this repository.
+This is the canonical guide for the Android APK and the independent Linux,
+graphics, audio and Bionic Wine products. In the `arlinux` checkout, the sole
+workstation entry is `build.ps1`, implemented by `tools/build.ps1`. Android is
+compiled on Windows; Linux distributions and Wine compile on GitHub-hosted
+Linux runners. WSL is not a build dependency.
+
+Linux recipes and their dispatcher live here in `arlinux-rootfs/build.sh` and
+`tools/build/`. Public component-only work can use `build.sh github` as its
+coordinator; it invokes the same hosted recipes and does not assemble an APK.
 
 ## Runner migration status
 
@@ -17,6 +22,7 @@ workstation build instructions are superseded by this guide.
 
 | Product | Build runner and repository | Output |
 |---|---|---|
+| Android APK | Windows through `arlinux/build.ps1` | Debug APK or signed Release APK |
 | Yibu | `ubuntu-24.04-arm` in `taowen/arlinux-yibu` | Distribution ZIP and build receipt |
 | Other distributions | ARM64 Linux runner in the corresponding repository | Distribution ZIP and build receipt |
 | Linux graphics | ARM64 Linux runners in `taowen/mesa` and `taowen/libhybris` | Verified Mesa and libhybris components |
@@ -43,6 +49,61 @@ architectures in one repository share that repository's cache allowance.
 Standalone wrappers are generated from `tools/build/github-component.workflow.yml`
 by `tools/build/install-github-workflows.py`. They invoke the same `build.sh`
 recipes through `tools/build/github-component.py`, without copying build logic.
+
+## Android development, testing and release
+
+Run these commands from the `arlinux` checkout with PowerShell 7. Use Git,
+GitHub CLI, native Windows Python with `zstandard`, Node.js, and the Android
+SDK/NDK/JDK and native host tools required by `toolchain.json` and the recipes.
+Keep versions in their lock/configuration files rather than duplicating them
+in another guide. Authenticate GitHub CLI with workflow-dispatch access.
+
+```powershell
+.\build.ps1 doctor
+.\build.ps1 build -Configuration Debug
+.\build.ps1 install -Configuration Debug -Serial SERIAL
+.\build.ps1 build -Configuration Release
+```
+
+Debug and Release use the same native Android cache, hosted rootfs and audio
+products, and Gradle path. Release adds stripping/signing and final Android
+binary/signature checks. The APK embeds Yibu, not Wine. Wine and its support
+tools are downloaded as one independent runtime by the product.
+
+`-FrameworkRef COMMIT` selects an exact pushed `arlinux-rootfs` revision; the
+default is `main`. The entry resolves its full SHA and prepares a native host
+source view under `build/cache/sources/arlinux-rootfs/COMMIT`. Concurrent
+commands share this view under a preparation lock. Local Android source edits
+remain valid development inputs and invalidate only the affected native cache.
+
+Standalone products still use the same workstation entry:
+
+```powershell
+.\build.ps1 rootfs -Distribution yibu
+.\build.ps1 wine
+```
+
+Device installation always uses `tools/install-apk.sh` through the entry. It
+handles X300 system confirmation. A rooted test device that refuses ordinary
+ADB installation can explicitly select the root mode without changing system
+installation settings:
+
+```powershell
+$env:ARLINUX_INSTALL_ROOT = '1'
+try { .\build.ps1 install -Configuration Debug -Serial SERIAL }
+finally { Remove-Item Env:ARLINUX_INSTALL_ROOT }
+```
+
+Follow `arlinux/tools/diagnostics/README.md` and `AGENTS.md` for device evidence
+and fresh-instance acceptance. Release installation and publishing take the
+exact built/tested APK path; publishing never rebuilds it:
+
+```powershell
+.\build.ps1 install -Configuration Release -Serial SERIAL -Apk PATH
+.\build.ps1 publish -Apk PATH
+.\build.ps1 publish-wine -Archive PATH -Check
+.\build.ps1 publish-wine -Archive PATH
+```
 
 ## Prepare the coordinator
 

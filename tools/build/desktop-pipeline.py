@@ -6,11 +6,10 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from pipeline_cache import Cache, digest, inventory, key, run, source_state, support_sources
+from pipeline_cache import Cache, digest, inventory, run, source_state
 
 
 def rootfs_sources(framework, product):
@@ -39,9 +38,6 @@ def main():
     if config.get('format') != 1 or set(config) != {'format', 'framework'}:
         raise ValueError('Rootfs config accepts only format and framework; Wine toolchains belong to wine-build.json')
     framework = Path(config['framework']).resolve(strict=True)
-    if os.name != 'posix' or str(framework).startswith('/mnt/'):
-        raise ValueError('Rootfs builds require the Linux filesystem in Linux/WSL')
-    android = framework
     env = {name: value for name, value in os.environ.items() if name in (
         'PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
         'http_proxy', 'https_proxy', 'no_proxy', 'ARLINUX_CACHE_DIR')}
@@ -88,9 +84,7 @@ def main():
             print('Completed Linux packages', flush=True)
             return
         snapshot = packages / 'packages/snapshot.tar'
-        inputs = dict(common, dependencies=cache.records.copy(), snapshot=digest(snapshot),
-            transforms={name: inventory(android / 'tools/build' / name) for name in (
-                'desktop-runtime.py',)})
+        inputs = dict(common, dependencies=cache.records.copy(), snapshot=digest(snapshot))
         def desktop(out):
             out.mkdir()
             invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'seed.zip')
