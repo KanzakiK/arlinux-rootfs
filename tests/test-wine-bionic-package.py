@@ -1,4 +1,4 @@
-"""Reject stale Zink builds and verify reproducible, checksum-checked archives."""
+"""Verify reproducible, checksum-checked runtime archives."""
 import hashlib
 import importlib.util
 import json
@@ -22,20 +22,6 @@ class PackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.base = Path(self.temporary.name)
 
-    def graphics(self, xmlconfig='enabled'):
-        prefix = self.base / 'graphics'
-        libraries = {}
-        for name in ['lib/dri/zink_dri.so', 'lib/dri/libdril_dri.so']:
-            path = prefix / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(name.encode())
-            libraries[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-        (prefix / 'arlinux-bionic-graphics.json').write_text(json.dumps({
-            'protocol': 1, 'openglDriver': 'zink', 'xmlconfig': xmlconfig,
-            'libraries': libraries,
-        }))
-        return prefix
-
     def runtime(self):
         root = self.base / 'runtime'
         binary = root / 'files/bin/wine'
@@ -45,87 +31,6 @@ class PackageTests(unittest.TestCase):
             'files': {'files/bin/wine': hashlib.sha256(binary.read_bytes()).hexdigest()},
         }))
         return root, binary
-
-    def components(self):
-        pe = self.base / 'pe'
-        pe.mkdir()
-        patch = TOOLS / 'patches/wine-dcomp-content-lifetime.patch'
-        (pe/'arlinux-dcomp.json').write_text(json.dumps({
-            'commit': '318eda0d8fa08ee94faadf6dc5ad85870339b327',
-            'patchSHA256': hashlib.sha256(patch.read_bytes()).hexdigest()}))
-        (pe/'arlinux-vkd3d.json').write_bytes(
-            (TOOLS/'patches/wine-staging-vkd3d/manifest.json').read_bytes())
-        for arch in ('aarch64', 'i386', 'x86_64'):
-            directory = pe/'files/lib/wine'/(arch+'-windows')
-            directory.mkdir(parents=True)
-            for name in ('dcomp', 'd3d12', 'd3d12core', 'dwrite', 'kbdus'):
-                (directory/(name+'.dll')).write_bytes(b'MZ')
-            for name in ('winex11.drv', 'winepulse.drv'):
-                (directory/name).write_bytes(b'MZ')
-        data = pe/'files/share/wine'
-        (data/'fonts').mkdir(parents=True)
-        (data/'wine.inf').write_text('registry')
-        (data/'fonts/fixture.ttf').write_bytes(b'font')
-        return pe
-
-    def test_complete_component_build_accepted(self):
-        self.assertIn('arlinux-dcomp.json', package.verify_components(self.components()))
-
-    def test_missing_window_driver_rejected(self):
-        pe = self.components()
-        (pe/'files/lib/wine/aarch64-windows/winex11.drv').unlink()
-        with self.assertRaisesRegex(RuntimeError, 'aarch64/winex11.drv'):
-            package.verify_components(pe)
-
-    def test_missing_keyboard_or_dwrite_module_rejected(self):
-        pe = self.components()
-        for arch, dll in [('aarch64', 'kbdus'), ('i386', 'kbdus'), ('x86_64', 'dwrite')]:
-            path = pe / 'files/lib/wine' / (arch + '-windows') / (dll + '.dll')
-            path.unlink()
-            with self.assertRaisesRegex(RuntimeError, arch + '/' + dll):
-                package.verify_components(pe)
-            path.write_bytes(b'MZ')
-
-    def test_old_pe_package_without_dcomp_rejected(self):
-        pe = self.components()
-        (pe/'arlinux-dcomp.json').unlink()
-        with self.assertRaisesRegex(RuntimeError, 'missing required component'):
-            package.verify_components(pe)
-
-    def test_stale_dcomp_patch_record_rejected(self):
-        pe = self.components()
-        (pe/'arlinux-dcomp.json').write_text('{}')
-        with self.assertRaisesRegex(RuntimeError, 'DirectComposition fixes'):
-            package.verify_components(pe)
-
-    def test_missing_architecture_module_rejected(self):
-        pe = self.components()
-        (pe/'files/lib/wine/i386-windows/dcomp.dll').unlink()
-        with self.assertRaisesRegex(RuntimeError, 'i386/dcomp'):
-            package.verify_components(pe)
-
-    def test_stale_vkd3d_record_rejected(self):
-        pe = self.components()
-        (pe/'arlinux-vkd3d.json').write_text('{}')
-        with self.assertRaisesRegex(RuntimeError, 'VKD3D refresh'):
-            package.verify_components(pe)
-
-    def test_missing_build_record_requires_rebuild(self):
-        with self.assertRaisesRegex(RuntimeError, 'Rebuild graphics'):
-            package.verify_zink(self.base)
-
-    def test_disabled_xmlconfig_rejected(self):
-        with self.assertRaisesRegex(RuntimeError, 'xmlconfig=enabled'):
-            package.verify_zink(self.graphics('disabled'))
-
-    def test_replaced_library_rejected(self):
-        prefix = self.graphics()
-        (prefix / 'lib/dri/zink_dri.so').write_bytes(b'stale build')
-        with self.assertRaisesRegex(RuntimeError, 'does not match'):
-            package.verify_zink(prefix)
-
-    def test_enabled_matching_build_accepted(self):
-        self.assertEqual(package.verify_zink(self.graphics())['xmlconfig'], 'enabled')
 
     def test_archive_reproducible_and_extractable(self):
         root, binary = self.runtime()

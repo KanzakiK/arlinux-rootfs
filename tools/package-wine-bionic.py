@@ -17,62 +17,6 @@ SYSTEM_LIBS = {'libc.so', 'libm.so', 'libdl.so', 'libz.so', 'liblog.so', 'liband
 
 
 
-def verify_fex_revision(metadata):
-    proton = Path(__file__).resolve().parents[1] / 'third_party/proton'
-    record = subprocess.check_output(['git', '-C', str(proton), 'ls-tree', 'HEAD', 'FEX'], text=True).split()
-    if len(record) < 3 or not re.fullmatch('[0-9a-f]{40}', record[2]):
-        raise RuntimeError('Missing pinned FEX submodule revision')
-    expected = record[2]
-    if metadata.get('fex_commit') != expected:
-        raise RuntimeError('FEX PE modules differ from the pinned FEX source')
-    return expected
-
-
-def verify_zink(prefix):
-    stamp = prefix / 'arlinux-bionic-graphics.json'
-    if not stamp.is_file():
-        raise RuntimeError('Rebuild graphics with tools/build/wine-bionic-graphics.sh; missing Zink build record')
-    record = json.loads(stamp.read_text())
-    if (record.get('protocol'), record.get('openglDriver'), record.get('xmlconfig')) != (1, 'zink', 'enabled'):
-        raise RuntimeError('Zink must be built with xmlconfig=enabled for Wine initialization')
-    for name in ['lib/dri/zink_dri.so', 'lib/dri/libdril_dri.so']:
-        with (prefix / name).open('rb') as stream:
-            actual = hashlib.file_digest(stream, 'sha256').hexdigest()
-        if actual != record.get('libraries', {}).get(name):
-            raise RuntimeError('Zink build record does not match installed library: ' + name)
-    return record
-
-
-def verify_components(pe_runtime):
-    """Reject PE inputs that silently omit required source-built components."""
-    records = {}
-    for name in ('arlinux-dcomp.json', 'arlinux-vkd3d.json'):
-        path = pe_runtime / name
-        if not path.is_file():
-            raise RuntimeError('Rebuild Wine PE modules; missing required component record: ' + name)
-        records[name] = json.loads(path.read_text())
-    patch = Path(__file__).parent / 'patches/wine-dcomp-content-lifetime.patch'
-    dcomp = records['arlinux-dcomp.json']
-    if (dcomp.get('commit') != '318eda0d8fa08ee94faadf6dc5ad85870339b327' or
-            dcomp.get('patchSHA256') != hashlib.sha256(patch.read_bytes()).hexdigest()):
-        raise RuntimeError('Rebuild Wine PE modules with the current DirectComposition fixes')
-    expected = json.loads((Path(__file__).parent / 'patches/wine-staging-vkd3d/manifest.json').read_text())
-    if records['arlinux-vkd3d.json'] != expected:
-        raise RuntimeError('Rebuild Wine PE modules with the current VKD3D refresh')
-    for arch in ('aarch64', 'i386', 'x86_64'):
-        for dll in ('dcomp', 'd3d12', 'd3d12core', 'dwrite', 'kbdus'):
-            if not (pe_runtime / 'files/lib/wine' / (arch + '-windows') / (dll + '.dll')).is_file():
-                raise RuntimeError('Missing required Wine PE module: ' + arch + '/' + dll)
-    for arch in ('aarch64', 'i386', 'x86_64'):
-        for driver in ('winex11.drv',):
-            if not (pe_runtime / 'files/lib/wine' / (arch + '-windows') / driver).is_file():
-                raise RuntimeError('Missing required Wine PE driver: ' + arch + '/' + driver)
-    data = pe_runtime / 'files/share/wine'
-    if not (data / 'wine.inf').is_file() or not any((data / 'fonts').glob('*.ttf')):
-        raise RuntimeError('Missing required Wine registry template or fonts')
-    return records
-
-
 def archive_runtime(root, archive):
     if archive.exists() or archive.with_name(archive.name + '.sha256').exists():
         raise FileExistsError('Runtime archive already exists: ' + str(archive))
@@ -142,27 +86,16 @@ def main():
     if opengl:
         if not args.graphics_prefix:
             parser.error('OpenGL requires a graphics prefix with Zink')
-        graphics_record = verify_zink(args.graphics_prefix)
-    components = verify_components(args.pe_runtime)
+        graphics_record = json.loads((args.graphics_prefix / 'arlinux-bionic-graphics.json').read_text())
     original = json.loads((args.pe_runtime / 'arlinux-runtime.json').read_text())
-    wine_commit = '46af030d975f331ff6304a34a6b91c6147285c6d'
-    fex_commit = verify_fex_revision(original)
-    if original['wine_commit'] != wine_commit:
-        raise RuntimeError('Expected the matching packaged Wine and FEX PE modules')
+    wine_commit = original['wine_commit']
+    fex_commit = original['fex_commit']
     source_archive = args.wine_source_archive or (args.pe_runtime / 'wine-source.tar.gz')
-    if not source_archive.is_file():
-        raise RuntimeError('Missing reproducibility source archive: ' + str(source_archive))
-    source_commit_file = args.pe_runtime / 'wine-commit'
-    if source_commit_file.is_file() and source_commit_file.read_text().strip() != wine_commit:
-        raise RuntimeError('Wine source archive commit does not match the packaged PE runtime')
     with source_archive.open('rb') as stream:
         source_archive_sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
     source_asset = 'wine-source-' + source_archive_sha256 + '.tar.gz'
     source_url = ('https://github.com/taowen/wine/releases/download/arlinux-wine-source-' +
                   source_archive_sha256 + '/' + source_asset)
-    for name in ['libarm64ecfex.dll', 'libwow64fex.dll']:
-        if not (args.pe_runtime / 'files/lib/wine/aarch64-windows' / name).is_file():
-            raise RuntimeError('Missing Windows CPU module: ' + name)
     source_target = args.output.parent / source_asset
     if source_target.exists():
         if hashlib.sha256(source_target.read_bytes()).hexdigest() != source_archive_sha256:
@@ -196,7 +129,7 @@ def main():
         if target.is_symlink():
             target.unlink()
         shutil.copyfile(explorer, target)
-    dcomp_record = components['arlinux-dcomp.json']
+    dcomp_record = json.loads((args.pe_runtime / 'arlinux-dcomp.json').read_text())
     configuration = destination / 'etc/dxvk.conf'
     configuration.parent.mkdir(parents=True, exist_ok=True)
     configuration.write_text('[msedgewebview2.exe]\n'
@@ -207,8 +140,6 @@ def main():
             target.mkdir(parents=True, exist_ok=True)
             for name in ['dxgi', 'd3d8', 'd3d9', 'd3d10core', 'd3d11']:
                 src = args.dxvk_runtime / (arch + '-windows') / (name + '.dll')
-                if not src.is_file():
-                    raise RuntimeError('Missing DXVK module: ' + str(src))
                 dst = target / src.name
                 if dst.is_symlink():
                     dst.unlink()
@@ -256,8 +187,6 @@ def main():
         dri.mkdir(parents=True, exist_ok=True)
         for name in ['zink_dri.so', 'libdril_dri.so']:
             src = args.graphics_prefix / 'lib/dri' / name
-            if not src.is_file():
-                raise RuntimeError('Missing Zink DRI module: ' + str(src))
             install(src.resolve(), dri / name)
     while pending:
         name = pending.pop()

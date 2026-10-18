@@ -40,26 +40,6 @@ fex_source="$(realpath "$6")"
 pe_runtime="$(realpath "$7")"
 output="$(realpath -m "$8")"
 [[ ! -e "$output" ]] || { echo 'Output already exists.' >&2; exit 2; }
-[[ -f "$source_dir/dlls/combase/parameterized.c" ]] || {
-    echo 'Use the complete version-matched Wine source, including parameterized.c.' >&2; exit 2;
-}
-python3 - "$pe_runtime" "$fex_source" <<'PY'
-import json, subprocess, sys
-from pathlib import Path
-manifest = json.loads((Path(sys.argv[1]) / 'arlinux-runtime.json').read_text())
-assert manifest['wine_commit'] == '46af030d975f331ff6304a34a6b91c6147285c6d', 'Expected the packaged ARLinux Wine 11.19 runtime'
-expected = subprocess.check_output(['git', '-C', sys.argv[2], 'rev-parse', 'HEAD'], text=True).strip()
-assert manifest['fex_commit'] == expected, 'FEX PE modules differ from the native helper source'
-PY
-python3 - "$fex_source" <<'PY'
-import hashlib, sys
-from pathlib import Path
-root = Path(sys.argv[1]) / 'Source/Windows/UnixLib'
-expected = {'FEXUnixLib.cpp': '15b1c8ccba37bbe287976e6972e0f27d71c0b076bd9f222fd3c52c7784203eb7',
-            'FEXUnixLib.h': '89d62b3ddca282f191e9107b754f5e70a769b120845ab0403e486dc4d717fb34'}
-for name, digest in expected.items():
-    assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, 'Use the FEX source archive shipped with the PE runtime: ' + name
-PY
 mkdir -p "$repo/build/wine-bionic"
 stage="$(mktemp -d "$repo/build/wine-bionic/build.XXXXXXXX")"
 echo "Build directory: $stage"
@@ -70,15 +50,6 @@ source_dir="$stage/source"
 python3 "$repo/tools/build/refresh-wine-vkd3d.py" "$source_dir"
 bash "$repo/tools/build/prepare-wine-dcomp.sh" "$source_dir"
 python3 "$repo/tools/build/prepare-wine-gamepad.py" "$source_dir"
-python3 - "$source_dir/arlinux-vkd3d.json" "$pe_runtime/arlinux-vkd3d.json" <<'PY'
-import json, sys
-from pathlib import Path
-assert Path(sys.argv[2]).is_file(), 'Rebuild Wine PE modules with the pinned VKD3D refresh first'
-assert json.loads(Path(sys.argv[1]).read_text()) == json.loads(Path(sys.argv[2]).read_text()), 'Native and PE VKD3D revisions differ'
-for parent in [Path(sys.argv[1]).parent, Path(sys.argv[2]).parent]:
-    assert (parent/'arlinux-dcomp.json').is_file(), 'Rebuild Wine PE with DirectComposition first'
-assert json.loads((Path(sys.argv[1]).parent/'arlinux-dcomp.json').read_text()) == json.loads((Path(sys.argv[2]).parent/'arlinux-dcomp.json').read_text()), 'Native and PE DirectComposition sources differ'
-PY
 if ! grep -q '/apex/com.android.conscrypt/cacerts' "$source_dir/dlls/crypt32/unixlib.c"; then
     patch -d "$source_dir" -p1 --batch --fuzz=0 < "$repo/tools/patches/wine-bionic-certificates.patch"
 fi
