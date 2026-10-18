@@ -25,7 +25,7 @@ class CoordinatorTest(unittest.TestCase):
                 initial=[active,old] if resume else [old]
                 with patch.object(coordinator,'existing',side_effect=[None,{'identity':identity}]), \
                      patch.object(coordinator,'runs',side_effect=[initial,[old],[done,old]]), \
-                     patch.object(module,'gh') as dispatch:
+                     patch.object(module,'gh') as dispatch,patch.object(module,'api',return_value=[]):
                     self.assertEqual(coordinator.component('test',[])['identity'],identity)
                     self.assertEqual(dispatch.call_count,0 if resume else 1)
                     if not resume:

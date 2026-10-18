@@ -37,9 +37,8 @@ def request():
     for name in ('framework',):
         if not re.fullmatch('[0-9a-f]{40}', data.get(name, '')):
             raise ValueError('Expected a pinned ' + name + ' commit')
-    identity = data.pop('identity')
-    actual = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
-    data['identity'] = identity
+    identity = data['identity']
+    actual = hashlib.sha256(json.dumps({k:v for k,v in data.items() if k not in ('identity','cacheSeed')}, sort_keys=True).encode()).hexdigest()
     if identity != actual:
         raise ValueError('Component request identity differs from its inputs')
     expected_arch = 'arm64' if stage['runner'].endswith('-arm') else 'x64'
@@ -95,7 +94,7 @@ def prepare(data, framework):
         run('sudo', 'apt-get', 'install', '-y', '--no-install-recommends', *packages,
             env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'))
         run('python3', '-m', 'venv', root / 'python')
-        run(root / 'python/bin/pip', 'install', 'meson==1.12.0', 'mako==1.3.10', 'packaging==25.0', 'zstandard==0.25.0')
+        run(root / 'python/bin/pip', 'install', 'meson==1.12.0', 'mako==1.3.10', 'packaging==25.0', 'PyYAML==6.0.2', 'zstandard==0.25.0')
         bin_dir = root / 'bin'
         bin_dir.mkdir(exist_ok=True)
         cross = bin_dir / 'aarch64-linux-gnu-pkg-config'
@@ -236,6 +235,9 @@ def import_dependency(root, dependency, visited=None):
                 raise ValueError('Unsafe component capsule path')
         source.extractall(root, filter=capsule_filter)
     decoded.unlink()
+    archive.unlink()
+    for part in record['parts']:
+        (directory/part['name']).unlink()
 
 
 def build(data, framework):
@@ -248,11 +250,18 @@ def build(data, framework):
             shutil.copyfile(Path(os.environ['WINDIR'])/'Fonts'/name, output/name)
         return
     visited = set()
+    if data.get('cacheSeed'):
+        # Restore a complete prior build cache, never an installed application
+        # or an old runtime repack. Cache.stage still checks every current input,
+        # output and referenced compiler tree before allowing a hit.
+        import_dependency(root,data['cacheSeed'],visited)
     for dependency in data['dependencies']:
         import_dependency(root, dependency, visited)
     config = root / 'product.json'
     if stage in LINUX_GPU:
-        env = dict(os.environ, ARLINUX_CACHE_DIR=str(root/'cache/rootfs'))
+        env = dict(os.environ, ARLINUX_CACHE_DIR=str(root/'cache/rootfs'),
+                   CCACHE_DIR=str(root/'cache/ccache'),CCACHE_BASEDIR=str(framework))
+        run('ccache','--max-size','2G',env=env)
         run('bash', framework/'build.sh', 'gpu', '--component', stage.removeprefix('linux-'), env=env)
     elif stage in ROOTFS:
         config.write_text(json.dumps(dict(format=1, framework=str(framework))))

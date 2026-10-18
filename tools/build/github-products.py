@@ -96,6 +96,28 @@ class Coordinator:
         run=next((r for r in previous_runs if r['displayTitle']==title and r['status']!='completed'),None)
         ignored={r['databaseId'] for r in previous_runs if r['status']=='completed'}
         if not run:
+            # Capsules contain verified build receipts, including references.
+            # They can seed a new run after an unrelated framework commit; the
+            # producer's input hashes, not this coordinator, decide cache hits.
+            if stage not in ('yibu','debian','arch','omarchy','plasma','lxqt','windows-fonts','wine-product'):
+                releases=api(f'repos/{repository}/releases?per_page=100')
+                candidate=next((r for r in releases if r['tag_name'].startswith('arlinux-'+stage+'-') and
+                                any(a['name']=='component.json' for a in r['assets'])),None)
+                if candidate:
+                    asset=next(a for a in candidate['assets'] if a['name']=='component.json')
+                    digest=asset.get('digest','')
+                    if digest.startswith('sha256:'):
+                        request['cacheSeed']=dict(repository=repository,
+                            identity=candidate['tag_name'][len('arlinux-'+stage+'-'):],
+                            manifestUrl=asset['browser_download_url'],manifestSha256=digest[7:])
+                        # The tag contains a short identity; read the verified manifest.
+                        file=self.state/request['identity']/'seed.json'
+                        download(asset['browser_download_url'],file,digest[7:])
+                        seed=json.loads(file.read_text())
+                        if seed['stage']!=stage:
+                            raise ValueError('Cache seed belongs to a different component')
+                        request['cacheSeed']['identity']=seed['identity']
+            payload=json.dumps(request,sort_keys=True)
             gh('workflow','run',self.plan['workflow'],'--repo',repository,'-f','request='+payload)
             print('START '+repository+'/'+stage,flush=True)
         else:

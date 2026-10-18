@@ -38,6 +38,8 @@ Yibu 在 ARM64 上原生安装 ARM64 软件包，不使用 QEMU 模拟 ARM64。
 - 固定下载单独使用仓库级共享 Cache key，不在每个 job 的缓存里重复存放
   NDK、MinGW、Mono 和 Gecko。Wine 的大型完整工作树通过组件产物交付，
   Actions 缓存主要保留有容量上限的增量编译结果。
+- 新请求可以从上一份组件产物恢复完整构建缓存，但必须重新验证当前输入、
+  全部输出和工具引用的哈希。框架中无关文档的提交不会迫使未变的组件重新编译。
 - 各仓库的薄工作流从 `tools/build/github-component.workflow.yml` 生成，
   `tools/build/install-github-workflows.py` 负责同步；不复制构建 recipe。
 - Linux runner 仍只通过 `build.sh` 分派至本仓库 `tools/build/` 的同一套
