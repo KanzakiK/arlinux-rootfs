@@ -15,6 +15,21 @@ spec.loader.exec_module(module)
 
 
 class CoordinatorTest(unittest.TestCase):
+    def test_cancelled_duplicate_does_not_hide_active_or_successful_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            plan={'workflow':'component.yml','stages':{'test':{'repository':'owner/component'}}}
+            coordinator=module.Coordinator(plan,'f'*40,None,Path(temporary),poll=0)
+            request=dict(format=2,stage='test',framework='f'*40,android=None,dependencies=[],sourceInputs={})
+            title='arlinux/test/'+module.request_identity(request)
+            active=dict(databaseId=1,displayTitle=title,status='in_progress',conclusion=None,url='active')
+            cancelled=dict(active,databaseId=2,status='completed',conclusion='cancelled',url='duplicate')
+            done=dict(active,status='completed',conclusion='success')
+            result={'identity':'verified'}
+            with patch.object(coordinator,'existing',side_effect=[None,result]), \
+                 patch.object(coordinator,'runs',side_effect=[[active],[cancelled,active],[cancelled,done]]), \
+                 patch.object(module,'source_inputs',return_value={}):
+                self.assertEqual(coordinator.component('test',[]),result)
+
     def test_concurrent_coordinators_dispatch_identical_request_once(self):
         from concurrent.futures import ThreadPoolExecutor
         with tempfile.TemporaryDirectory() as temporary:

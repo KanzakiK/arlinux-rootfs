@@ -165,7 +165,9 @@ class Coordinator:
             if self.stopped.is_set():
                 raise RuntimeError('Local coordinator stopped; remote workflows remain available to resume')
             runs=self.runs(repository)
-            run=next((r for r in runs if r['displayTitle']==title and r['databaseId'] not in ignored),None)
+            matches=[r for r in runs if r['displayTitle']==title and r['databaseId'] not in ignored]
+            run=next((r for r in matches if r['conclusion']=='success'),
+                     next((r for r in matches if r['status']!='completed'), matches[0] if matches else None))
             if run:
                 status=run['status']+'/'+str(run['conclusion'])
                 if status!=previous:
