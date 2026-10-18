@@ -204,7 +204,7 @@ def host_path(path):
     path = Path(path).resolve()
     files = Path(os.environ['BIONICX_FILES']).resolve()
     if path.is_relative_to('/arlinux-shared'):
-        return files/'shared'/path.relative_to('/arlinux-shared')
+        return files/'arlinux-shared'/path.relative_to('/arlinux-shared')
     if path.is_relative_to(files):
         return path
     return Path(os.environ['BIONICX_ROOTFS'])/str(path).lstrip('/')
@@ -213,8 +213,8 @@ def host_path(path):
 def guest_path(path):
     files = Path(os.environ['BIONICX_FILES']).resolve()
     path = Path(path)
-    if path.is_relative_to(files/'shared'):
-        return Path('/arlinux-shared')/path.relative_to(files/'shared')
+    if path.is_relative_to(files/'arlinux-shared'):
+        return Path('/arlinux-shared')/path.relative_to(files/'arlinux-shared')
     root = Path(os.environ['BIONICX_ROOTFS'])
     if path.is_relative_to(root):
         return Path('/')/path.relative_to(root)

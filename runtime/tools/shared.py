@@ -1,6 +1,7 @@
 """App-owned cross-instance downloads; never place accounts or prefixes here.
 
-The Android host exposes its private files/shared directory at /arlinux-shared.
+The Android host exposes files/arlinux-shared at /arlinux-shared, independently
+of instance selection, deletion and reinstall.
 There is deliberately no per-HOME fallback: an old host must be upgraded.
 """
 from contextlib import contextmanager
