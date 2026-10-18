@@ -69,7 +69,7 @@ cmake -S "$base/Vulkan-Headers-1.4.357" -B "$base/headers-build-1.4.357" -DCMAKE
 cmake --install "$base/headers-build-1.4.357"
 python3 - "$mesa" "$base" "$native" "$ndk" "$protocols" "$driver" "$opengl" <<'PY'
 from pathlib import Path
-import shutil, sys
+import re, shutil, sys
 mesa, base, native, ndk, protocols = map(Path, sys.argv[1:6])
 source = base / 'mesa'
 if (sys.argv[6] != 'none' or sys.argv[7] == 'zink') and not source.exists():
@@ -83,8 +83,20 @@ if (sys.argv[6] != 'none' or sys.argv[7] == 'zink') and not source.exists():
     p.write_text(p.read_text().replace('#if DETECT_OS_ANDROID', '#if defined(__ANDROID__)')
                  .replace('#elif DETECT_OS_ANDROID', '#elif defined(__ANDROID__)'))
 prefix = base / 'prefix'
+# MSYS libtool metadata embeds /c/... paths. Adapt a private link view instead
+# of modifying the Windows-produced prefix (which remains a verified input).
+libdir = prefix / 'lib'
+native_libdir = native / 'lib'
+msys_native = re.sub(r'^/mnt/([a-z])/', r'/\1/', str(native))
+for p in native_libdir.iterdir():
+    target = libdir / p.name
+    if p.suffix == '.la':
+        target.write_text(p.read_text().replace(msys_native, str(native)).replace(str(native), str(prefix)))
+    elif ('.so' in p.name or p.suffix == '.a') and not target.exists():
+        target.symlink_to(p)
 for p in (native / 'lib/pkgconfig').glob('*.pc'):
-    value = p.read_text().replace('/c/', '/mnt/c/')
+    value = p.read_text().replace(msys_native, str(native))
+    value = re.sub(r'^libdir=.*$', 'libdir=' + str(libdir), value, flags=re.M)
     (prefix / 'lib/pkgconfig' / p.name).write_text(value)
 pc = protocols / 'arlinux-wsi-protocols.pc'
 (prefix / 'lib/pkgconfig' / pc.name).write_text(pc.read_text().replace('${pcfiledir}', str(protocols)))
