@@ -20,7 +20,7 @@ def rootfs_sources(framework, product):
                  'third_party/android-headers', 'distributions/' + product):
         inputs[name] = source_state(framework / name)
     for name in ('linux-assets.sh', 'linux-gpu.sh', 'linux-aarch64.ini',
-                 'mesa-debs.py', 'mesa-arch.py', 'spark-store-deb.py', 'doctor.sh',
+                 'mesa-debs.py', 'mesa-arch.py', 'doctor.sh',
                  'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py', 'artifact_download.py'):
         inputs['tools/build/' + name] = inventory(framework / 'tools/build' / name)
     return inputs
@@ -90,16 +90,14 @@ def main():
         snapshot = packages / 'packages/snapshot.tar'
         inputs = dict(common, dependencies=cache.records.copy(), snapshot=digest(snapshot),
             transforms={name: inventory(android / 'tools/build' / name) for name in (
-                'webview-store-bundle.py', 'desktop-runtime.py', 'verify-webview-store-bundle.py')})
+                'desktop-runtime.py', 'verify-webview-store-bundle.py')})
         def desktop(out):
             out.mkdir()
             invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'seed.zip')
             invoke('python3', 'tools/seal-rootfs.py', 'seal', out / 'seed.zip', snapshot, out / 'offline.zip')
+            shutil.copyfile(out / 'offline.zip', out / 'default.zip')
             if product == 'yibu':
-                invoke('python3', android / 'tools/build/webview-store-bundle.py', out / 'offline.zip', out / 'default.zip')
                 invoke('python3', android / 'tools/build/verify-webview-store-bundle.py', out / 'default.zip', '--framework', framework)
-            else:
-                shutil.copyfile(out / 'offline.zip', out / 'default.zip')
             (out / 'seed.zip').unlink()
             (out / 'offline.zip').unlink()
         result = cache.stage('desktop', inputs, desktop)

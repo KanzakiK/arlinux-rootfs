@@ -59,8 +59,7 @@ def verify(path, framework=None, receipt=None):
                 or not re.fullmatch(r'[0-9a-f]{64}', str(stage.get('inputs', '')))):
             raise ValueError('Desktop does not match its pipeline build-cache receipt')
     required = {
-        # The WebView backend can install catalog-verified packages using
-        # native APT when the optional Spark CLI is absent.
+        # Android verifies catalog packages and invokes the guest's native APT.
         'usr/bin/apt-get',
         'usr/bin/dpkg',
         'usr/bin/dpkg-deb',
@@ -103,8 +102,9 @@ def verify(path, framework=None, receipt=None):
                     if name in expected_sources:
                         if not member.isfile() or hashlib.file_digest(root.extractfile(member), 'sha256').hexdigest() != expected_sources[name]:
                             raise ValueError('Stale runtime source in bundle: ' + name)
-                    if name == 'opt/spark-store/bin' or name.startswith('opt/spark-store/bin/'):
-                        raise ValueError('Electron payload remains: ' + name)
+                    if (name in ('opt/spark-store', 'opt/durapps/spark-store', 'usr/lib/arlinux/spark-store-packages')
+                            or name.startswith(('opt/spark-store/', 'opt/durapps/spark-store/', 'usr/lib/arlinux/spark-store-packages/'))):
+                        raise ValueError('Linux Spark Store payload remains: ' + name)
                     if name in required:
                         if not (member.isfile() or member.issym() or member.islnk()):
                             raise ValueError('Required runtime is not a file: ' + name)

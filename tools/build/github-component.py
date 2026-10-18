@@ -317,9 +317,14 @@ def publish(data, framework):
         for link in ([path] if path.is_symlink() else path.rglob('*') if path.is_dir() else []):
             if not link.is_symlink():
                 continue
-            target = link.resolve(strict=True)
+            # Source checkouts may intentionally contain dangling links (for
+            # example Mesa's .github/AGENTS.md). Preserve their link text;
+            # they do not introduce an additional build reference.
+            target = link.resolve(strict=False)
             if not target.is_relative_to(root):
                 raise ValueError('Build reference is outside the component workspace')
+            if not target.exists():
+                continue
             if any(target == parent or target.is_relative_to(parent) for parent in paths):
                 continue
             if any(target.is_relative_to(parent) for parent in (

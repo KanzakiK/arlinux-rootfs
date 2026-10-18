@@ -36,6 +36,7 @@ class CapsuleTest(unittest.TestCase):
                 readonly.write_bytes(b'readonly git object fixture')
                 readonly.chmod(0o444)
                 (output/'absolute-link').symlink_to(binary)
+                (output/'dangling-source-link').symlink_to('missing-source-note.md')
                 headers=root/'generated-source'
                 headers.mkdir()
                 (headers/'abi.h').write_text('matching ABI')
@@ -74,6 +75,8 @@ class CapsuleTest(unittest.TestCase):
             self.assertTrue(os.access(output/'binary',os.X_OK))
             self.assertEqual((output/'git-object.idx').stat().st_mode & 0o777,0o444)
             self.assertEqual(os.readlink(output/'absolute-link'),str(output/'binary'))
+            self.assertEqual(os.readlink(output/'dangling-source-link'),'missing-source-note.md')
+            self.assertFalse((output/'dangling-source-link').exists())
             (output/'binary').write_bytes(b'corrupt')
             with self.assertRaisesRegex(RuntimeError,'dependency artifact'):
                 restored.stage('bionic-deps',{'source':'one'},lambda _:self.fail('Unexpected rebuild'))
