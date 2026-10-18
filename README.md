@@ -1,6 +1,6 @@
 # Arlinux rootfs
 
-Arlinux rootfs is the open Linux side of Arlinux. It cross-builds AArch64 Linux
+Arlinux rootfs is the open Linux side of Arlinux. It builds AArch64 Linux
 root filesystems into distribution bundles that can be imported by the Arlinux
 Android application. Build inputs and component ownership are defined in [BUILD.md](docs/BUILD.md).
 
@@ -12,15 +12,15 @@ A bundle contains:
 - a launch profile and a versioned manifest.
 
 The project is Linux-native. Its build and distribution interfaces use Bash,
-Python, and standard Linux tools; there are no Windows or PowerShell build
-paths in this repository or its distribution repositories.
+Python, and standard Linux tools. Components compile on GitHub-hosted Linux
+runners in their respective repositories.
 
 ## Build and release
 
 The only build and release guide is [docs/BUILD.md](docs/BUILD.md).
-`build.sh` dispatches independent rootfs and Bionic Wine pipelines on Linux/WSL.
-The Android repository's `build.ps1` coordinates the same stages for Debug and
-Release APKs. Script ownership does not combine these separate artifacts.
+`build.sh` coordinates independent component workflows on GitHub-hosted Linux
+runners. Distribution bundles and Bionic Wine remain separate products. See
+the guide for the current runner migration status and checkout requirements.
 
 Prebuilt ZIP bundles are published as release assets in each distribution's
 own GitHub repository: [Debian](https://github.com/taowen/arlinux-debian/releases),
