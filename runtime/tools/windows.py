@@ -88,7 +88,7 @@ def install(archive, expected):
 def runtime(identity=None):
     home = runtime_storage()
     if identity is None:
-        identity = json.loads((home/'current.json').read_text())['sha256']
+        identity = os.environ.get('ARLINUX_WINE_CANDIDATE') or json.loads((home/'current.json').read_text())['sha256']
     if not isinstance(identity, str) or not re.fullmatch('[0-9a-f]{64}', identity):
         raise ValueError('Invalid runtime identity')
     root = home/identity
