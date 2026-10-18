@@ -44,7 +44,7 @@ def main():
     android = framework
     env = {name: value for name, value in os.environ.items() if name in (
         'PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
-        'http_proxy', 'https_proxy', 'no_proxy')}
+        'http_proxy', 'https_proxy', 'no_proxy', 'ARLINUX_CACHE_DIR')}
     cache_root = framework / 'build/pipeline'
     cache_root.mkdir(parents=True, exist_ok=True)
     with (cache_root / '.rootfs.lock').open('w') as lock:
@@ -59,7 +59,7 @@ def main():
         common = dict(engine=digest(__file__), sources=rootfs_sources(framework, product),
                       gpu=gpu, distribution=product)
         def assets(out):
-            invoke('bash', 'tools/build/linux-assets.sh', '--rebuild', product)
+            invoke('bash', 'tools/build/linux-assets.sh', *(['--rebuild'] if args.rebuild else []), product)
             shutil.copytree(framework / 'distributions' / product / 'build/assets', out, symlinks=True)
         assets = cache.stage('linux-assets', common, assets)
         if args.target == 'linux-assets':
