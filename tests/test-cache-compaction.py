@@ -10,6 +10,16 @@ spec.loader.exec_module(module)
 
 
 class CompactionTest(unittest.TestCase):
+    def test_reference_to_parent_directory_keeps_its_children(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            stage=root/'stage'
+            old=stage/('b'*64)/('generation-'+'2'*32)
+            old.mkdir(parents=True)
+            record=dict(inputs='a'*64,generation='generation-'+'1'*32,references={str(stage): {}})
+            self.assertEqual(module.compact(root,{'stage': record}),0)
+            self.assertTrue(old.is_dir())
+
     def test_prunes_obsolete_generations_but_keeps_live_and_referenced_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

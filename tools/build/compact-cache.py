@@ -18,7 +18,8 @@ def compact(root, records):
         resolved = path.resolve()
         if not resolved.is_relative_to(root):
             raise ValueError('Cache cleanup escapes pipeline directory')
-        if any(reference.is_relative_to(resolved) for reference in references):
+        if any(reference.is_relative_to(resolved) or resolved.is_relative_to(reference)
+               for reference in references):
             return
         shutil.rmtree(path)
         removed += 1
