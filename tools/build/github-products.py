@@ -4,6 +4,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -101,7 +102,7 @@ class Coordinator:
             # producer's input hashes, not this coordinator, decide cache hits.
             if stage not in ('yibu','debian','arch','omarchy','plasma','lxqt','windows-fonts','wine-product'):
                 releases=api(f'repos/{repository}/releases?per_page=100')
-                candidate=next((r for r in releases if r['tag_name'].startswith('arlinux-'+stage+'-') and
+                candidate=next((r for r in releases if re.fullmatch(re.escape('arlinux-'+stage+'-')+'[0-9a-f]{24}',r['tag_name']) and
                                 any(a['name']=='component.json' for a in r['assets'])),None)
                 if candidate:
                     asset=next(a for a in candidate['assets'] if a['name']=='component.json')
