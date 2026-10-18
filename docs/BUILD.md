@@ -54,3 +54,22 @@ compression-only benchmark of a real 638,197,760-byte tar stream measured level
 compression timings under local load, not total hosted workflow timings.
 Do not maintain redundant feature/file presence lists or rescan the same rootfs
 at multiple packaging layers. Publish only the exact validated bundle.
+
+Linux GPU cross-compilation invokes ccache explicitly in the Meson cross file
+and libhybris CC/CXX commands. The hosted test compiles C and C++ twice in an
+isolated cache and requires two hits with identical object files. This changes
+compiler caching, not Mesa drivers or its X11/Wayland platform selection.
+Distribution-only jobs skip deletion of unrelated preinstalled runner SDKs.
+
+Actions-restored stage generations take precedence over older release seeds;
+the ordinary pipeline input/output verification still decides whether they can
+be reused. This prevents an older seed overwriting restored Mesa outputs and
+triggering an unnecessary rebuild and published-output mismatch.
+The [Mesa verification](https://github.com/taowen/mesa/actions/runs/39150751054/attempts/2)
+passed in 75 and 62 seconds overall, with build steps of 2 and 1 seconds and
+identical published output. The [Yibu verification](https://github.com/taowen/arlinux-yibu/actions/runs/39150885091/attempts/2)
+passed in 99 and 75 seconds, with a 9-second build step on the repeat.
+
+Capsule imports stream decompression into tar extraction without writing an
+intermediate full tar. Hosted tests retain executable/read-only modes, symlinks
+and hardlinks across repeated imports and reject corrupt or escaping archives.
