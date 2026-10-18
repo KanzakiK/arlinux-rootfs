@@ -12,8 +12,8 @@ A bundle contains:
 - a launch profile and a versioned manifest.
 
 The project is Linux-native. Its build and distribution interfaces use Bash,
-Python, and standard Linux tools; there are no Windows or PowerShell build
-paths in this repository or its distribution repositories.
+Python, and standard Linux tools. Components compile on GitHub-hosted Linux
+runners in their respective repositories.
 
 ## Build and release
 
