@@ -163,6 +163,16 @@ def import_dependency(root, dependency, visited=None):
         (directory/part['name']).unlink()
 
 
+def restore_seed(root, framework, data, visited):
+    if not data.get('cacheSeed'):
+        return
+    stage_cache = framework/'build/pipeline'/data['stage']
+    if any(stage_cache.glob('*/receipt.json')):
+        print('Keep restored Actions cache before release seed: '+data['stage'], flush=True)
+        return
+    import_dependency(root, data['cacheSeed'], visited)
+
+
 def build(data, framework):
     root = Path(os.environ['ARLINUX_WORKSPACE'])
     stage = data['stage']
@@ -170,11 +180,7 @@ def build(data, framework):
         for test in sorted((framework/'tests').glob('test-*.py')):
             run(sys.executable, test)
     visited = set()
-    if data.get('cacheSeed'):
-        # Restore a complete prior build cache, never an installed application
-        # or an old runtime repack. Cache.stage still checks every current input,
-        # output and referenced compiler tree before allowing a hit.
-        import_dependency(root,data['cacheSeed'],visited)
+    restore_seed(root, framework, data, visited)
     for dependency in data['dependencies']:
         import_dependency(root, dependency, visited)
     config = root / 'product.json'
