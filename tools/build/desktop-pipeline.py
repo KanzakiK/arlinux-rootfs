@@ -103,7 +103,7 @@ def publish_result(args, config, cache, result):
     pending.replace(args.output)
     receipt = dict(format=1, desktopSha256=digest(args.output), configSha256=digest(args.config), stages=cache.records)
     draft = args.output.with_suffix('.json.part')
-    draft.write_text(json.dumps(receipt, indent=2) + '\n')
+    draft.write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
     draft.replace(args.output.with_suffix('.json'))
     print('Linux rootfs ready: ' + str(args.output), flush=True)
 

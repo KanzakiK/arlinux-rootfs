@@ -6,7 +6,12 @@ import subprocess
 
 def source_inputs(repo, revision, stage, plan):
     distribution = stage if stage in ('yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt') else 'yibu'
-    paths = ('build.sh', 'tools', 'runtime', 'examples', 'third_party', 'distributions/'+distribution)
+    if stage in ('linux-mesa', 'linux-hybris'):
+        paths = ('build.sh', 'tools/build/github-component.py', 'tools/build/component_inputs.py',
+                 'tools/build/linux-gpu.sh', 'tools/build/linux-gpu-component.py',
+                 'tools/build/linux-aarch64.ini', 'tools/build/pipeline_cache.py', 'third_party')
+    else:
+        paths = ('build.sh', 'tools', 'runtime', 'examples', 'third_party', 'distributions/'+distribution)
     records = subprocess.check_output(['git', '-C', str(repo), 'ls-tree', '-r', '-z', revision, '--', *paths])
     files = {}
     for record in records.split(b'\0'):
