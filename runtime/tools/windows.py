@@ -99,6 +99,16 @@ def runtime(identity=None):
 
 
 def ensure_runtime():
+    # The debug host supplies an instance-scoped candidate selection. It uses
+    # the same verified archive installer and never changes the public latest
+    # lookup or its cache. Missing candidates fail instead of falling back.
+    candidate = os.environ.get('ARLINUX_WINE_CANDIDATE', '')
+    if candidate:
+        if not re.fullmatch('[0-9a-f]{64}', candidate):
+            raise ValueError('Invalid candidate Wine SHA-256')
+        if not (runtime_storage()/candidate).exists():
+            install(shared.directory('downloads')/(candidate+'.tar.gz'), candidate)
+        return runtime(candidate)
     # A changed release pin installs a new immutable bundle before selecting it.
     rows = [line.split('\t') for line in MANIFEST.read_text().splitlines()
             if line.strip() and not line.startswith('#')]
