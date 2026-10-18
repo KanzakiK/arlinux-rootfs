@@ -13,6 +13,7 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+from artifact_download import download
 
 
 ROOTFS = {'yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'}
@@ -45,21 +46,6 @@ def request():
     if os.environ.get('RUNNER_ARCH', '').lower() != expected_arch:
         raise ValueError('Unexpected hosted runner architecture')
     return data, framework
-
-
-def download(url, output, expected):
-    if not re.fullmatch('[0-9a-f]{64}', expected):
-        raise ValueError('Download needs a pinned SHA-256')
-    output.parent.mkdir(parents=True, exist_ok=True)
-    if output.is_file() and sha(output) == expected:
-        return output
-    temporary = output.with_suffix(output.suffix + '.part')
-    with urllib.request.urlopen(url, timeout=120) as source, temporary.open('wb') as dest:
-        shutil.copyfileobj(source, dest)
-    if sha(temporary) != expected:
-        raise ValueError('Download SHA-256 mismatch: ' + url)
-    temporary.replace(output)
-    return output
 
 
 def prepare(data, framework):
@@ -230,6 +216,14 @@ def import_dependency(root, dependency, visited=None):
             original_link = member.linkname
             member = member.replace(linkname=os.path.relpath(target, root/Path(member.name).parent))
         filtered = tarfile.data_filter(member, destination)
+        if filtered.isfile():
+            # Git pack objects are read-only. Restoring over a prior Actions
+            # cache must replace the file before writing, then restore its
+            # exact original mode for the build-cache receipt to match.
+            existing=Path(destination)/filtered.name
+            if existing.is_file() or existing.is_symlink():
+                existing.unlink()
+            filtered=filtered.replace(mode=member.mode & 0o777)
         return filtered.replace(linkname=original_link) if original_link else filtered
     with tarfile.open(decoded) as source:
         # Capsules use paths relative to the one fixed build workspace.

@@ -8,6 +8,7 @@ import struct
 import subprocess
 import tempfile
 import urllib.request
+from artifact_download import download
 
 URL = 'https://cdn.d.store.deepinos.org.cn/aarch64-store/tools/spark-store/spark-store_5.3.2_arm64.deb'
 SHA256 = '6c4ce66ab3523bf8c48276d956f7dfd8cd7682581e64cbc2a0baf803c456ffab'
@@ -48,11 +49,7 @@ def patch_asar(path):
 
 
 def build(source, output):
-    if not source.is_file():
-        source.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(URL, source)
-    if hashlib.sha256(source.read_bytes()).hexdigest() != SHA256:
-        raise ValueError('Spark Store source package checksum mismatch')
+    download(URL,source,SHA256)
     with tempfile.TemporaryDirectory(prefix='arlinux-spark-') as directory:
         root = Path(directory) / 'package'
         subprocess.run(['dpkg-deb', '-R', str(source), str(root)], check=True)

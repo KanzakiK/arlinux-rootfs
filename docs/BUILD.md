@@ -40,6 +40,8 @@ Yibu 在 ARM64 上原生安装 ARM64 软件包，不使用 QEMU 模拟 ARM64。
   Actions 缓存主要保留有容量上限的增量编译结果。
 - 新请求可以从上一份组件产物恢复完整构建缓存，但必须重新验证当前输入、
   全部输出和工具引用的哈希。框架中无关文档的提交不会迫使未变的组件重新编译。
+- 主机下载后的产品也保存哈希收据；同一产品再次构建 APK 时先校验本地缓存，
+  不重复下载完整 rootfs 或 Wine。修改或损坏的文件会触发重新下载。
 - 各仓库的薄工作流从 `tools/build/github-component.workflow.yml` 生成，
   `tools/build/install-github-workflows.py` 负责同步；不复制构建 recipe。
 - Linux runner 仍只通过 `build.sh` 分派至本仓库 `tools/build/` 的同一套

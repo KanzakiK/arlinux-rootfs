@@ -21,7 +21,7 @@ def rootfs_sources(framework, product):
         inputs[name] = source_state(framework / name)
     for name in ('linux-assets.sh', 'linux-gpu.sh', 'linux-aarch64.ini',
                  'mesa-debs.py', 'mesa-arch.py', 'spark-store-deb.py', 'doctor.sh',
-                 'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py'):
+                 'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py', 'artifact_download.py'):
         inputs['tools/build/' + name] = inventory(framework / 'tools/build' / name)
     return inputs
 

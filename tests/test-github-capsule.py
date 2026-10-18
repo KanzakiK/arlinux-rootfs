@@ -32,6 +32,9 @@ class CapsuleTest(unittest.TestCase):
                 binary=output/'binary'
                 binary.write_bytes(b'compiled ELF fixture')
                 binary.chmod(0o755)
+                readonly=output/'git-object.idx'
+                readonly.write_bytes(b'readonly git object fixture')
+                readonly.chmod(0o444)
                 (output/'absolute-link').symlink_to(binary)
                 headers=root/'generated-source'
                 headers.mkdir()
@@ -65,9 +68,11 @@ class CapsuleTest(unittest.TestCase):
                            manifestSha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
             with patch.object(component,'download',download):
                 component.import_dependency(root,reference)
+                component.import_dependency(root,reference)
             restored=ComponentCache(pipeline,target='wine-graphics',require_dependencies=True)
             output=restored.stage('bionic-deps',{'source':'one'},lambda _:self.fail('Unexpected rebuild'))
             self.assertTrue(os.access(output/'binary',os.X_OK))
+            self.assertEqual((output/'git-object.idx').stat().st_mode & 0o777,0o444)
             self.assertEqual(os.readlink(output/'absolute-link'),str(output/'binary'))
             (output/'binary').write_bytes(b'corrupt')
             with self.assertRaisesRegex(RuntimeError,'dependency artifact'):

@@ -1,9 +1,11 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools/build'))
 spec=importlib.util.spec_from_file_location('coordinator',Path(__file__).resolve().parents[1]/'tools/build/github-products.py')
 module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

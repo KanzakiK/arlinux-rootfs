@@ -13,6 +13,7 @@ import tempfile
 import time
 from threading import Event
 import urllib.request
+from artifact_download import download,sha256_file
 
 
 def gh(*args, optional=False):
@@ -34,16 +35,6 @@ def gh(*args, optional=False):
 def api(path, optional=False):
     value = gh('api', path, optional=optional)
     return json.loads(value) if value else None
-
-
-def download(url, output, expected):
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=120) as source, output.open('wb') as dest:
-        import shutil
-        shutil.copyfileobj(source,dest)
-    with output.open('rb') as stream:
-        if hashlib.file_digest(stream,'sha256').hexdigest() != expected:
-            raise ValueError('Downloaded component does not match its SHA-256')
 
 
 class Coordinator:
@@ -181,6 +172,16 @@ class Coordinator:
 
 
 def fetch_product(reference, output):
+    receipt=output/'download-receipt.json'
+    try:
+        saved=json.loads(receipt.read_text())
+        if saved['reference']==reference and saved['files'] and all(
+                (output/name).is_file() and hashlib.sha256((output/name).read_bytes()).hexdigest()==expected
+                for name,expected in saved['files'].items()):
+            print('OK verified local product '+output.name,flush=True)
+            return
+    except (OSError,ValueError,KeyError):
+        pass
     import zstandard
     with tempfile.TemporaryDirectory(prefix='arlinux-product-') as temporary:
         directory=Path(temporary)
@@ -245,6 +246,9 @@ def fetch_product(reference, output):
             expected=(output/(archive.name+'.sha256')).read_text().split()[0]
             if digest!=expected:
                 raise ValueError('Wine checksum does not match the downloaded product')
+        files={p.relative_to(output).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
+               for p in output.rglob('*') if p.is_file() and p!=receipt}
+        receipt.write_text(json.dumps(dict(format=1,reference=reference,files=files),indent=2)+'\n')
 
 
 def main():
