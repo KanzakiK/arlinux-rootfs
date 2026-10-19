@@ -37,8 +37,15 @@ seed_rootfs() (
     flock 9
     archive="$entry.tar.zst"
     checksum="$entry.sha256"
-    if [[ "$rebuild" == true || ! -f "$archive" || ! -f "$checksum" ]] ||
-       ! (cd "$base" && sha256sum --check --status "${checksum##*/}"); then
+    cached=false
+    if [[ "$rebuild" != true && -f "$archive" && -f "$checksum" ]]; then
+        read -r expected name < "$checksum"
+        if [[ "$expected" =~ ^[0-9a-f]{64}$ && "$name" == "${archive##*/}" ]] &&
+           [[ "$(sha256sum "$archive" | cut -d' ' -f1)" == "$expected" ]]; then
+            cached=true
+        fi
+    fi
+    if [[ "$cached" != true ]]; then
         temporary="$(mktemp -d "$entry.XXXXXXXX")"
         trap 'rm -rf -- "$temporary"' EXIT
         "$product_dir/tools/seed.sh" "$temporary/rootfs"
