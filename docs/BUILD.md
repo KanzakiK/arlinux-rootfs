@@ -28,6 +28,15 @@ The unmodified distribution seed is stored separately as a content-addressed
 never their root-owned extracted trees. Every reuse verifies the archive before
 extracting guest ownership and links. Runtime-only edits can therefore reuse
 the base seed even when the assembled Linux-assets stage changes.
+
+Hosted verification used [run 39196689519](https://github.com/taowen/arlinux-yibu/actions/runs/39196689519)
+to populate the seed archive, then [run 39197632409](https://github.com/taowen/arlinux-yibu/actions/runs/39197632409)
+with a changed Steam Python launcher. Both workflows passed: 623 seconds and
+173 seconds overall, with dispatcher steps of 530 and 73 seconds. The second
+log explicitly reports `verified archive cache` for the seed and `OK cached
+rootfs-packages` for the APT snapshot. It still rebuilt Linux assets and sealed
+the changed runtime into a new distribution; this was not a coordinator-only
+cache lookup or reuse of an installed instance. Network/runner time is included.
 After successful publication, the workflow compacts the pipeline cache to the
 current input identity and generation of each completed stage. Older directories
 still referenced by the current build remain in place. This prevents restored
