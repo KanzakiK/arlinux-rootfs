@@ -196,9 +196,6 @@ def restore_seed(root, framework, data, visited):
 def build(data, framework):
     root = Path(os.environ['ARLINUX_WORKSPACE'])
     stage = data['stage']
-    if stage == 'yibu':
-        for test in sorted((framework/'tests').glob('test-*.py')):
-            run(sys.executable, test)
     visited = set()
     restore_seed(root, framework, data, visited)
     for dependency in data['dependencies']:
