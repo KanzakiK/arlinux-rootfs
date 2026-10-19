@@ -165,8 +165,8 @@ def install_powerbi(root, prefix):
                    for path in native_shims)
 
     if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
-        print('Installing Microsoft .NET 4.0 and 4.8…', flush=True)
         if not native_clr.is_file() or not microsoft_shims():
+            print('Installing Microsoft .NET 4.0…', flush=True)
             # Remove Wine's placeholder registration only when the real CLR
             # is absent. Do not claim an installed Microsoft version.
             if not native_clr.is_file():
@@ -189,13 +189,23 @@ def install_powerbi(root, prefix):
                 raise RuntimeError('Microsoft .NET 4.0 did not install both CLR activation shims')
             run(reg, 'add', r'HKCU\Software\Wine\DllOverrides', '/v', 'mscoree',
                 '/t', 'REG_SZ', '/d', 'native,builtin', '/f')
-        run(download('dotnet48'), '/q', '/norestart', '/log', r'C:\dotnet48.log',
-            environment={'WINEDLLOVERRIDES': 'fusion=b'})
-        release = run(reg, 'query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
-                      '/v', 'Release', '/reg:64', capture=True)
+        print('Installing Microsoft .NET 4.8…', flush=True)
+        installer = download('dotnet48')
+        # Win10 installers assume the OS already includes .NET 4.8. Use the
+        # Winetricks Win7 installation path without changing the desktop OS.
+        with installer_windows_version(root, prefix,
+                (installer.name, 'Setup.exe', 'msiexec.exe'), 'win7'):
+            run(installer, '/q', '/norestart', '/log', r'C:\dotnet48.log',
+                environment={'WINEDLLOVERRIDES': 'fusion=b'})
+        release = windows.run(root, prefix, reg,
+                              ['query', r'HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full',
+                               '/v', 'Release', '/reg:64'], env=env, capture=True, timeout=3600)
+        if release.returncode not in (0, 1):
+            release.check_returncode()
         match = re.search(r'Release\s+REG_DWORD\s+(0x[0-9a-fA-F]+)', release.stdout)
         if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
             raise RuntimeError('Microsoft .NET 4.8 installation did not complete')
+    print('Installing Power BI Desktop…', flush=True)
     run(download('powerbi'), '-quiet', '-norestart', 'ACCEPT_EULA=1', 'ENABLECXP=0')
     executable = prefix / 'pfx/drive_c/Program Files/Microsoft Power BI Desktop/bin/PBIDesktop.exe'
     if not executable.is_file():
