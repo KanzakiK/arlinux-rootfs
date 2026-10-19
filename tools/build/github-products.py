@@ -16,7 +16,7 @@ import tempfile
 import time
 from threading import Event
 import urllib.request
-from artifact_download import download,sha256_file
+from artifact_download import download,sha256_file,reuse_product,download_capsule
 from component_inputs import request_identity, source_inputs
 
 
@@ -219,35 +219,21 @@ class Coordinator:
 
 
 def fetch_product(reference, output):
-    cache_receipt=output/'download-receipt.json'
-    try:
-        saved=json.loads(cache_receipt.read_text())
-        if saved['reference']==reference and saved['files'] and all(
-                (output/name).is_file() and sha256_file(output/name)==expected
-                for name,expected in saved['files'].items()):
-            print('OK verified local product '+output.name,flush=True)
+    identity = reference['identity']
+    if not re.fullmatch('[0-9a-f]{64}', identity):
+        raise ValueError('Invalid product component identity')
+    directory = output.parent/'github-state/downloads'/identity
+    with request_lock(directory/'transfer.lock', Event()):
+        if reuse_product(output, reference):
             return
-    except (OSError,ValueError,KeyError):
-        pass
-    import zstandard
-    with tempfile.TemporaryDirectory(prefix='arlinux-product-') as temporary:
-        directory=Path(temporary)
+        cache_receipt=output/'download-receipt.json'
+        import zstandard
         manifest=directory/'component.json'
         download(reference['manifestUrl'],manifest,reference['manifestSha256'])
         record=json.loads(manifest.read_text())
         if record['identity']!=reference['identity']:
             raise ValueError('Product identity mismatch')
-        archive=directory/'capsule.tar.zst'
-        with archive.open('wb') as dest:
-            for part in record['parts']:
-                file=directory/part['name']
-                download(part['url'],file,part['sha256'])
-                with file.open('rb') as source:
-                    import shutil
-                    shutil.copyfileobj(source,dest)
-        with archive.open('rb') as source:
-            if hashlib.file_digest(source,'sha256').hexdigest()!=record['archiveSha256']:
-                raise ValueError('Product capsule SHA-256 mismatch')
+        archive=download_capsule(record, directory)
         product='rootfs/'+record['stage']
         prefix='framework/build/artifacts/'+product+'/'
         output.mkdir(parents=True,exist_ok=True)

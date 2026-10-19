@@ -73,3 +73,14 @@ passed in 99 and 75 seconds, with a 9-second build step on the repeat.
 Capsule imports stream decompression into tar extraction without writing an
 intermediate full tar. Hosted tests retain executable/read-only modes, symlinks
 and hardlinks across repeated imports and reject corrupt or escaping archives.
+
+Workstation product downloads persist manifests, partial transfers and verified
+capsules under shared `github-state/downloads/COMPONENT_ID` directories. A lock
+serializes concurrent consumers of the same component. Interruptions retain
+verified parts and partial files for resumption; after assembling and checking
+the complete capsule, redundant part copies are removed.
+Canonical per-commit product caches can also satisfy another integration pin
+when the exact component reference and every output hash match. The coordinator
+copies those verified files into the isolated output instead of fetching them
+again. A changed component still requires its first transfer; this is a build
+cache, not reuse of installed instances or arbitrary release ZIPs.
