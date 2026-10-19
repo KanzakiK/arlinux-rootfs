@@ -91,3 +91,11 @@ Client-only coordinator and artifact transport code is excluded from distributio
 content inputs. Changing retries, transfer caching or download presentation must
 not invalidate the Linux image. Actual rootfs generation scripts, runtime files,
 GPU inputs and the package-selection function remain declared inputs.
+
+The real Yibu product from hosted run 39179635023 passed the normal archive and
+rootfs receipt checks. A different integration pin with identical component
+inputs then reused the verified 191,807,424-byte distribution ZIP in 7.4 seconds,
+without binary downloads. Updating the transport implementation also resumed
+that same hosted Yibu run rather than dispatching another distribution build.
+These results verify build/download behavior, not fresh-instance application
+acceptance.
