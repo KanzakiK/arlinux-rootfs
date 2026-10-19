@@ -18,6 +18,7 @@ from component_inputs import request_identity, source_inputs
 
 
 ROOTFS = {'yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'}
+STANDALONE = ROOTFS | {'vulkan-capture'}
 LINUX_GPU = {'linux-mesa', 'linux-hybris'}
 
 def run(*args, **kwargs):
@@ -79,6 +80,9 @@ def prepare(data, framework):
         'libxcb-xfixes0-dev', 'libxcb-randr0-dev', 'libxdamage-dev', 'libxext-dev',
         'libelf-dev', 'libudev-dev', 'libgbm-dev', 'gperf', 'libglib2.0-dev', 'libglib2.0-dev-bin',
         'ccache', 'gettext', 'libgettextpo-dev', 'libssl-dev', 'unzip', 'autopoint', 'intltool', 'python-is-python3']
+    if data['stage'] == 'vulkan-capture':
+        packages += ['liblz4-dev', 'libzstd-dev', 'zlib1g-dev', 'libxxhash-dev',
+                     'libxcb-keysyms1-dev', 'libxrender-dev']
     run('sudo', 'apt-get', 'update')
     run('sudo', 'apt-get', 'install', '-y', '--no-install-recommends', *packages,
         env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'))
@@ -91,6 +95,10 @@ def prepare(data, framework):
     cross.chmod(0o755)
     run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1',
         'distributions/'+(data['stage'] if data['stage'] in ROOTFS else 'yibu'), 'third_party/mesa', 'third_party/libhybris', 'third_party/android-headers')
+    if data['stage'] == 'vulkan-capture':
+        run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1', 'third_party/gfxreconstruct')
+        run('git', '-C', framework/'third_party/gfxreconstruct', 'submodule', 'update', '--init', '--depth', '1',
+            'external/Vulkan-Headers', 'external/SPIRV-Headers', 'external/SPIRV-Reflect')
     for marker in [framework/'.git', *framework.glob('third_party/*/.git'), *framework.glob('distributions/*/.git')]:
         if marker.exists():
             run('git', 'config', '--global', '--add', 'safe.directory', marker.parent)
@@ -184,7 +192,10 @@ def build(data, framework):
     for dependency in data['dependencies']:
         import_dependency(root, dependency, visited)
     config = root / 'product.json'
-    if stage in LINUX_GPU:
+    if stage == 'vulkan-capture':
+        run('bash', framework/'build.sh', 'capture',
+            env=dict(os.environ, CCACHE_DIR=str(root/'cache/ccache'), CCACHE_BASEDIR=str(framework)))
+    elif stage in LINUX_GPU:
         env = dict(os.environ, ARLINUX_CACHE_DIR=str(root/'cache/rootfs'),
                    CCACHE_DIR=str(root/'cache/ccache'),CCACHE_BASEDIR=str(framework))
         run('ccache','--max-size','2G',env=env)
@@ -210,8 +221,8 @@ def publish(data, framework):
     output.mkdir(exist_ok=True)
     record = dict(data)
     paths = []
-    if stage in ROOTFS:
-        paths = [framework/('build/artifacts/rootfs/'+stage)]
+    if stage in STANDALONE:
+        paths = [framework/('build/artifacts/'+('capture' if stage == 'vulkan-capture' else 'rootfs/'+stage))]
     else:
         sys.path.insert(0, str(framework/'tools/build'))
         from pipeline_cache import inventory, build_references
@@ -226,7 +237,7 @@ def publish(data, framework):
     # recompress or upload the same immutable capsule a second time.
     from pipeline_cache import inventory
     contents = ({'outputs': state['outputs'], 'references': state['references']}
-                if stage not in ROOTFS else {str(p.relative_to(root)): inventory(p) for p in paths})
+                if stage not in STANDALONE else {str(p.relative_to(root)): inventory(p) for p in paths})
     record['outputIdentity'] = hashlib.sha256(json.dumps(contents, sort_keys=True).encode()).hexdigest()
     tag = 'arlinux-'+stage+'-'+data['identity'][:24]
     repository = os.environ['GITHUB_REPOSITORY']

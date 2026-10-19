@@ -6,7 +6,11 @@ import subprocess
 
 def source_inputs(repo, revision, stage, plan):
     distribution = stage if stage in ('yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt') else 'yibu'
-    if stage in ('linux-mesa', 'linux-hybris'):
+    if stage == 'vulkan-capture':
+        paths = ('build.sh', 'tools/build/github-component.py', 'tools/build/component_inputs.py',
+                 'tools/build/vulkan-capture-component.py', 'tools/build/pipeline_cache.py',
+                 'third_party/gfxreconstruct', 'third_party/libhybris')
+    elif stage in ('linux-mesa', 'linux-hybris'):
         paths = ('build.sh', 'tools/build/github-component.py', 'tools/build/component_inputs.py',
                  'tools/build/linux-gpu.sh', 'tools/build/linux-gpu-component.py',
                  'tools/build/linux-aarch64.ini', 'tools/build/pipeline_cache.py', 'third_party')

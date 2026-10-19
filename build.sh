@@ -6,6 +6,7 @@ cd "$repo"
 command="${1:---help}"
 shift || true
 case "$command" in
+  capture) exec python3 tools/build/vulkan-capture-component.py "$@" ;;
   gpu) exec python3 tools/build/linux-gpu-component.py "$@" ;;
   github) exec python3 tools/build/github-products.py "$@" ;;
   rootfs) exec python3 tools/build/desktop-pipeline.py "$@" ;;

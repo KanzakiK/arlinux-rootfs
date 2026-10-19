@@ -7,6 +7,13 @@ Application launchers download the independently published runtime when needed.
 The only Linux entry is `./build.sh`. Android APK development uses the Android
 repository's `build.ps1`, which obtains this independent distribution product.
 
+The Android entry's `capture` command selects the independent `vulkan-capture`
+stage in `taowen/gfxreconstruct` on the ARM64 standard runner. Its pinned source
+is `third_party/gfxreconstruct`; native compilation, verified staging and
+`capture.zip` assembly are owned by `tools/build/vulkan-capture-component.py`.
+The tools are optional diagnostics and are not dependencies of distributions
+or APKs. Their archive receipt and per-tool provenance accompany the product.
+
 ```sh
 python tools/build/install-github-workflows.py
 ./build.sh github --framework-ref COMMIT --product rootfs --output build/products
