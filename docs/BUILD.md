@@ -86,3 +86,8 @@ when the exact component reference and every output hash match. The coordinator
 copies those verified files into the isolated output instead of fetching them
 again. A changed component still requires its first transfer; this is a build
 cache, not reuse of installed instances or arbitrary release ZIPs.
+
+Client-only coordinator and artifact transport code is excluded from distribution
+content inputs. Changing retries, transfer caching or download presentation must
+not invalidate the Linux image. Actual rootfs generation scripts, runtime files,
+GPU inputs and the package-selection function remain declared inputs.
