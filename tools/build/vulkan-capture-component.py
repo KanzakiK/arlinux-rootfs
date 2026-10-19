@@ -55,6 +55,10 @@ def main():
         (output/'capture-tools/provenance.json').write_text(json.dumps(metadata, indent=2)+'\n')
 
     output = cache.stage('vulkan-capture', inputs, build)
+    descriptor = framework/'build/artifacts/components/vulkan-capture.json'
+    descriptor.parent.mkdir(parents=True, exist_ok=True)
+    descriptor.write_text(json.dumps(dict(format=1, stage='vulkan-capture', output=str(output),
+                                           records=cache.records), sort_keys=True)+'\n')
     product = framework/'build/artifacts/capture'
     product.mkdir(parents=True, exist_ok=True)
     archive = product/'capture.zip'
