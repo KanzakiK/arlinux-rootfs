@@ -6,6 +6,7 @@ Requires manifest-checked capture tools already staged in the guest. Does not
 install a layer globally or change application defaults.
 Keep a screenshot and page identity from the same run: a valid capture is not
 proof that the original rendering failure occurred, or that replay is faithful.
+Captures can contain private application data; review them before sharing.
 """
 import argparse
 from collections import Counter
