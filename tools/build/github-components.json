@@ -25,7 +25,8 @@
       "runner": "ubuntu-24.04-arm",
       "dependencies": [
         "linux-mesa",
-        "linux-hybris"
+        "linux-hybris",
+        "vulkan-capture"
       ],
       "product": "rootfs",
       "compilerCacheMiB": 2048
@@ -35,7 +36,8 @@
       "runner": "ubuntu-24.04-arm",
       "dependencies": [
         "linux-mesa",
-        "linux-hybris"
+        "linux-hybris",
+        "vulkan-capture"
       ],
       "product": "rootfs",
       "compilerCacheMiB": 2048
@@ -45,7 +47,8 @@
       "runner": "ubuntu-24.04-arm",
       "dependencies": [
         "linux-mesa",
-        "linux-hybris"
+        "linux-hybris",
+        "vulkan-capture"
       ],
       "product": "rootfs",
       "compilerCacheMiB": 2048
@@ -55,7 +58,8 @@
       "runner": "ubuntu-24.04-arm",
       "dependencies": [
         "linux-mesa",
-        "linux-hybris"
+        "linux-hybris",
+        "vulkan-capture"
       ],
       "product": "rootfs",
       "compilerCacheMiB": 2048
@@ -65,7 +69,8 @@
       "runner": "ubuntu-24.04-arm",
       "dependencies": [
         "linux-mesa",
-        "linux-hybris"
+        "linux-hybris",
+        "vulkan-capture"
       ],
       "product": "rootfs",
       "compilerCacheMiB": 2048
@@ -75,7 +80,8 @@
       "runner": "ubuntu-24.04-arm",
       "dependencies": [
         "linux-mesa",
-        "linux-hybris"
+        "linux-hybris",
+        "vulkan-capture"
       ],
       "product": "rootfs",
       "compilerCacheMiB": 2048

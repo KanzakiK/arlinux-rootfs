@@ -11,8 +11,19 @@ The Android entry's `capture` command selects the independent `vulkan-capture`
 stage in `taowen/gfxreconstruct` on the ARM64 standard runner. Its pinned source
 is `third_party/gfxreconstruct`; native compilation, verified staging and
 `capture.zip` assembly are owned by `tools/build/vulkan-capture-component.py`.
-The tools are optional diagnostics and are not dependencies of distributions
-or APKs. Their archive receipt and per-tool provenance accompany the product.
+Distributions consume the exact verified capture product as a declared
+dependency. The layer, conversion/replay tools and license notices are installed
+in `/usr/lib/arlinux/gfxreconstruct`; no capture layer is enabled by default.
+The single runtime command `/usr/bin/arlinux-vulkan-capture` selects it only for
+its child process. Its archive receipt and per-tool provenance accompany the product.
+
+In the desktop terminal, run `arlinux-vulkan-capture --seconds 30 -- APPLICATION ARGUMENTS`.
+It records only that child invocation, defaults to a 512 MiB approximate capture
+limit and writes `~/Documents/ARLinux-Captures/TIMESTAMP`. The child is stopped
+at the time/size limit; save work first. Captures can contain private data and
+are never uploaded automatically. Conversion is explicit (`--convert`), or use
+`--lifetimes` for API resource counts. JSON output may be much larger than the
+capture. These diagnostics are not performance/compatibility acceptance.
 
 ```sh
 python tools/build/install-github-workflows.py

@@ -23,7 +23,7 @@ def rootfs_sources(framework, product):
         inputs[name] = source_state(framework / name)
     for name in ('linux-assets.sh', 'linux-gpu.sh', 'linux-aarch64.ini',
                  'mesa-debs.py', 'mesa-arch.py', 'doctor.sh',
-                 'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py', 'component_inputs.py'):
+                 'package-rootfs.py', 'package-rootfs.sh', 'pipeline_cache.py', 'component_inputs.py', 'install-capture.py'):
         inputs['tools/build/' + name] = inventory(framework / 'tools/build' / name)
     return inputs
 
@@ -56,7 +56,8 @@ def main():
         gpu = {name: json.loads((framework / 'build/linux' / name).read_text())
                for name in ('gpu.mesa.outputs.json', 'gpu.hybris.outputs.json')}
         common = dict(engine=digest(__file__), sources=rootfs_sources(framework, product),
-                      gpu=gpu, distribution=product)
+                      gpu=gpu, distribution=product,
+                      capture=digest(framework/'build/artifacts/capture/capture.zip'))
         def assets(out):
             invoke('bash', 'tools/build/linux-assets.sh', *(['--rebuild'] if args.rebuild else []), product)
             shutil.copytree(framework / 'distributions' / product / 'build/assets', out, symlinks=True)

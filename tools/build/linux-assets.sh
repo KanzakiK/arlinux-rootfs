@@ -86,6 +86,7 @@ input_id() {
                 | sort -z | xargs -0 -r sha256sum)
         git -C "distributions/$product" submodule status --recursive || true
         printf '%s\n' "$gpu_inputs"
+        sha256sum build/artifacts/capture/capture.zip
         true
     } | sha256sum | cut -d' ' -f1
 }
@@ -183,6 +184,8 @@ PY
     done
     install -Dm644 runtime/tools/windows-downloads.tsv "$rootfs/usr/lib/arlinux/guest/windows-downloads.tsv"
     install -Dm755 runtime/tools/arlinux-steam "$rootfs/usr/bin/arlinux-steam"
+    install -Dm755 runtime/tools/arlinux-vulkan-capture "$rootfs/usr/bin/arlinux-vulkan-capture"
+    python3 tools/build/install-capture.py build/artifacts/capture "$rootfs/usr/lib/arlinux/gfxreconstruct"
     install -Dm644 runtime/tools/arlinux-steam.desktop "$rootfs/usr/share/applications/arlinux-steam.desktop"
     install -Dm644 runtime/tools/steam.png "$rootfs/usr/share/pixmaps/arlinux-steam.png"
     install -Dm644 runtime/tools/opencode.py "$rootfs/usr/lib/arlinux/opencode.py"

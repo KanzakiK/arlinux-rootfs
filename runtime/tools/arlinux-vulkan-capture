@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""Run one application under GFXReconstruct for a bounded opt-in diagnostic capture.
+
+Use with arlinux-py. Requires manifest-checked capture tools already staged in
+the guest. Does not install a layer globally or change application defaults.
+Keep a screenshot and page identity from the same run: a valid capture is not
+proof that the original rendering failure occurred, or that replay is faithful.
+"""
+import argparse
+from collections import Counter
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import time
+
+
+def summarize_lifetimes(path):
+    """Count captured handles, not driver-private memory or validation errors."""
+    calls, created, released, peak = Counter(), Counter(), Counter(), Counter()
+    live = {kind: {} for kind in ('memory', 'buffer', 'image', 'command_pool', 'command_buffer',
+                                 'descriptor_pool', 'descriptor_set')}
+    memory_bytes = peak_memory = 0
+    presents, before_device_destroy = [], []
+    names = {
+        'vkAllocateMemory': ('memory', 'pMemory'),
+        'vkCreateBuffer': ('buffer', 'pBuffer'),
+        'vkCreateImage': ('image', 'pImage'),
+        'vkCreateCommandPool': ('command_pool', 'pCommandPool'),
+        'vkCreateDescriptorPool': ('descriptor_pool', 'pDescriptorPool')}
+    destroys = {
+        'vkFreeMemory': ('memory', 'memory'),
+        'vkDestroyBuffer': ('buffer', 'buffer'),
+        'vkDestroyImage': ('image', 'image'),
+        'vkDestroyCommandPool': ('command_pool', 'commandPool'),
+        'vkDestroyDescriptorPool': ('descriptor_pool', 'descriptorPool')}
+
+    def snapshot(index):
+        return dict(index=index, live={k: len(v) for k, v in live.items()},
+                    explicit_allocation_bytes=memory_bytes)
+
+    def remove(kind, handle):
+        nonlocal memory_bytes
+        if handle in live[kind]:
+            if kind == 'memory':
+                memory_bytes -= live[kind][handle]['bytes']
+            del live[kind][handle]
+            released[kind] += 1
+
+    with path.open() as stream:
+        for line in stream:
+            event = json.loads(line)
+            function = event.get('function', {})
+            name, args = function.get('name'), function.get('args', {})
+            if not name:
+                continue
+            calls[name] += 1
+            successful = function.get('return', 'VK_SUCCESS') in ('VK_SUCCESS', 0)
+            if name in names and successful:
+                kind, field = names[name]
+                record = dict(device=args['device'])
+                if kind == 'memory':
+                    record['bytes'] = int(args['pAllocateInfo']['allocationSize'])
+                    memory_bytes += record['bytes']
+                live[kind][args[field]] = record
+                created[kind] += 1
+            elif name in ('vkAllocateCommandBuffers', 'vkAllocateDescriptorSets') and successful:
+                kind, field, pool = (('command_buffer', 'pCommandBuffers', 'commandPool')
+                                    if name == 'vkAllocateCommandBuffers'
+                                    else ('descriptor_set', 'pDescriptorSets', 'descriptorPool'))
+                for handle in args[field]:
+                    live[kind][handle] = dict(device=args['device'], pool=args['pAllocateInfo'][pool])
+                    created[kind] += 1
+            elif name == 'vkFreeCommandBuffers' or (name == 'vkFreeDescriptorSets' and successful):
+                kind, field = (('command_buffer', 'pCommandBuffers') if name == 'vkFreeCommandBuffers'
+                               else ('descriptor_set', 'pDescriptorSets'))
+                for handle in args[field]:
+                    remove(kind, handle)
+            elif name == 'vkResetDescriptorPool' and successful:
+                for handle, record in list(live['descriptor_set'].items()):
+                    if record['pool'] == args['descriptorPool']:
+                        remove('descriptor_set', handle)
+            elif name in destroys:
+                kind, field = destroys[name]
+                remove(kind, args[field])
+                if kind in ('command_pool', 'descriptor_pool'):
+                    child = 'command_buffer' if kind == 'command_pool' else 'descriptor_set'
+                    for handle, record in list(live[child].items()):
+                        if record['pool'] == args[field]:
+                            remove(child, handle)
+            elif name == 'vkQueuePresentKHR':
+                presents.append(snapshot(event.get('index')))
+            elif name == 'vkDestroyDevice':
+                before_device_destroy.append(snapshot(event.get('index')))
+                for kind, objects in live.items():
+                    for handle, record in list(objects.items()):
+                        if record['device'] == args['device']:
+                            remove(kind, handle)
+            peak_memory = max(peak_memory, memory_bytes)
+            for kind, objects in live.items():
+                peak[kind] = max(peak[kind], len(objects))
+    return dict(scope='Captured Vulkan API lifetimes; not driver allocations, leak verdict or replay correctness',
+                calls=dict(calls), created=dict(created), released_including_owner_destruction=dict(released),
+                peak_live=dict(peak), peak_explicit_allocation_bytes=peak_memory,
+                presents=presents, before_device_destroy=before_device_destroy, end=snapshot(None))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--tools', default=Path('/usr/lib/arlinux/gfxreconstruct'), type=Path)
+    parser.add_argument('--output', default=Path.home()/'Documents/ARLinux-Captures'/time.strftime('%Y%m%d-%H%M%S'), type=Path)
+    parser.add_argument('--seconds', type=int, default=30)
+    parser.add_argument('--max-mib', type=int, default=512, help='stop capture after approximately this many MiB (checked each second)')
+    parser.add_argument('--memory-tracking', choices=('page_guard', 'assisted', 'unassisted'),
+                        default='page_guard', help='assisted records explicit flushes without page guards; may omit coherent writes, not replay fidelity')
+    parser.add_argument('--replay', action='store_true',
+                        help='also replay offscreen; does not prove visual correctness')
+    parser.add_argument('--lifetimes', action='store_true', help='summarize captured resource/command-pool lifetimes')
+    parser.add_argument('--convert', action='store_true', help='also convert to JSONL (can be much larger than the capture)')
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = args.command[1:] if args.command[:1] == ['--'] else args.command
+    if not command or not 1 <= args.seconds <= 120 or not 1 <= args.max_mib <= 2048:
+        parser.error('provide a command, duration of 1–120 seconds and size limit of 1–2048 MiB')
+    print('Capture may contain application content and private data. Share only after review. '
+          'The selected command is stopped at the time/size limit. Output: '+str(args.output), flush=True)
+    # Native loaders need the Android-visible path, not a virtual /tmp path.
+    files = Path(os.environ['BIONICX_FILES'])
+    root = (files / 'rootfs').resolve()
+    def native(path):
+        if not path.is_absolute() or '..' in path.parts:
+            parser.error('tool and output paths must be absolute guest paths without ..')
+        return path if path.is_relative_to(files) else root / str(path).lstrip('/')
+    tools, out = native(args.tools), native(args.output)
+    provenance = json.loads((tools / 'provenance.json').read_text())
+    for name, expected in provenance['capture_tools'].items():
+        path = tools / name
+        if Path(name).is_absolute() or '..' in Path(name).parts:
+            raise ValueError('unsafe capture manifest path: ' + name)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError('capture tool hash mismatch: ' + name)
+    out.mkdir(parents=True, exist_ok=False)
+    env = dict(os.environ)
+    env['LD_LIBRARY_PATH'] = str(tools/'runtime') + ':' + env.get('LD_LIBRARY_PATH', '')
+    env.update(VK_LAYER_PATH=str(tools) + ':' + env.get('VK_LAYER_PATH', '/usr/share/vulkan/explicit_layer.d'),
+               VK_INSTANCE_LAYERS='VK_LAYER_LUNARG_gfxreconstruct' + (':' + env['VK_INSTANCE_LAYERS'] if env.get('VK_INSTANCE_LAYERS') else ''),
+               GFXRECON_CAPTURE_FILE=str(out / 'application.gfxr'),
+               GFXRECON_CAPTURE_FILE_FLUSH='true',
+               GFXRECON_MEMORY_TRACKING_MODE=args.memory_tracking)
+    record = {'command': command, 'tools': provenance, 'duration': args.seconds,
+              'environment': {k: v for k, v in env.items() if k.startswith(('VK_', 'GFXRECON_', 'MESA_', 'ZINK_', 'HYBRIS_'))},
+              'capture_processes': [], 'status': 'STARTED'}
+    observed = set()
+    child = None
+    try:
+        with (out / 'application.log').open('w') as log:
+            child = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
+                                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            print(json.dumps({'output': str(out), 'pid': child.pid}), flush=True)
+            deadline = time.monotonic() + args.seconds
+            while time.monotonic() < deadline and child.poll() is None:
+                if sum(p.stat().st_size for p in out.glob('*.gfxr')) >= args.max_mib * 1024 * 1024:
+                    record['capture_stop_reason'] = 'size_limit'
+                    break
+                for proc in Path('/proc').iterdir():
+                    if not proc.name.isdigit() or proc.name in observed:
+                        continue
+                    try:
+                        environment = (proc / 'environ').read_bytes().split(b'\0')
+                        if ('GFXRECON_CAPTURE_FILE=' + env['GFXRECON_CAPTURE_FILE']).encode() not in environment:
+                            continue
+                        maps = (proc / 'maps').read_text()
+                        if 'libVkLayer_gfxreconstruct.so' not in maps:
+                            continue
+                        (out / ('maps-' + proc.name + '.txt')).write_text(maps)
+                        record['capture_processes'].append({'pid': int(proc.name), 'argv': (proc / 'cmdline').read_bytes().decode(errors='replace').split('\0')})
+                        observed.add(proc.name)
+                    except OSError:
+                        continue
+                time.sleep(1)
+    finally:
+        if child is not None:
+            # Only the process group created by this invocation is stopped.
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait()
+            record['application_exit'] = child.returncode
+        (out / 'metadata.json').write_text(json.dumps(record, indent=2))
+    captures = list(out.glob('*.gfxr'))
+    if not observed or len(captures) != 1:
+        raise RuntimeError('expected one capture and an observed capture-layer mapping; inspect application.log')
+    record['capture_sha256'] = hashlib.sha256(captures[0].read_bytes()).hexdigest()
+    if not (args.convert or args.lifetimes or args.replay):
+        record['status'] = 'CAPTURED_NOT_REPLAY_VERIFIED'
+        record['files'] = {str(p.relative_to(out)): hashlib.file_digest(p.open('rb'), 'sha256').hexdigest()
+                           for p in out.rglob('*') if p.is_file() and p.name != 'metadata.json'}
+        (out/'metadata.json').write_text(json.dumps(record, indent=2))
+        print(json.dumps({'output': str(out), 'status': record['status']}), flush=True)
+        return
+    convert_env = dict(os.environ)
+    convert_env['LD_LIBRARY_PATH'] = str(tools / 'runtime') + ':' + convert_env.get('LD_LIBRARY_PATH', '')
+    try:
+        with (out / 'convert.log').open('w') as log:
+            result = subprocess.run([str(tools / 'gfxrecon-convert'), *([] if args.lifetimes else ['--include-binaries']), '--format', 'jsonl',
+                                     '--output', 'calls.jsonl', captures[0].name], cwd=out, env=convert_env,
+                                    stdout=log, stderr=subprocess.STDOUT, timeout=90)
+        record['convert_exit'] = result.returncode
+        result.check_returncode()
+        if args.lifetimes:
+            (out/'lifetimes.json').write_text(json.dumps(summarize_lifetimes(out/'calls.jsonl'), indent=2)+'\n')
+        if args.replay:
+            with (out / 'replay.log').open('w') as log:
+                result = subprocess.run([str(tools / 'gfxrecon-replay'),
+                                         '--swapchain', 'offscreen', '-m', 'rebind',
+                                         captures[0].name], cwd=out, env=convert_env,
+                                        stdout=log, stderr=subprocess.STDOUT, timeout=120)
+            record['replay_exit'] = result.returncode
+            result.check_returncode()
+        record['files'] = {str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest()
+                           for p in out.rglob('*') if p.is_file() and p.name != 'metadata.json'}
+        record['status'] = ('REPLAYED_NOT_VISUALLY_VERIFIED' if args.replay
+                            else 'CAPTURED_AND_CONVERTED')
+    finally:
+        (out / 'metadata.json').write_text(json.dumps(record, indent=2))
+    print(json.dumps({'output': str(out), 'status': record['status'], 'processes': record['capture_processes']}), flush=True)
+
+
+if __name__ == '__main__':
+    main()

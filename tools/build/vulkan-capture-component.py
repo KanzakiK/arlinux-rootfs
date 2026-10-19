@@ -52,6 +52,9 @@ def main():
         from capture_stage import stage_tools
         metadata = {}
         stage_tools(install, output, metadata, digest)
+        shutil.copytree(source/'LICENSES', output/'capture-tools/LICENSES')
+        metadata['capture_tools'].update({str(p.relative_to(output/'capture-tools')): digest(p)
+            for p in (output/'capture-tools/LICENSES').rglob('*') if p.is_file()})
         (output/'capture-tools/provenance.json').write_text(json.dumps(metadata, indent=2)+'\n')
 
     output = cache.stage('vulkan-capture', inputs, build)
