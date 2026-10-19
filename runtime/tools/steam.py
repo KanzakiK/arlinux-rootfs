@@ -443,6 +443,10 @@ def launch(root, arguments):
         return 0
     arguments = system_language_arguments(arguments)
     arguments = ['-noipv6', *[arg for arg in arguments if arg != '-noipv6']]
+    # Valve's nonfatal assertion path can leave its UI stopped while Breakpad
+    # collects a dump under Android. Keep assertion logging without entering
+    # that debugger path; callers can override this Valve-supported setting.
+    os.environ.setdefault('DONT_BREAK_ON_ASSERT', '1')
     ensure_dependencies()
     if Path('/etc/ld.so.conf.d/00-arlinux-graphics.conf').is_file():
         subprocess.run(['sudo', 'ldconfig'], check=True)
