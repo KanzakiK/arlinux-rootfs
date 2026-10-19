@@ -311,7 +311,7 @@ class WindowsWaitTimeout(TimeoutError):
 def run(root, prefix, executable, arguments=(), env=None, check=False, capture=False, timeout=600, task=False):
     """Wait for a command; interactive tasks also retain their child processes."""
     env = env or {}
-    diagnostics = {name: env[name] for name in ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG',
+    diagnostics = {name: env[name] for name in ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG', 'ARLINUX_VULKAN_CAPTURE',
         'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
         'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER', 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS') if name in env}
     response = request(root, prefix, executable, arguments, env.get('WINEDLLOVERRIDES', ''),
