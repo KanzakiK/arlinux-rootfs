@@ -490,6 +490,7 @@ def launch(root, arguments):
     windows.ensure_runtime()
     print('Steam Windows compatibility runtime ready.', flush=True)
     os.chdir(root)
+    # CLOEXEC releases startup serialization atomically with Valve's exec.
     os.execv(str(binary), [str(binary), *arguments])
 
 
