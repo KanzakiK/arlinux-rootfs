@@ -540,39 +540,30 @@ def main():
             send_client_command(root, steam_arguments or ['steam://open/main'])
             return 0
         raise RuntimeError('Steam is starting in another session. Wait for its window to open.')
-    # Both preparation locks close atomically when Valve's executable starts.
-    with (shared.directory('locks')/'steam.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            if client_running() and not args.update and not args.channel:
-                send_client_command(root, steam_arguments or ['steam://open/main'])
-                return 0
-            raise RuntimeError('Steam is starting or running in another instance. Close it there first.')
-        if client_running():
-            if args.update or args.channel:
-                raise RuntimeError('Close Steam before updating or changing its channel')
-            if previous != root and (previous/'steamrtarm64/steam').is_file():
-                raise RuntimeError('Close the instance-local Steam client before using shared Steam')
-            send_client_command(root, steam_arguments or ['steam://open/main'])
-            return 0
-        if client_processes(root):
-            raise RuntimeError('Shared Steam is still running in another session. Close it first.')
-        if previous != root:
-            share_client(root, previous)
+    if client_running():
+        if args.update or args.channel:
+            raise RuntimeError('Close Steam before updating or changing its channel')
+        if previous != root and (previous/'steamrtarm64/steam').is_file():
+            raise RuntimeError('Close the instance-local Steam client before using shared Steam')
+        send_client_command(root, steam_arguments or ['steam://open/main'])
+        return 0
+    if client_processes(root):
+        raise RuntimeError('Shared Steam is still running in another session. Close it first.')
+    if previous != root:
+        share_client(root, previous)
+    normalize_client_manifests(root)
+    links(root, previous)
+    if not args.update and not args.channel:
+        seed_client(root)
         normalize_client_manifests(root)
-        links(root, previous)
-        if not args.update and not args.channel:
-            seed_client(root)
-            normalize_client_manifests(root)
-        # A bootstrap executable alone is not a completed installation.
-        # Re-download it when no Valve install record or pending manifest is
-        # present; otherwise let Valve's updater finish missing depots.
-        pending = (root/'package'/CLIENT_MANIFEST).is_file()
-        if (args.update or args.channel or not client_bootstrap_ready(root)
-                or (not client_install_recorded(root) and not pending)):
-            install(root, args.channel or CHANNELS[0])
-        return launch(root, steam_arguments)
+    # A bootstrap executable alone is not a completed installation.
+    # Re-download it when no Valve install record or pending manifest is
+    # present; otherwise let Valve's updater finish missing depots.
+    pending = (root/'package'/CLIENT_MANIFEST).is_file()
+    if (args.update or args.channel or not client_bootstrap_ready(root)
+            or (not client_install_recorded(root) and not pending)):
+        install(root, args.channel or CHANNELS[0])
+    return launch(root, steam_arguments)
 
 
 if __name__ == '__main__':
