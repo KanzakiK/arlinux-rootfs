@@ -92,6 +92,40 @@ Capture runners install only the native capture dependencies and initialize
 GFXReconstruct and its staging-helper repository; GPU compiler jobs do not clone
 an unrelated distribution. These preparation paths remain in the same adapter.
 
+Hosted verification on 2026-10-19 used framework
+`cae4d3293e4a3b104fe4dc335c11e273f9004e52` for
+[the first package rebuild](https://github.com/taowen/arlinux-yibu/actions/runs/39244008771):
+208 seconds from dispatch to completion, including 65 seconds of host
+preparation, 8 seconds restoring cache, 109 seconds in the product dispatcher
+and 10 seconds publishing. The log downloaded 156 MB of Debian packages in
+2 seconds from deb.debian.org. The earlier
+[Tsinghua-mirror run](https://github.com/taowen/arlinux-yibu/actions/runs/39232216101)
+took 1,047 seconds overall, including 946 seconds in the dispatcher and
+778 seconds downloading 156 MB. This is an observed network comparison,
+not a guaranteed mirror throughput or a compiler speedup. The rebuilt ZIP SHA-256
+is `1772dd3b56e8c84fa18978dbfb67175da0a3c186b29d9ff43e5b829523c867a7`;
+reading its actual rootfs confirmed that consumer APT sources were restored.
+
+Framework `80540e94103cb79255356859179eb935f4da717a` then changed the
+extensionless capture command's documentation and removed the synthetic test
+hook, without changing package recipes.
+[The changed-runtime build](https://github.com/taowen/arlinux-yibu/actions/runs/39244537290)
+passed in 176 seconds overall: host preparation 71 seconds, cache restore
+7 seconds, dispatcher 69 seconds and publication 10 seconds. Its log reports
+`OK cached rootfs-packages`, reuses the verified seed archive and seals a new
+distribution. This demonstrates package-cache reuse, not reuse of an installed
+instance. The product adapter no longer runs unrelated synthetic unit tests as
+part of building a distribution; production input/output validation remains.
+
+The independently dispatched
+[capture product](https://github.com/taowen/gfxreconstruct/actions/runs/39243368620)
+passed with 43 seconds of host preparation, compared with 80 seconds in
+[the earlier run](https://github.com/taowen/gfxreconstruct/actions/runs/39230755443).
+Its incremental build took 12 seconds; this is not a cold compiler benchmark.
+These checks validate hosted construction and caching only, not fresh-instance
+device compatibility. Environment preparation and Linux-assets assembly remain
+material costs after eliminating repeated APT preparation.
+
 Final rootfs compression uses Zstandard level 12 with four threads. A Windows
 compression-only benchmark of a real 638,197,760-byte tar stream measured level
 19 at 126.1 seconds / 156,531,220 bytes and level 12 at 7.6 seconds /
