@@ -23,6 +23,11 @@ GPU outputs. Root-owned scratch rootfs trees are deliberately excluded: their
 private directory permissions prevent the unprivileged Actions cache from saving.
 Guest ownership and modes stay inside snapshot.tar; only host cache files change
 owner after the privileged package stage.
+The unmodified distribution seed is stored separately as a content-addressed
+`.tar.zst` and SHA-256 receipt. Hosted caches include these readable archives,
+never their root-owned extracted trees. Every reuse verifies the archive before
+extracting guest ownership and links. Runtime-only edits can therefore reuse
+the base seed even when the assembled Linux-assets stage changes.
 After successful publication, the workflow compacts the pipeline cache to the
 current input identity and generation of each completed stage. Older directories
 still referenced by the current build remain in place. This prevents restored

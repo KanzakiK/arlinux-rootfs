@@ -35,23 +35,29 @@ seed_rootfs() (
     entry="$base/$product-$seed_id"
     exec 9>"$entry.lock"
     flock 9
-    if [[ "$rebuild" == true || ! -f "$entry/complete" ]]; then
+    archive="$entry.tar.zst"
+    checksum="$entry.sha256"
+    if [[ "$rebuild" == true || ! -f "$archive" || ! -f "$checksum" ]] ||
+       ! (cd "$base" && sha256sum --check --status "${checksum##*/}"); then
         temporary="$(mktemp -d "$entry.XXXXXXXX")"
         trap 'rm -rf -- "$temporary"' EXIT
         "$product_dir/tools/seed.sh" "$temporary/rootfs"
         if [[ -x "$product_dir/tools/post-seed.sh" ]]; then
             "$product_dir/tools/post-seed.sh" "$temporary/rootfs"
         fi
-        touch "$temporary/complete"
-        # This is one validated, content-addressed cache entry, not a guest
-        # instance or a user-supplied recursive deletion target.
-        rm -rf -- "$entry"
-        mv "$temporary" "$entry"
-        trap - EXIT
+        # Cache an archive, not root-owned scratch directories that Actions'
+        # unprivileged cache uploader cannot read. Preserve guest ownership
+        # and links inside the archive; verify its bytes before every reuse.
+        tar --numeric-owner -cf - -C "$temporary/rootfs" . |
+            zstd -q -T2 -3 -o "$temporary/seed.tar.zst"
+        printf '%s  %s\n' "$(sha256sum "$temporary/seed.tar.zst" | cut -d' ' -f1)" \
+            "${archive##*/}" > "$temporary/seed.sha256"
+        mv "$temporary/seed.tar.zst" "$archive"
+        mv "$temporary/seed.sha256" "$checksum"
     else
-        echo "OK seed    $product (cached)"
+        echo "OK seed    $product (verified archive cache)"
     fi
-    cp -a --reflink=auto "$entry/rootfs/." "$destination/"
+    tar --zstd -xf "$archive" -C "$destination"
 )
 
 input_id() {
