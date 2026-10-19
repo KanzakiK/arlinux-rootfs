@@ -11,7 +11,7 @@ def sha256_file(path):
         return hashlib.file_digest(stream,'sha256').hexdigest()
 
 
-def download(url,output,expected):
+def download(url,output,expected,label=None):
     if not re.fullmatch('[0-9a-f]{64}',expected):
         raise ValueError('Build download requires a pinned SHA-256')
     output=Path(output)
@@ -27,10 +27,26 @@ def download(url,output,expected):
         return output
     error=''
     for attempt in range(8):
-        result=subprocess.run(['curl','--silent','--show-error','--location','--fail',
+        command=['curl','--silent','--show-error','--location','--fail',
             '--continue-at','-','--connect-timeout','20','--max-time','600',
-            '--speed-time','90','--speed-limit','1024','--output',str(part),url],
-            capture_output=True,text=True)
+            '--speed-time','90','--speed-limit','1024','--output',str(part),url]
+        started=time.monotonic()
+        offset=part.stat().st_size if part.is_file() else 0
+        with subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) as process:
+            try:
+                while True:
+                    try:
+                        stdout,stderr=process.communicate(timeout=15)
+                        break
+                    except subprocess.TimeoutExpired:
+                        size=part.stat().st_size if part.is_file() else 0
+                        rate=max(0,size-offset)/max(1,time.monotonic()-started)/(1024*1024)
+                        print(f'Transfer {label or output.name}: {size/(1024*1024):.1f} MiB retained, {rate:.2f} MiB/s',flush=True)
+            except BaseException:
+                process.kill()
+                process.communicate()
+                raise
+        result=subprocess.CompletedProcess(command,process.returncode,stdout,stderr)
         if result.returncode==0 and part.is_file() and sha256_file(part)==expected:
             part.replace(output)
             return output
@@ -129,7 +145,7 @@ def download_capsule(record, directory):
         if not file.is_file():
             resumed = partial.stat().st_size if partial.is_file() else 0
             print(f'Download capsule part {part["name"]}; resume offset {resumed} bytes', flush=True)
-        return checksum, download(part['url'], file, checksum)
+        return checksum, download(part['url'], file, checksum, label=part['name'])
     with ThreadPoolExecutor(max_workers=min(4, max(1, len(unique)))) as pool:
         completed = dict(pool.map(transfer, unique.items()))
     pieces = [completed[part['sha256']] for part in record['parts']]

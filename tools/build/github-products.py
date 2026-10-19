@@ -12,10 +12,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 from threading import Event
-import urllib.request
 from artifact_download import download,sha256_file,reuse_product,download_capsule
 from component_inputs import request_identity, source_inputs
 
