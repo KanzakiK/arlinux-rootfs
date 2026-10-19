@@ -17,7 +17,12 @@ def source_inputs(repo, revision, stage, plan):
     for record in records.split(b'\0'):
         if record:
             metadata, name = record.split(b'\t', 1)
-            files[name.decode()] = metadata.decode()
+            name = name.decode()
+            # Workstation transport does not generate distribution contents.
+            # Its downloads still verify the declared component/output hashes.
+            if name in ('tools/build/github-products.py', 'tools/build/artifact_download.py'):
+                continue
+            files[name] = metadata.decode()
     return dict(sourceSha256=hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(),
                 runner=plan['stages'][stage]['runner'])
 
