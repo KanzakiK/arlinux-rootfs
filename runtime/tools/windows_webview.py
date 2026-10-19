@@ -15,10 +15,9 @@ import windows
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-app-downloads.tsv')
 DOWNLOAD = 'webview2-fixed-arm64'
-WEBVIEW_FLAGS = (
-    '--no-sandbox --use-angle=vulkan --disable-gpu-compositing '
-    '--disable-direct-composition --disable-features=SkiaGraphite,kRemoveRedirectionBitmap'
-)
+# Select the supported ANGLE backend without disabling browser composition.
+# Chromium retains its normal GPU/DirectComposition feature detection.
+WEBVIEW_FLAGS = '--no-sandbox --use-angle=vulkan'
 
 
 def verified_browser(destination, expected):
