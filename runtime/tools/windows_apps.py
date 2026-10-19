@@ -7,6 +7,7 @@ isolation is not equivalent to browser sandboxing. First installation requires
 explicit consent. These applications are experimental on ARLinux.
 """
 import argparse
+import contextlib
 import fcntl
 import json
 import os
@@ -87,6 +88,35 @@ def restore_powerbi_accessibility(root, prefix):
     temporary.replace(destination)
 
 
+@contextlib.contextmanager
+def installer_windows_version(root, prefix, names, version):
+    """Temporarily select installer compatibility without changing the desktop OS."""
+    reg = prefix / 'pfx/drive_c/windows/system32/reg.exe'
+    def registry(*args, check=True):
+        return windows.run(root, prefix, reg, args, capture=True, check=check, timeout=60)
+
+    def restore(key, value):
+        if value is None:
+            result = registry('delete', key, '/v', 'Version', '/f', check=False)
+            if result.returncode not in (0, 1):
+                result.check_returncode()
+        else:
+            registry('add', key, '/v', 'Version', '/t', 'REG_SZ', '/d', value, '/f')
+
+    with contextlib.ExitStack() as cleanup:
+        for name in dict.fromkeys(names):
+            key = r'HKCU\Software\Wine\AppDefaults' + '\\' + name
+            result = registry('query', key, '/v', 'Version', check=False)
+            if result.returncode not in (0, 1):
+                result.check_returncode()
+            match = re.search(r'Version\s+REG_SZ\s+(\S+)', result.stdout)
+            if result.returncode == 0 and not match:
+                raise RuntimeError('Cannot preserve installer Windows version: ' + name)
+            cleanup.callback(restore, key, match[1] if match else None)
+            registry('add', key, '/v', 'Version', '/t', 'REG_SZ', '/d', version, '/f')
+        yield
+
+
 def install_powerbi(root, prefix):
     env = windows.environment(root, prefix)
     system = prefix / 'pfx/drive_c/windows/system32'
@@ -136,8 +166,6 @@ def install_powerbi(root, prefix):
 
     if not native_clr.is_file() or not microsoft_shims() or not match or int(match[1], 16) < 528040:
         print('Installing Microsoft .NET 4.0 and 4.8…', flush=True)
-        # The shared instance stays Windows 10 throughout installation. A vendor
-        # failure must surface, not change another application's OS identity.
         if not native_clr.is_file() or not microsoft_shims():
             # Remove Wine's placeholder registration only when the real CLR
             # is absent. Do not claim an installed Microsoft version.
@@ -148,8 +176,15 @@ def install_powerbi(root, prefix):
                                            env=env, capture=True)
                     if existing.returncode == 0:
                         run(reg, 'delete', key, '/f', view)
-            run(download('dotnet40'), '/q', '/norestart', '/log', r'C:\dotnet40.log',
-                environment={'WINEDLLOVERRIDES': 'fusion=b'})
+            installer = download('dotnet40')
+            # As in Winetricks' dotnet40 recipe, XP compatibility includes the
+            # native CLR activation shims that modern Windows already supplies.
+            # Scope it to installer processes and restore before .NET 4.8;
+            # the shared desktop and unrelated applications retain their OS.
+            with installer_windows_version(root, prefix,
+                    (installer.name, 'Setup.exe', 'msiexec.exe'), 'winxp'):
+                run(installer, '/q', '/norestart', '/log', r'C:\dotnet40.log',
+                    environment={'WINEDLLOVERRIDES': 'fusion=b'})
             if not microsoft_shims():
                 raise RuntimeError('Microsoft .NET 4.0 did not install both CLR activation shims')
             run(reg, 'add', r'HKCU\Software\Wine\DllOverrides', '/v', 'mscoree',
