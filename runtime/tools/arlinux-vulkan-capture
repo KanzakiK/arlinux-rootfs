@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Run one application under GFXReconstruct for a bounded opt-in diagnostic capture.
 
-Use with arlinux-py. Requires manifest-checked capture tools already staged in
-the guest. Does not install a layer globally or change application defaults.
+Run directly in the Linux desktop, or through arlinux-py for device diagnostics.
+Requires manifest-checked capture tools already staged in the guest. Does not
+install a layer globally or change application defaults.
 Keep a screenshot and page identity from the same run: a valid capture is not
 proof that the original rendering failure occurred, or that replay is faithful.
 """
