@@ -528,15 +528,19 @@ def main():
     if args.command:
         send_client_command(root, steam_arguments)
         return 0
-    # Retain a single lifetime lock across exec without a supervising process.
+    # Serialize preparation only. Keep Python's close-on-exec flag: inheriting
+    # this lock into Valve's game wrappers lets an orphaned game block later
+    # Steam starts even after the real client has exited. Client process/FIFO
+    # checks below handle the running-client phase.
     session = (shared.directory('locks')/'steam-session.lock').open('a')
     try:
         fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        send_client_command(root, steam_arguments or ['steam://open/main'])
-        return 0
-    os.set_inheritable(session.fileno(), True)
-    # The preparation lock is close-on-exec; only the lifetime lock survives.
+        if client_running():
+            send_client_command(root, steam_arguments or ['steam://open/main'])
+            return 0
+        raise RuntimeError('Steam is starting in another session. Wait for its window to open.')
+    # Both preparation locks close atomically when Valve's executable starts.
     with (shared.directory('locks')/'steam.lock').open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
