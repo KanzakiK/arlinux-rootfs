@@ -16,6 +16,8 @@ import shared
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
 LATEST_SELECTION = Path('/var/lib/arlinux/windows-runtime-latest.json')
+RUNTIME_INDEX = 'arlinux-wine-runtime.json'
+COMPONENT_BASE = 'https://github.com/taowen/wine/releases/download/arlinux-wine-components/'
 
 
 def digest(path):
@@ -62,7 +64,26 @@ def validate(root):
 
 def install(archive, expected):
     if not re.fullmatch('[0-9a-f]{64}', expected) or digest(archive) != expected:
-        raise ValueError('Archive SHA-256 mismatch')
+        raise ValueError('Runtime manifest SHA-256 mismatch')
+    index = json.loads(archive.read_text())
+    if (index.get('format') != 1 or index.get('kind') != 'arlinux-bionic-components'
+            or not index.get('components') or index['runtime'].get('protocol') != 1
+            or index['runtime'].get('libc') != 'bionic'):
+        raise ValueError('Expected a Bionic runtime component manifest')
+    components = []
+    names = set()
+    for item in index['components']:
+        checksum, name = item['sha256'], item['file']
+        if (not re.fullmatch('[0-9a-f]{64}', checksum)
+                or not re.fullmatch(r'[a-z0-9-]+-'+checksum+r'\.tar\.gz', name)
+                or item['url'] != COMPONENT_BASE+name or name in names
+                or type(item['bytes']) is not int or item['bytes'] <= 0):
+            raise ValueError('Invalid Bionic runtime component')
+        names.add(name)
+        component = shared.download(item['url'], checksum, '.tar.gz')
+        if component.stat().st_size != item['bytes']:
+            raise ValueError('Runtime component size mismatch: '+name)
+        components.append(component)
     home = runtime_storage()
     destination = home/expected
     with (home/'install.lock').open('a') as lock:
@@ -72,8 +93,21 @@ def install(archive, expected):
             with tempfile.TemporaryDirectory(prefix='install-', dir=home) as temporary:
                 stage = Path(temporary)/'runtime'
                 stage.mkdir()
-                with tarfile.open(archive, 'r:*') as bundle:
-                    bundle.extractall(stage, filter='data')
+                members = set()
+                for component in components:
+                    with tarfile.open(component, 'r:*') as bundle:
+                        for member in bundle:
+                            # Components contain files/links, not shared parent
+                            # directory entries. Never overwrite another component.
+                            name = member.name
+                            if (name in members or name == 'bionic-runtime.json'
+                                    or '\\' in name or ':' in name
+                                    or any(part in ('', '.', '..') for part in name.split('/'))
+                                    or member.isdir()):
+                                raise ValueError('Invalid or duplicate runtime path: '+name)
+                            members.add(name)
+                            bundle.extract(member, stage, filter='data')
+                (stage/'bionic-runtime.json').write_text(json.dumps(index['runtime'])+'\n')
                 validate(stage)
                 stage.rename(destination)
         else:
@@ -100,14 +134,14 @@ def runtime(identity=None):
 
 def ensure_runtime():
     # The debug host supplies an instance-scoped candidate selection. It uses
-    # the same verified archive installer and never changes the public latest
+    # the same verified component installer and never changes the public latest
     # lookup or its cache. Missing candidates fail instead of falling back.
     candidate = os.environ.get('ARLINUX_WINE_CANDIDATE', '')
     if candidate:
         if not re.fullmatch('[0-9a-f]{64}', candidate):
             raise ValueError('Invalid candidate Wine SHA-256')
         if not (runtime_storage()/candidate).exists():
-            install(shared.directory('downloads')/(candidate+'.tar.gz'), candidate)
+            install(shared.directory('downloads')/(candidate+'.json'), candidate)
         return runtime(candidate)
     # A changed release pin installs a new immutable bundle before selecting it.
     rows = [line.split('\t') for line in MANIFEST.read_text().splitlines()
@@ -144,7 +178,7 @@ def ensure_runtime():
     except FileNotFoundError:
         pass
     print(f'Preparing shared {version}…', flush=True)
-    install(shared.download(url, expected, '.tar.gz'), expected)
+    install(shared.download(url, expected, '.json'), expected)
     if latest:
         remember_latest(expected)
     return runtime()
@@ -167,7 +201,7 @@ def latest_runtime():
         return latest_runtime_web()
     release = json.loads(result.stdout)
     for asset in release.get('assets', []):
-        if asset.get('name') != 'arlinux-wine-bionic.tar.gz':
+        if asset.get('name') != RUNTIME_INDEX:
             continue
         checksum = asset.get('digest', '')
         identity = asset.get('id')
@@ -193,9 +227,9 @@ def latest_runtime_web():
 
         def handle_starttag(self, tag, attrs):
             attrs = dict(attrs)
-            if tag == 'a' and attrs.get('href') == '/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz':
+            if tag == 'a' and attrs.get('href') == '/taowen/wine/releases/download/latest/'+RUNTIME_INDEX:
                 self.runtime_link = True
-            if tag == 'clipboard-copy' and attrs.get('aria-label') == 'Copy to clipboard digest for arlinux-wine-bionic.tar.gz':
+            if tag == 'clipboard-copy' and attrs.get('aria-label') == 'Copy to clipboard digest for '+RUNTIME_INDEX:
                 self.digests.append(attrs.get('value', ''))
 
     result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
@@ -206,7 +240,7 @@ def latest_runtime_web():
     if (not assets.runtime_link or len(assets.digests) != 1 or
             not re.fullmatch('sha256:[0-9a-f]{64}', assets.digests[0])):
         raise ValueError('Latest Bionic Wine release has no verified runtime digest')
-    return assets.digests[0][7:], 'https://github.com/taowen/wine/releases/download/latest/arlinux-wine-bionic.tar.gz'
+    return assets.digests[0][7:], 'https://github.com/taowen/wine/releases/download/latest/'+RUNTIME_INDEX
 
 
 def host_path(path):
