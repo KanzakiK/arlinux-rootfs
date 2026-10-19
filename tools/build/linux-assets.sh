@@ -172,7 +172,6 @@ PY
     install -Dm644 runtime/tools/steam_proxy.py "$rootfs/usr/lib/arlinux/steam_proxy.py"
     install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
     install -Dm644 runtime/tools/windows_webview.py "$rootfs/usr/lib/arlinux/windows_webview.py"
-    install -Dm644 runtime/tools/windows_tray.py "$rootfs/usr/lib/arlinux/windows_tray.py"
     install -Dm644 runtime/tools/windows_a11y.py "$rootfs/usr/lib/arlinux/windows_a11y.py"
     install -Dm755 runtime/tools/arlinux-windows "$rootfs/usr/bin/arlinux-windows"
     install -Dm644 runtime/tools/windows_apps.py "$rootfs/usr/lib/arlinux/windows_apps.py"
