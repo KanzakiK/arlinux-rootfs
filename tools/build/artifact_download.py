@@ -21,6 +21,10 @@ def download(url,output,expected):
     part=output.with_name(output.name+'.part')
     if output.is_file() and not part.exists():
         output.replace(part)
+    # A process may stop after receiving the last byte but before renaming.
+    if part.is_file() and sha256_file(part)==expected:
+        part.replace(output)
+        return output
     error=''
     for attempt in range(8):
         result=subprocess.run(['curl','--silent','--show-error','--location','--fail',
@@ -31,7 +35,7 @@ def download(url,output,expected):
             part.replace(output)
             return output
         error=result.stderr.strip() or 'SHA-256 mismatch'
-        if result.returncode in (0,33):
+        if result.returncode in (0,33) or (result.returncode==22 and '416' in result.stderr):
             # The server rejected ranges, or a complete file was corrupted.
             part.unlink(missing_ok=True)
         if attempt<7:
@@ -111,17 +115,24 @@ def download_capsule(record, directory):
     if archive.is_file() and sha256_file(archive) == expected:
         print('OK verified cached capsule '+expected+'; network download skipped', flush=True)
         return archive
-    pieces = []
-    for number, part in enumerate(record['parts'], 1):
+    from concurrent.futures import ThreadPoolExecutor
+    unique = {}
+    for part in record['parts']:
         checksum = part['sha256']
         if not re.fullmatch('[0-9a-f]{64}', checksum):
             raise ValueError('Invalid product part checksum')
+        unique.setdefault(checksum, part)
+    def transfer(item):
+        checksum, part = item
         file = directory/'parts'/checksum
         partial = file.with_name(file.name+'.part')
         if not file.is_file():
             resumed = partial.stat().st_size if partial.is_file() else 0
-            print(f'Download capsule part {number}/{len(record["parts"])}; resume offset {resumed} bytes', flush=True)
-        pieces.append(download(part['url'], file, checksum))
+            print(f'Download capsule part {part["name"]}; resume offset {resumed} bytes', flush=True)
+        return checksum, download(part['url'], file, checksum)
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(unique)))) as pool:
+        completed = dict(pool.map(transfer, unique.items()))
+    pieces = [completed[part['sha256']] for part in record['parts']]
     pending = archive.with_name(archive.name+'.assembling')
     with pending.open('wb') as dest:
         for file in pieces:

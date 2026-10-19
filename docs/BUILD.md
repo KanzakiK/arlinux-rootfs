@@ -76,7 +76,9 @@ and hardlinks across repeated imports and reject corrupt or escaping archives.
 
 Workstation product downloads persist manifests, partial transfers and verified
 capsules under shared `github-state/downloads/COMPONENT_ID` directories. A lock
-serializes concurrent consumers of the same component. Interruptions retain
+serializes concurrent consumers of the same component. Missing parts download
+in parallel (up to four); completed partial files are verified and promoted
+without another request. Interruptions retain
 verified parts and partial files for resumption; after assembling and checking
 the complete capsule, redundant part copies are removed.
 Canonical per-commit product caches can also satisfy another integration pin
