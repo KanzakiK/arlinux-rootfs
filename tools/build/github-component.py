@@ -81,24 +81,36 @@ def prepare(data, framework):
         'libelf-dev', 'libudev-dev', 'libgbm-dev', 'gperf', 'libglib2.0-dev', 'libglib2.0-dev-bin',
         'ccache', 'gettext', 'libgettextpo-dev', 'libssl-dev', 'unzip', 'autopoint', 'intltool', 'python-is-python3']
     if data['stage'] == 'vulkan-capture':
-        packages += ['liblz4-dev', 'libzstd-dev', 'zlib1g-dev', 'libxxhash-dev',
-                     'libxcb-keysyms1-dev', 'libxrender-dev']
+        # The native capture product does not compile Mesa/libhybris or prepare
+        # a distribution. Avoid their autotools, cross toolchain and SDK setup.
+        packages = ['build-essential', 'git', 'cmake', 'ninja-build', 'ccache', 'pkg-config',
+                    'python3', 'python3-venv', 'libvulkan-dev',
+                    'liblz4-dev', 'libzstd-dev', 'zlib1g-dev', 'libxxhash-dev',
+                    'libxcb-keysyms1-dev', 'libx11-xcb-dev', 'libxrandr-dev', 'libxrender-dev',
+                    'libxext-dev', 'libwayland-dev', 'wayland-protocols']
     run('sudo', 'apt-get', 'update')
     run('sudo', 'apt-get', 'install', '-y', '--no-install-recommends', *packages,
         env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'))
     run('python3', '-m', 'venv', root / 'python')
-    run(root / 'python/bin/pip', 'install', 'meson==1.12.0', 'mako==1.3.10', 'packaging==25.0', 'PyYAML==6.0.2', 'zstandard==0.25.0')
+    python_packages = ['zstandard==0.25.0']
+    if data['stage'] != 'vulkan-capture':
+        python_packages += ['meson==1.12.0', 'mako==1.3.10', 'packaging==25.0', 'PyYAML==6.0.2']
+    run(root / 'python/bin/pip', 'install', *python_packages)
     bin_dir = root / 'bin'
     bin_dir.mkdir(exist_ok=True)
     cross = bin_dir / 'aarch64-linux-gnu-pkg-config'
     cross.write_text('#!/bin/sh\nexport PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig\nexec pkg-config "$@"\n')
     cross.chmod(0o755)
-    run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1',
-        'distributions/'+(data['stage'] if data['stage'] in ROOTFS else 'yibu'), 'third_party/mesa', 'third_party/libhybris', 'third_party/android-headers')
     if data['stage'] == 'vulkan-capture':
-        run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1', 'third_party/gfxreconstruct')
+        run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1',
+            'third_party/gfxreconstruct', 'third_party/libhybris')
         run('git', '-C', framework/'third_party/gfxreconstruct', 'submodule', 'update', '--init', '--depth', '1',
             'external/Vulkan-Headers', 'external/SPIRV-Headers', 'external/SPIRV-Reflect')
+    else:
+        modules = ['third_party/mesa', 'third_party/libhybris', 'third_party/android-headers']
+        if data['stage'] in ROOTFS:
+            modules.append('distributions/'+data['stage'])
+        run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1', *modules)
     for marker in [framework/'.git', *framework.glob('third_party/*/.git'), *framework.glob('distributions/*/.git')]:
         if marker.exists():
             run('git', 'config', '--global', '--add', 'safe.directory', marker.parent)

@@ -79,6 +79,19 @@ the sealing and bundle recipes. This prevents compression changes from silently
 reusing stale archives or unnecessarily reinstalling packages after the cache
 schema has been populated.
 
+The package stage declares its compiled runtime helpers and Arch Mesa installer
+as inputs explicitly; application entry points are not classified by filename
+extension. Optional capture archives and their installation recipe belong to
+Linux assets and final sealing, not APT preparation. All current runtime files
+and capture tools are still input/output-verified in those stages.
+Debian package preparation uses deb.debian.org inside the disposable package
+rootfs, restoring the distribution's consumer sources before exporting the
+snapshot. This does not change the user's repository policy or bypass APT
+signature validation. The immutable base seed retains its distribution recipe.
+Capture runners install only the native capture dependencies and initialize
+GFXReconstruct and its staging-helper repository; GPU compiler jobs do not clone
+an unrelated distribution. These preparation paths remain in the same adapter.
+
 Final rootfs compression uses Zstandard level 12 with four threads. A Windows
 compression-only benchmark of a real 638,197,760-byte tar stream measured level
 19 at 126.1 seconds / 156,531,220 bytes and level 12 at 7.6 seconds /

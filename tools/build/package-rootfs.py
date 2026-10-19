@@ -46,8 +46,20 @@ def prepare(seed, output):
         policy.parent.mkdir(parents=True, exist_ok=True)
         policy.write_text('#!/bin/sh\nexit 101\n')
         policy.chmod(0o755)
+        # Hosted runners should not cross continents to use the consumer mirror.
+        # The guest recipe copies this file on each libc-restart pass. Change
+        # only the disposable build copy, then restore both copies before export.
+        debian_sources = guest / 'debian.sources'
+        consumer_sources = debian_sources.read_bytes() if debian_sources.is_file() else None
+        if consumer_sources is not None:
+            debian_sources.write_bytes(consumer_sources.replace(
+                b'https://mirrors.tuna.tsinghua.edu.cn/debian', b'https://deb.debian.org/debian'))
+            print('Package preparation uses deb.debian.org; consumer sources are restored before export', flush=True)
         subprocess.run(['unshare', '--mount', '--propagation', 'private', '--',
                         'bash', str(framework / 'tools/build/package-rootfs.sh'), str(root)], check=True)
+        if consumer_sources is not None:
+            debian_sources.write_bytes(consumer_sources)
+            (root / 'etc/apt/sources.list.d/debian.sources').write_bytes(consumer_sources)
         policy.unlink(missing_ok=True)
         subprocess.run(['tar', '--numeric-owner', '-cf', str(output / 'snapshot.tar'),
                         '-C', str(root), '.'], check=True)
