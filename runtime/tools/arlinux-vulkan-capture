@@ -17,6 +17,11 @@ import subprocess
 import time
 
 
+def sha256(path):
+    with path.open('rb') as source:
+        return hashlib.file_digest(source, 'sha256').hexdigest()
+
+
 def summarize_lifetimes(path):
     """Count captured handles, not driver-private memory or validation errors."""
     calls, created, released, peak = Counter(), Counter(), Counter(), Counter()
@@ -139,7 +144,7 @@ def main():
         path = tools / name
         if Path(name).is_absolute() or '..' in Path(name).parts:
             raise ValueError('unsafe capture manifest path: ' + name)
-        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        if sha256(path) != expected:
             raise ValueError('capture tool hash mismatch: ' + name)
     out.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ)
@@ -201,10 +206,10 @@ def main():
     captures = list(out.glob('*.gfxr'))
     if not observed or len(captures) != 1:
         raise RuntimeError('expected one capture and an observed capture-layer mapping; inspect application.log')
-    record['capture_sha256'] = hashlib.sha256(captures[0].read_bytes()).hexdigest()
+    record['capture_sha256'] = sha256(captures[0])
     if not (args.convert or args.lifetimes or args.replay):
         record['status'] = 'CAPTURED_NOT_REPLAY_VERIFIED'
-        record['files'] = {str(p.relative_to(out)): hashlib.file_digest(p.open('rb'), 'sha256').hexdigest()
+        record['files'] = {str(p.relative_to(out)): sha256(p)
                            for p in out.rglob('*') if p.is_file() and p.name != 'metadata.json'}
         (out/'metadata.json').write_text(json.dumps(record, indent=2))
         print(json.dumps({'output': str(out), 'status': record['status']}), flush=True)
@@ -228,7 +233,7 @@ def main():
                                         stdout=log, stderr=subprocess.STDOUT, timeout=120)
             record['replay_exit'] = result.returncode
             result.check_returncode()
-        record['files'] = {str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest()
+        record['files'] = {str(p.relative_to(out)): sha256(p)
                            for p in out.rglob('*') if p.is_file() and p.name != 'metadata.json'}
         record['status'] = ('REPLAYED_NOT_VISUALLY_VERIFIED' if args.replay
                             else 'CAPTURED_AND_CONVERTED')
