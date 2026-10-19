@@ -239,7 +239,7 @@ def environment(root, prefix):
     return env
 
 
-def request(root, prefix, executable, arguments=(), overrides='', stdio=False, diagnostics=None, timeout=300):
+def request(root, prefix, executable, arguments=(), overrides='', stdio=False, diagnostics=None, timeout=300, task=True):
     exe = str(executable)
     if exe.startswith('/'):
         exe = str(host_path(exe))
@@ -247,7 +247,7 @@ def request(root, prefix, executable, arguments=(), overrides='', stdio=False, d
         not re.fullmatch('/[A-Za-z][A-Za-z0-9:_-]*', str(value)) else str(value)
         for value in arguments]
     payload = dict(runtime=root.name, prefix=str(host_path(prefix/'pfx')), exe=exe,
-                   args=argv, dllOverrides=overrides, stdio=stdio)
+                   args=argv, dllOverrides=overrides, stdio=stdio, task=task)
     if diagnostics:
         payload['environment'] = diagnostics
     return _host_request(payload, timeout, stdio)
@@ -308,12 +308,14 @@ class WindowsWaitTimeout(TimeoutError):
         cancel_job(self.job)
 
 
-def run(root, prefix, executable, arguments=(), env=None, check=False, capture=False, timeout=600):
+def run(root, prefix, executable, arguments=(), env=None, check=False, capture=False, timeout=600, task=False):
+    """Wait for a command; interactive tasks also retain their child processes."""
     env = env or {}
     diagnostics = {name: env[name] for name in ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG',
         'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
         'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER', 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS') if name in env}
-    response = request(root, prefix, executable, arguments, env.get('WINEDLLOVERRIDES', ''), diagnostics=diagnostics)
+    response = request(root, prefix, executable, arguments, env.get('WINEDLLOVERRIDES', ''),
+                       diagnostics=diagnostics, task=task)
     deadline = time.monotonic()+timeout if timeout is not None else None
     exit_path = guest_path(response['exit'])
     while not exit_path.is_file():
@@ -343,8 +345,8 @@ def launch(executable, arguments=(), prefix=None):
     env = windows_webview.prepare(root, prefix, env)
     windows_a11y.ensure(root, prefix, executable.stem, env)
     if executable.suffix.lower() == '.lnk':
-        return run(root, prefix, 'start.exe', [str(executable), *arguments], env=env, timeout=None).returncode
-    return run(root, prefix, executable, arguments, env=env, timeout=None).returncode
+        return run(root, prefix, 'start.exe', [str(executable), *arguments], env=env, timeout=None, task=True).returncode
+    return run(root, prefix, executable, arguments, env=env, timeout=None, task=True).returncode
 
 
 def main():

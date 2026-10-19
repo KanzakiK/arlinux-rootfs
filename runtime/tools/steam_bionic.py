@@ -169,7 +169,7 @@ def launch(verb, arguments):
     import steamworks
     with steamworks.session(root, wine_prefix, env) as launcher:
         result = windows.run(root, wine_prefix, launcher, arguments, env=env,
-                             timeout=7*24*60*60)
+                             timeout=7*24*60*60, task=True)
     return result.returncode
 
 
