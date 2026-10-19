@@ -114,7 +114,10 @@ passed in 176 seconds overall: host preparation 71 seconds, cache restore
 7 seconds, dispatcher 69 seconds and publication 10 seconds. Its log reports
 `OK cached rootfs-packages`, reuses the verified seed archive and seals a new
 distribution. This demonstrates package-cache reuse, not reuse of an installed
-instance. The product adapter no longer runs unrelated synthetic unit tests as
+instance. The changed ZIP SHA-256 is
+`44edb8119dfd06defe711750af0ea7d091a15f6976f7677c1b1d7d907c96d651`;
+reading the archive confirmed the new extensionless command documentation and
+unchanged consumer APT sources. The product adapter no longer runs unrelated synthetic unit tests as
 part of building a distribution; production input/output validation remains.
 
 The independently dispatched
