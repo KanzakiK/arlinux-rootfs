@@ -2,15 +2,59 @@
 """Install the pinned official OpenCode Desktop on first use, then launch it."""
 import argparse
 import fcntl
+import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
+import urllib.request
 import shared
 
 BINARY = Path('/opt/OpenCode/ai.opencode.desktop')
 MANIFEST = Path('/usr/lib/arlinux/guest/opencode-downloads.tsv')
+
+
+def configure_default_model():
+    """Seed a new user's preference; never replace an existing config or paid fallback."""
+    config = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'opencode'
+    if any((config / name).exists() for name in ('opencode.json', 'opencode.jsonc')):
+        return
+    try:
+        request = urllib.request.Request('https://opencode.ai/zen/v1/models',
+                                         headers={'User-Agent': 'ARLinux-OpenCode'})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = response.read(1024 * 1024 + 1)
+        if len(body) > 1024 * 1024:
+            raise ValueError('OpenCode model response exceeds 1 MiB')
+        candidates = [item['id'] for item in json.loads(body)['data']
+                      if isinstance(item, dict) and isinstance(item.get('id'), str)
+                      and re.fullmatch(r'deepseek-[a-z0-9.-]*flash[a-z0-9.-]*-free', item['id'])]
+        if not candidates:
+            print('DeepSeek Flash Free unavailable; keeping OpenCode\'s default free model.', flush=True)
+            return
+        # Compare numeric version components naturally (v10 sorts after v4).
+        def version_key(model):
+            return tuple((1, int(part)) if part.isdigit() else (0, part)
+                         for part in re.split(r'(\d+)', model))
+        model = 'opencode/' + max(candidates, key=version_key)
+        config.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile('w', dir=config, prefix='.arlinux-model-', delete=False) as output:
+                temporary = Path(output.name)
+                json.dump({'$schema': 'https://opencode.ai/config.json', 'model': model}, output, indent=2)
+                output.write('\n')
+            os.link(temporary, config / 'opencode.json')
+        except FileExistsError:
+            return
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        print(f'Default OpenCode model: {model}', flush=True)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print(f'Keeping OpenCode\'s default free model: {error}', flush=True)
 
 
 def install():
@@ -65,6 +109,7 @@ def install():
     applications.mkdir(parents=True, exist_ok=True)
     for name in ('ai.opencode.desktop.desktop', 'opencode-desktop.desktop'):
         (applications / name).write_text('[Desktop Entry]\nType=Application\nName=OpenCode\nHidden=true\n')
+    configure_default_model()
 
 
 def main():
