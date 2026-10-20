@@ -123,6 +123,8 @@ def install_component(name, source, expected):
 
 def ensure_component(row):
     name = row[0]
+    if not re.fullmatch('[a-z0-9_-]+', name):
+        raise ValueError('Invalid runtime producer name')
     overrides = os.environ.get('ARLINUX_WINE_COMPONENTS')
     override = Path(overrides)/(name+'.json') if overrides else None
     if override is not None and override.is_file():
