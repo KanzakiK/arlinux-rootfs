@@ -4,6 +4,18 @@ This repository builds Linux distributions and their native Linux GPU libraries.
 It has no Bionic Wine source, build graph, assembly or publishing pipeline.
 Application launchers download the independently published runtime when needed.
 
+OpenCode Desktop is also an on-demand vendor product, not a build dependency.
+`runtime/tools/opencode.py` resolves its current stable ARM64 installer from
+`https://opencode.ai/update/api/latest/desktop/opencode` on first installation,
+then passes that response's immutable URL and SHA-256 to the ordinary shared
+download cache. Do not restore a version-pinned TSV or use GitHub's V1 `latest`
+release as the V2 channel. Metadata failure must remain a visible retryable
+installation error, not an unverified download or silent downgrade. Existing
+installations launch offline without an added update lookup. New installations
+prefer an available DeepSeek Flash Free model from the official Zen catalog;
+otherwise they retain the upstream free default. Existing user configuration
+is not overwritten and model lookup failure does not fail installation.
+
 The only Linux entry is `./build.sh`. Android APK development uses the Android
 repository's `build.ps1`, which obtains this independent distribution product.
 
