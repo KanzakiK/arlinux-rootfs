@@ -183,13 +183,15 @@ def ensure_runtime():
     metadata = {}
     for root in roots:
         for key, value in json.loads((root/'bionic-runtime.json').read_text()).items():
-            if key in ('files', 'originalSources'):
+            if key == 'files':
                 target = metadata.setdefault(key, {})
                 for field, content in value.items():
-                    if field in target and (key == 'files' or target[field] != content):
+                    if field in target:
                         raise ValueError('Conflicting runtime ownership: '+field)
                     target[field] = content
-            elif key in ('sources', 'compatibility'):
+            elif key in ('sources', 'compatibility', 'originalSources'):
+                # Source provenance stays with each producer. Independent PE
+                # architectures can legitimately originate from different commits.
                 continue
             elif key in metadata and metadata[key] != value:
                 raise ValueError('Conflicting runtime metadata: '+key)
