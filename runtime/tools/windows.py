@@ -216,14 +216,43 @@ def release_asset(row):
             or tag != 'arlinux-'+name+'-latest' or filename != 'runtime.tar.gz'):
         raise ValueError('Invalid runtime release endpoint')
     endpoint = f'https://api.github.com/repos/{repository}/releases/tags/{tag}'
-    result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
-                             endpoint], check=True, capture_output=True, text=True)
+    try:
+        result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
+                                 endpoint], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
+        # Preserve GitHub's public digest fallback when the unauthenticated API
+        # is rate limited. Download size is then recorded after hash validation.
+        class Assets(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.checksums = []
+                self.link = False
+
+            def handle_starttag(self, tag_name, attrs):
+                attrs = dict(attrs)
+                if tag_name == 'a' and attrs.get('href') == f'/{repository}/releases/download/{tag}/{filename}':
+                    self.link = True
+                if tag_name == 'clipboard-copy' and attrs.get('aria-label') == 'Copy to clipboard digest for '+filename:
+                    self.checksums.append(attrs.get('value', ''))
+
+        page = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
+                               f'https://github.com/{repository}/releases/expanded_assets/{tag}'],
+                              check=True, capture_output=True, text=True)
+        assets = Assets()
+        assets.feed(page.stdout)
+        if not assets.link or len(assets.checksums) != 1 or not re.fullmatch('sha256:[0-9a-f]{64}', assets.checksums[0]):
+            raise ValueError('Runtime release has no verified digest: '+name)
+        checksum = assets.checksums[0][7:]
+        return dict(name=name, file=name+'-'+checksum+'.tar.gz', asset=filename,
+                    sha256=checksum, bytes=None,
+                    url=f'https://github.com/{repository}/releases/download/{tag}/{filename}')
     release = json.loads(result.stdout)
     if release.get('draft') or release.get('tag_name') != tag:
         raise ValueError('Invalid runtime release')
     asset = next((a for a in release.get('assets', []) if a.get('name') == filename), None)
     if (not asset or asset.get('state') != 'uploaded'
-            or not re.fullmatch('sha256:[0-9a-f]{64}', asset.get('digest', ''))
+            or not isinstance(asset.get('digest'), str)
+            or not re.fullmatch('sha256:[0-9a-f]{64}', asset['digest'])
             or type(asset.get('size')) is not int or asset['size'] <= 0
             or type(asset.get('id')) is not int or asset['id'] <= 0):
         raise ValueError('Runtime release has no verified asset: '+name)
@@ -245,8 +274,9 @@ def latest_runtime():
     merged = {}
     for item in components:
         archive = shared.download(item['url'], item['sha256'], '.tar.gz')
-        if archive.stat().st_size != item['bytes']:
+        if item['bytes'] is not None and archive.stat().st_size != item['bytes']:
             raise ValueError('Runtime release size mismatch')
+        item['bytes'] = archive.stat().st_size
         with tarfile.open(archive) as packed:
             member = packed.getmember('bionic-runtime.json')
             if not member.isfile() or member.size > 4*1024*1024:
