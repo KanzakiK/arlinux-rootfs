@@ -79,7 +79,9 @@ Use Python with zstandard and authenticated gh. Component ownership, ARM64
 standard runner labels and dependencies are defined in
 the independent `tools/build/components/COMPONENT.json` recipes. Each repository runs an independent
 workflow_dispatch and owns its own 10 GB cache. Each recipe declares one fixed
-`arlinux-COMPONENT-debug` release. The coordinator queries that endpoint directly;
+`arlinux-COMPONENT-debug` release for daily development, updated in place.
+Public distribution promotion remains explicit and does not create SHA-tagged
+development releases. The coordinator queries the debug endpoint directly;
 input identities select verified caches, not release tags. Payloads upload before
 the completion metadata, and all downloads retain SHA-256 verification.
 No WSL compilation is required.
