@@ -1,6 +1,5 @@
 """Install Bionic Wine and launch Windows programs through the Android host."""
 import argparse
-import fcntl
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -15,9 +14,6 @@ import time
 import shared
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
-LATEST_SELECTION = Path('/var/lib/arlinux/windows-runtime-latest.json')
-RUNTIME_INDEX = 'arlinux-wine-manifests.json'
-COMPONENT_BASE = 'https://github.com/taowen/wine/releases/download/arlinux-wine-components/'
 
 
 def digest(path):
@@ -67,110 +63,101 @@ def runtime_url(url, filename):
                             r'/releases/download/[^/]+/'+re.escape(filename), url))
 
 
-def runtime_index(archive):
-    index = json.loads(archive.read_text())
-    if index.get('format') == 1 and index.get('kind') == 'arlinux-bionic-components':
-        return index
-    if (index.get('format') != 2 or index.get('kind') != 'arlinux-bionic-manifests'
-            or not isinstance(index.get('manifests'), list) or not index['manifests']):
-        raise ValueError('Expected independently pinned Bionic runtime manifests')
-    merged = dict(format=1, kind='arlinux-bionic-components', runtime={}, components=[])
-    names = set()
-    for item in index['manifests']:
-        name, filename, checksum = item['name'], item['file'], item['sha256']
-        if (not re.fullmatch('[a-z0-9_-]+', name) or filename != 'arlinux-'+name+'.json'
-                or name in names or not re.fullmatch('[0-9a-f]{64}', checksum)
-                or not runtime_url(item['url'], filename)
-                or type(item['bytes']) is not int or item['bytes'] <= 0):
-            raise ValueError('Invalid independent runtime manifest')
-        names.add(name)
-        source = shared.download(item['url'], checksum, '.json')
-        if source.stat().st_size != item['bytes']:
-            raise ValueError('Runtime manifest size mismatch: '+name)
-        child = json.loads(source.read_text())
-        if child.get('format') != 1 or child.get('kind') != 'arlinux-bionic-components':
-            raise ValueError('Expected a leaf runtime component manifest')
-        for key, value in child['runtime'].items():
-            if key in ('files', 'originalSources'):
-                previous = merged['runtime'].setdefault(key, {})
-                for field, content in value.items():
-                    if field in previous and (key == 'files' or previous[field] != content):
-                        raise ValueError('Conflicting runtime metadata: '+field)
-                    previous[field] = content
-            elif key in merged['runtime'] and merged['runtime'][key] != value:
-                raise ValueError('Conflicting runtime metadata: '+key)
-            else:
-                merged['runtime'][key] = value
-        merged['components'].extend(child['components'])
-    return merged
-
-
-def install(archive, expected):
-    if not re.fullmatch('[0-9a-f]{64}', expected) or digest(archive) != expected:
-        raise ValueError('Runtime manifest SHA-256 mismatch')
-    index = runtime_index(archive)
-    if (index.get('format') != 1 or index.get('kind') != 'arlinux-bionic-components'
-            or not index.get('components') or index['runtime'].get('protocol') != 1
-            or index['runtime'].get('libc') != 'bionic'):
-        raise ValueError('Expected a Bionic runtime component manifest')
-    components = []
-    names = set()
-    for item in index['components']:
-        checksum, name = item['sha256'], item['file']
-        if (not re.fullmatch('[0-9a-f]{64}', checksum)
-                or not re.fullmatch(r'[a-z0-9_-]+-'+checksum+r'\.tar\.gz', name)
-                or not runtime_url(item['url'], item.get('asset', name)) or name in names
-                or type(item['bytes']) is not int or item['bytes'] <= 0):
-            raise ValueError('Invalid Bionic runtime component')
-        names.add(name)
-        component = shared.download(item['url'], checksum, '.tar.gz')
-        if component.stat().st_size != item['bytes']:
-            raise ValueError('Runtime component size mismatch: '+name)
-        components.append(component)
-    home = runtime_storage()
+def install_component(name, source, expected):
+    """Install only one checksum-addressed producer into the immutable store."""
+    if not re.fullmatch('[0-9a-f]{64}', expected) or digest(source) != expected:
+        raise ValueError('Runtime producer SHA-256 mismatch')
+    descriptor = json.loads(source.read_text())
+    home = runtime_storage()/'components'/name
+    home.mkdir(parents=True, exist_ok=True)
     destination = home/expected
-    with (home/'install.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not destination.exists():
-            print('Installing Windows runtime…', flush=True)
-            with tempfile.TemporaryDirectory(prefix='install-', dir=home) as temporary:
-                stage = Path(temporary)/'runtime'
-                stage.mkdir()
-                members = set()
-                for component in components:
-                    with tarfile.open(component, 'r:*') as bundle:
-                        for member in bundle:
-                            # Components contain files/links, not shared parent
-                            # directory entries. Never overwrite another component.
-                            name = member.name
-                            if index.get('embeddedMetadata') and name == 'bionic-runtime.json':
-                                continue
-                            if (name in members or name == 'bionic-runtime.json'
-                                    or '\\' in name or ':' in name
-                                    or any(part in ('', '.', '..') for part in name.split('/'))
-                                    or member.isdir()):
-                                raise ValueError('Invalid or duplicate runtime path: '+name)
-                            members.add(name)
-                            bundle.extract(member, stage, filter='data')
-                (stage/'bionic-runtime.json').write_text(json.dumps(index['runtime'])+'\n')
-                validate(stage)
-                stage.rename(destination)
+    with shared.locked(home/'install.lock'):
+        if destination.is_dir():
+            return destination
+        if descriptor.get('kind') == 'arlinux-bionic-components' and descriptor.get('format') == 1:
+            archives = descriptor['components']
+            metadata = descriptor['runtime']
+        elif descriptor.get('name') == name:
+            archives = [descriptor]
+            metadata = None
         else:
-            validate(destination)
-        pointer = home/'current.json'
-        temporary = pointer.with_suffix('.tmp')
-        temporary.write_text(json.dumps({'sha256': expected})+'\n')
-        temporary.replace(pointer)
-    print(f'Installed Bionic Wine: {expected[:12]}', flush=True)
+            raise ValueError('Expected one runtime producer: '+name)
+        with tempfile.TemporaryDirectory(prefix='install-', dir=home) as temporary:
+            stage = Path(temporary)/'runtime'
+            stage.mkdir()
+            seen = set()
+            for item in archives:
+                checksum = item['sha256']
+                asset = item.get('asset', item['file'])
+                if (not re.fullmatch('[0-9a-f]{64}', checksum)
+                        or not runtime_url(item['url'], asset)):
+                    raise ValueError('Invalid runtime component archive')
+                archive = shared.download(item['url'], checksum, '.tar.gz')
+                if item.get('bytes') is not None and archive.stat().st_size != item['bytes']:
+                    raise ValueError('Runtime component size mismatch: '+name)
+                with tarfile.open(archive, 'r:*') as bundle:
+                    for member in bundle:
+                        path = member.name
+                        if path == 'bionic-runtime.json':
+                            if metadata is not None or not member.isfile() or member.size > 4*1024*1024:
+                                raise ValueError('Invalid embedded runtime metadata')
+                            metadata = json.load(bundle.extractfile(member))
+                            continue
+                        if (path in seen or '\\' in path or ':' in path
+                                or any(part in ('', '.', '..') for part in path.split('/'))
+                                or member.isdir()):
+                            raise ValueError('Unsafe or duplicate runtime path: '+path)
+                        seen.add(path)
+                        bundle.extract(member, stage, filter='data')
+            if not metadata or metadata.get('protocol') != 1 or metadata.get('libc') != 'bionic':
+                raise ValueError('Expected Bionic runtime metadata')
+            # Legacy delivery archives may carry a product-wide pairing token.
+            # Component releases have independent lifetimes; it is not a dependency.
+            metadata.pop('compatibility', None)
+            (stage/'bionic-runtime.json').write_text(json.dumps(metadata)+'\n')
+            validate(stage)
+            stage.rename(destination)
+    print('Installed runtime component: '+name+' '+expected[:12], flush=True)
+    return destination
+
+
+def ensure_component(row):
+    name = row[0]
+    overrides = os.environ.get('ARLINUX_WINE_COMPONENTS')
+    override = Path(overrides)/(name+'.json') if overrides else None
+    if override is not None and override.is_file():
+        expected = json.loads(override.read_text())['sha256']
+        return install_component(name, shared.directory('downloads')/(expected+'.json'), expected)
+    state = storage()/'components'/(name+'.json')
+    try:
+        selected = json.loads(state.read_text())
+        age = time.time()-selected['checkedAt']
+        root = runtime_storage()/'components'/name/selected['sha256']
+        if 0 <= age < 3600 and root.is_dir() and selected['endpoint'] == row:
+            return root
+    except (FileNotFoundError, ValueError, KeyError, TypeError):
+        pass
+    item = release_asset(row)
+    encoded = (json.dumps(item, sort_keys=True)+'\n').encode()
+    expected = hashlib.sha256(encoded).hexdigest()
+    source = shared.directory('downloads')/(expected+'.json')
+    with shared.locked(source.with_suffix('.lock')):
+        source.write_bytes(encoded)
+    root = install_component(name, source, expected)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    with shared.locked(state.with_suffix('.lock')):
+        temporary = state.with_suffix('.tmp')
+        temporary.write_text(json.dumps(dict(sha256=expected, checkedAt=time.time(), endpoint=row))+'\n')
+        temporary.replace(state)
+    return root
 
 
 def runtime(identity=None):
-    home = runtime_storage()
     if identity is None:
-        identity = os.environ.get('ARLINUX_WINE_CANDIDATE') or json.loads((home/'current.json').read_text())['sha256']
+        identity = (storage()/'runtime-id').read_text().strip()
     if not isinstance(identity, str) or not re.fullmatch('[0-9a-f]{64}', identity):
         raise ValueError('Invalid runtime identity')
-    root = home/identity
+    root = runtime_storage()/identity
     metadata = json.loads((root/'bionic-runtime.json').read_text())
     if metadata.get('protocol') != 1 or metadata.get('libc') != 'bionic':
         raise ValueError('Only Bionic Wine is supported')
@@ -178,35 +165,58 @@ def runtime(identity=None):
 
 
 def ensure_runtime():
-    # The debug host supplies an instance-scoped candidate selection. It uses
-    # the same verified component installer and never changes the public latest
-    # lookup or its cache. Missing candidates fail instead of falling back.
-    candidate = os.environ.get('ARLINUX_WINE_CANDIDATE', '')
-    if candidate:
-        if not re.fullmatch('[0-9a-f]{64}', candidate):
-            raise ValueError('Invalid candidate Wine SHA-256')
-        if not (runtime_storage()/candidate).exists():
-            install(shared.directory('downloads')/(candidate+'.json'), candidate)
-        return runtime(candidate)
-    try:
-        selected = json.loads(LATEST_SELECTION.read_text())
-        age = time.time() - selected.get('checkedAt', 0)
-        if selected.get('manifestSHA256') == digest(MANIFEST) and 0 <= age < 3600:
-            return runtime(selected['sha256'])
-    except (FileNotFoundError, ValueError, KeyError, TypeError):
-        pass
-    expected, source = latest_runtime()
-    install(source, expected)
-    remember_latest(expected)
-    return runtime(expected)
-
-
-def remember_latest(identity):
-    LATEST_SELECTION.parent.mkdir(parents=True, exist_ok=True)
-    temporary = LATEST_SELECTION.with_suffix('.tmp')
-    temporary.write_text(json.dumps({'sha256': identity, 'checkedAt': time.time(),
-                                    'manifestSHA256': digest(MANIFEST)})+'\n')
-    temporary.replace(LATEST_SELECTION)
+    """Resolve producers independently and link their already-installed files."""
+    from concurrent.futures import ThreadPoolExecutor
+    rows = [line.split('\t') for line in MANIFEST.read_text().splitlines()
+            if line.strip() and not line.startswith('#')]
+    if not rows or any(len(row) != 4 for row in rows) or len({r[0] for r in rows}) != len(rows):
+        raise ValueError('Invalid runtime release endpoints')
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        roots = list(pool.map(ensure_component, rows))
+    metadata = {}
+    for root in roots:
+        for key, value in json.loads((root/'bionic-runtime.json').read_text()).items():
+            if key in ('files', 'originalSources'):
+                target = metadata.setdefault(key, {})
+                for field, content in value.items():
+                    if field in target and (key == 'files' or target[field] != content):
+                        raise ValueError('Conflicting runtime ownership: '+field)
+                    target[field] = content
+            elif key in ('sources', 'compatibility'):
+                continue
+            elif key in metadata and metadata[key] != value:
+                raise ValueError('Conflicting runtime metadata: '+key)
+            else:
+                metadata[key] = value
+    encoded = (json.dumps(metadata, sort_keys=True)+'\n').encode()
+    identity = hashlib.sha256(encoded).hexdigest()
+    home = runtime_storage()
+    destination = home/identity
+    with shared.locked(home/'install.lock'):
+        if not destination.is_dir():
+            with tempfile.TemporaryDirectory(prefix='view-', dir=home) as temporary:
+                stage = Path(temporary)/'runtime'
+                stage.mkdir()
+                for root in roots:
+                    for source in root.rglob('*'):
+                        relative = source.relative_to(root)
+                        if relative.as_posix() == 'bionic-runtime.json' or source.is_dir() and not source.is_symlink():
+                            continue
+                        target = stage/relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        if source.is_symlink():
+                            target.symlink_to(os.readlink(source))
+                        else:
+                            os.link(source, target)
+                (stage/'bionic-runtime.json').write_bytes(encoded)
+                stage.rename(destination)
+    pointer = storage()/'runtime-id'
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    with shared.locked(pointer.with_suffix('.lock')):
+        temporary = pointer.with_suffix('.tmp')
+        temporary.write_text(identity+'\n')
+        temporary.replace(pointer)
+    return runtime(identity)
 
 
 def release_asset(row):
@@ -261,54 +271,6 @@ def release_asset(row):
                 sha256=checksum, bytes=asset['size'],
                 url=f'https://github.com/{repository}/releases/download/{tag}/{filename}')
 
-
-def latest_runtime():
-    """GitHub releases are the download index; no public JSON selection."""
-    from concurrent.futures import ThreadPoolExecutor
-    rows = [line.split('\t') for line in MANIFEST.read_text().splitlines()
-            if line.strip() and not line.startswith('#')]
-    if not rows or any(len(row) != 4 for row in rows) or len({r[0] for r in rows}) != len(rows):
-        raise ValueError('Invalid runtime release endpoints')
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        components = list(pool.map(release_asset, rows))
-    merged = {}
-    for item in components:
-        archive = shared.download(item['url'], item['sha256'], '.tar.gz')
-        if item['bytes'] is not None and archive.stat().st_size != item['bytes']:
-            raise ValueError('Runtime release size mismatch')
-        item['bytes'] = archive.stat().st_size
-        with tarfile.open(archive) as packed:
-            member = packed.getmember('bionic-runtime.json')
-            if not member.isfile() or member.size > 4*1024*1024:
-                raise ValueError('Invalid embedded runtime metadata')
-            metadata = json.load(packed.extractfile(member))
-        if metadata.get('protocol') != 1 or metadata.get('libc') != 'bionic':
-            raise ValueError('Invalid runtime component metadata')
-        for key, value in metadata.items():
-            if key in ('files', 'originalSources', 'compatibility'):
-                target = merged.setdefault(key, {})
-                for field, content in value.items():
-                    if field in target and (key == 'files' or target[field] != content):
-                        raise ValueError('Incompatible runtime releases: '+field)
-                    target[field] = content
-            elif key == 'sources':
-                continue
-            elif key in merged and merged[key] != value:
-                raise ValueError('Incompatible runtime metadata: '+key)
-            else:
-                merged[key] = value
-    # This is an internal cache receipt, never a published download manifest.
-    index = dict(format=1, kind='arlinux-bionic-components', embeddedMetadata=True,
-                 runtime=merged, components=components)
-    encoded = (json.dumps(index, sort_keys=True, indent=2)+'\n').encode()
-    checksum = hashlib.sha256(encoded).hexdigest()
-    source = shared.directory('downloads')/(checksum+'.json')
-    with shared.locked(source.with_suffix('.lock')):
-        with tempfile.NamedTemporaryFile(dir=source.parent, delete=False) as output:
-            temporary = Path(output.name)
-            output.write(encoded)
-        temporary.replace(source)
-    return checksum, source
 
 def host_path(path):
     """Map guest files to Android backing files (including per-instance HOME)."""
@@ -452,23 +414,13 @@ def launch(executable, arguments=(), prefix=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--install', type=Path, metavar='BUNDLE')
-    parser.add_argument('--sha256')
     parser.add_argument('--prefix', type=Path, help='Wine data directory (contains pfx)')
     parser.add_argument('executable', nargs='?', type=Path)
     parser.add_argument('arguments', nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    if args.install:
-        if not args.sha256:
-            parser.error('--install requires --sha256')
-        install(args.install, args.sha256)
-    elif args.sha256:
-        parser.error('--sha256 requires --install')
-    if args.executable:
-        return launch(args.executable, args.arguments, args.prefix)
-    if not args.install:
-        parser.error('Provide an executable or --install BUNDLE --sha256 SHA256')
-    return 0
+    if not args.executable:
+        parser.error('Provide a Windows executable')
+    return launch(args.executable, args.arguments, args.prefix)
 
 
 if __name__ == '__main__':
