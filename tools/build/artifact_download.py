@@ -18,18 +18,23 @@ def download(url,output,expected,label=None):
     output.parent.mkdir(parents=True,exist_ok=True)
     if output.is_file() and sha256_file(output)==expected:
         return output
-    part=output.with_name(output.name+'.part')
-    if output.is_file() and not part.exists():
-        output.replace(part)
+    # A complete file from an older fixed release is not a partial download
+    # of this generation. Keep resumable bytes bound to the expected digest.
+    part=output.with_name(output.name+'.'+expected+'.part')
+    if output.is_file():
+        output.unlink()
     # A process may stop after receiving the last byte but before renaming.
     if part.is_file() and sha256_file(part)==expected:
         part.replace(output)
         return output
+    transfer_url=url
+    if url.startswith('https://github.com/') and '/releases/download/' in url:
+        transfer_url += ('&' if '?' in url else '?')+'arlinux_sha256='+expected
     error=''
     for attempt in range(8):
         command=['curl','--silent','--show-error','--location','--fail',
             '--continue-at','-','--connect-timeout','20','--max-time','600',
-            '--speed-time','90','--speed-limit','1024','--output',str(part),url]
+            '--speed-time','90','--speed-limit','1024','--output',str(part),transfer_url]
         started=time.monotonic()
         offset=part.stat().st_size if part.is_file() else 0
         with subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) as process:
@@ -55,7 +60,7 @@ def download(url,output,expected,label=None):
             # The server rejected ranges, or a complete file was corrupted.
             part.unlink(missing_ok=True)
         if attempt<7:
-            print(f'Retry immutable download {output.name}: {error[-200:]}',flush=True)
+            print(f'Retry verified download {output.name}: {error[-200:]}',flush=True)
             time.sleep(min(2**attempt,16))
     raise RuntimeError('Cannot obtain verified build input '+str(output)+': '+error)
 
@@ -141,7 +146,7 @@ def download_capsule(record, directory):
     def transfer(item):
         checksum, part = item
         file = directory/'parts'/checksum
-        partial = file.with_name(file.name+'.part')
+        partial = file.with_name(file.name+'.'+checksum+'.part')
         if not file.is_file():
             resumed = partial.stat().st_size if partial.is_file() else 0
             print(f'Download capsule part {part["name"]}; resume offset {resumed} bytes', flush=True)
