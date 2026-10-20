@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the pinned official OpenCode Desktop on first use, then launch it."""
+"""Install the current official OpenCode Desktop on first use, then launch it."""
 import argparse
 import fcntl
 import json
@@ -10,10 +10,46 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+from urllib.parse import urlparse
 import shared
 
 BINARY = Path('/opt/OpenCode/ai.opencode.desktop')
-MANIFEST = Path('/usr/lib/arlinux/guest/opencode-downloads.tsv')
+UPDATE_URL = 'https://opencode.ai/update/api/latest/desktop/opencode'
+
+
+def official_json(address):
+    request = urllib.request.Request(address, headers={'User-Agent': 'ARLinux-OpenCode'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if not response.geturl().startswith('https://'):
+            raise ValueError('Insecure OpenCode metadata redirect')
+        body = response.read(1024 * 1024 + 1)
+    if len(body) > 1024 * 1024:
+        raise ValueError('OpenCode metadata exceeds 1 MiB')
+    return json.loads(body)
+
+
+def latest_installer():
+    # V2 publishes through its own update service; GitHub latest still tracks V1.
+    release = official_json(UPDATE_URL)
+    if not isinstance(release, dict):
+        raise ValueError('Invalid official OpenCode release')
+    version = release['version']
+    if (release.get('channel') != 'latest' or release.get('name') != 'desktop'
+            or release.get('distribution') != 'opencode' or release.get('active') is not True
+            or not isinstance(version, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version)):
+        raise ValueError('Invalid official OpenCode release')
+    filename = ('opencode-desktop-linux-arm64.deb' if Path('/usr/bin/apt-get').exists()
+                else 'opencode-desktop-linux-aarch64.rpm')
+    asset = release['metadata']['files'][filename]
+    expected, url = asset['sha256'], asset['url']
+    if not isinstance(url, str):
+        raise ValueError('Invalid official OpenCode installer URL')
+    parsed = urlparse(url)
+    if (not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{64}', expected)
+            or parsed.scheme != 'https' or parsed.netloc != 'opencode.ai'
+            or parsed.path != f'/files/bin/{version}/{filename}' or parsed.query or parsed.fragment):
+        raise ValueError('Invalid official OpenCode installer metadata')
+    return version, expected, url
 
 
 def configure_default_model():
@@ -22,13 +58,7 @@ def configure_default_model():
     if any((config / name).exists() for name in ('opencode.json', 'opencode.jsonc')):
         return
     try:
-        request = urllib.request.Request('https://opencode.ai/zen/v1/models',
-                                         headers={'User-Agent': 'ARLinux-OpenCode'})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            body = response.read(1024 * 1024 + 1)
-        if len(body) > 1024 * 1024:
-            raise ValueError('OpenCode model response exceeds 1 MiB')
-        candidates = [item['id'] for item in json.loads(body)['data']
+        candidates = [item['id'] for item in official_json('https://opencode.ai/zen/v1/models')['data']
                       if isinstance(item, dict) and isinstance(item.get('id'), str)
                       and re.fullmatch(r'deepseek-[a-z0-9.-]*flash[a-z0-9.-]*-free', item['id'])]
         if not candidates:
@@ -58,13 +88,8 @@ def configure_default_model():
 
 
 def install():
-    row = next(line.split('\t') for line in MANIFEST.read_text().splitlines()
-               if line.startswith('opencode-desktop\t'))
-    _, version, expected, url = row
+    version, expected, url = latest_installer()
     extension = url.rsplit('.', 1)[-1]
-    if (len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected)
-            or not url.startswith('https://') or extension not in ('deb', 'rpm')):
-        raise ValueError('Invalid OpenCode download manifest')
     print(f'Preparing OpenCode {version}. The first download may take a few minutes.\n'
           'Internet access is required. Subsequent launches use the installed app.', flush=True)
     package = shared.download(url, expected, '.' + extension)
@@ -136,7 +161,7 @@ def main():
 if __name__ == '__main__':
     try:
         status = main()
-    except (OSError, ValueError, RuntimeError, StopIteration, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f'OpenCode: {error}\nCheck your connection and click OpenCode to retry.', file=sys.stderr)
         status = 1
     if status and '--desktop' in sys.argv and sys.stdin.isatty():
