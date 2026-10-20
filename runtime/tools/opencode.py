@@ -57,24 +57,30 @@ def configure_default_model():
     config = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'opencode'
     if any((config / name).exists() for name in ('opencode.json', 'opencode.jsonc')):
         return
+    settings = {'$schema': 'https://opencode.ai/config.json',
+                'permission': {'external_directory': 'allow'}}
     try:
         candidates = [item['id'] for item in official_json('https://opencode.ai/zen/v1/models')['data']
                       if isinstance(item, dict) and isinstance(item.get('id'), str)
                       and re.fullmatch(r'deepseek-[a-z0-9.-]*flash[a-z0-9.-]*-free', item['id'])]
         if not candidates:
             print('DeepSeek Flash Free unavailable; keeping OpenCode\'s default free model.', flush=True)
-            return
-        # Compare numeric version components naturally (v10 sorts after v4).
-        def version_key(model):
-            return tuple((1, int(part)) if part.isdigit() else (0, part)
-                         for part in re.split(r'(\d+)', model))
-        model = 'opencode/' + max(candidates, key=version_key)
+        else:
+            # Compare numeric version components naturally (v10 sorts after v4).
+            def version_key(model):
+                return tuple((1, int(part)) if part.isdigit() else (0, part)
+                             for part in re.split(r'(\d+)', model))
+            settings['model'] = 'opencode/' + max(candidates, key=version_key)
+            print(f'Default OpenCode model: {settings["model"]}', flush=True)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print(f'Keeping OpenCode\'s default free model: {error}', flush=True)
+    try:
         config.mkdir(parents=True, exist_ok=True)
         temporary = None
         try:
             with tempfile.NamedTemporaryFile('w', dir=config, prefix='.arlinux-model-', delete=False) as output:
                 temporary = Path(output.name)
-                json.dump({'$schema': 'https://opencode.ai/config.json', 'model': model}, output, indent=2)
+                json.dump(settings, output, indent=2)
                 output.write('\n')
             os.link(temporary, config / 'opencode.json')
         except FileExistsError:
@@ -82,9 +88,8 @@ def configure_default_model():
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
-        print(f'Default OpenCode model: {model}', flush=True)
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        print(f'Keeping OpenCode\'s default free model: {error}', flush=True)
+    except OSError as error:
+        print(f'Could not save initial OpenCode preferences: {error}', flush=True)
 
 
 def install():
