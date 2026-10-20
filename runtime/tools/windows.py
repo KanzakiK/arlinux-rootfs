@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import socket
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -68,9 +69,12 @@ def install_component(name, source, expected):
     if not re.fullmatch('[0-9a-f]{64}', expected) or digest(source) != expected:
         raise ValueError('Runtime producer SHA-256 mismatch')
     descriptor = json.loads(source.read_text())
+    identity = descriptor['sha256'] if descriptor.get('name') == name else expected
+    if not re.fullmatch('[0-9a-f]{64}', identity):
+        raise ValueError('Invalid runtime archive identity')
     home = runtime_storage()/'components'/name
     home.mkdir(parents=True, exist_ok=True)
-    destination = home/expected
+    destination = home/identity
     with shared.locked(home/'install.lock'):
         if destination.is_dir():
             return destination
@@ -135,7 +139,7 @@ def ensure_component(row):
     try:
         selected = json.loads(state.read_text())
         age = time.time()-selected['checkedAt']
-        root = runtime_storage()/'components'/name/selected['sha256']
+        root = runtime_storage()/'components'/name/selected['cache']
         if 0 <= age < 3600 and root.is_dir() and selected['endpoint'] == row:
             return root
     except (FileNotFoundError, ValueError, KeyError, TypeError):
@@ -150,7 +154,7 @@ def ensure_component(row):
     state.parent.mkdir(parents=True, exist_ok=True)
     with shared.locked(state.with_suffix('.lock')):
         temporary = state.with_suffix('.tmp')
-        temporary.write_text(json.dumps(dict(sha256=expected, checkedAt=time.time(), endpoint=row))+'\n')
+        temporary.write_text(json.dumps(dict(sha256=expected, cache=root.name, checkedAt=time.time(), endpoint=row))+'\n')
         temporary.replace(state)
     return root
 
@@ -192,7 +196,7 @@ def ensure_runtime():
             else:
                 metadata[key] = value
     encoded = (json.dumps(metadata, sort_keys=True)+'\n').encode()
-    identity = hashlib.sha256(encoded).hexdigest()
+    identity = hashlib.sha256(Path(__file__).read_bytes()+b'\0'+encoded).hexdigest()
     home = runtime_storage()
     destination = home/identity
     with shared.locked(home/'install.lock'):
@@ -209,6 +213,12 @@ def ensure_runtime():
                         target.parent.mkdir(parents=True, exist_ok=True)
                         if source.is_symlink():
                             target.symlink_to(os.readlink(source))
+                        elif root.parent.name == 'wine-bionic':
+                            # Wine derives its shared-data directory from the
+                            # real paths of wineserver and ntdll.so. Keep this
+                            # producer's files in the launch view; other, much
+                            # larger producers remain linked to their cache.
+                            shutil.copy2(source, target)
                         else:
                             # Android denies app_data_file hardlinks. Keep the
                             # native host's paths usable without tawcroot's
