@@ -48,7 +48,7 @@ def main():
     if stage in ('yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'):
         receipt = framework/'build/artifacts/rootfs'/stage/'default.json'
         records = json.loads(receipt.read_text())['stages']
-    elif stage == 'windows-fonts':
+    elif stage == 'guest-tools':
         return
     else:
         receipt = framework/'build/artifacts/components'/(stage+'.json')

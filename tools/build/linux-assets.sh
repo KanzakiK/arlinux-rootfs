@@ -69,7 +69,11 @@ seed_rootfs() (
 
 input_id() {
     local product="$1"
-    local inputs=(runtime third_party/libhybris/arlinux/graphics-protocols examples tools/build tools/arlinux-app-data)
+    local inputs=(runtime/tools/guest-sudo.c runtime/tools/bwrap-compat.c runtime/tools/bwrap-view.h
+        runtime/tools/install-mesa-arch.sh third_party/libhybris/arlinux/graphics-protocols examples tools/build
+        tools/arlinux-app-data/accessibility-session.sh tools/arlinux-app-data/fonts
+        tools/arlinux-app-data/org.arlinux.HostedInput.service tools/arlinux-app-data/arlinux-hosted.xml
+        tools/arlinux-app-data/90-arlinux-ibus.gschema.override)
     {
         git ls-files -s -- "${inputs[@]}"
         git diff --binary -- "${inputs[@]}"
@@ -163,37 +167,9 @@ if missing:
     raise SystemExit('rootfs seed is missing required files: ' + ', '.join(missing))
 PY
     mkdir -p "$rootfs/usr/lib/arlinux/guest"
-    install -Dm644 runtime/tools/apps.py "$rootfs/usr/lib/arlinux/guest/yibu-launcher.py"
-    install -Dm644 runtime/tools/arlinux-apps.desktop "$rootfs/usr/share/applications/arlinux-apps.desktop"
-    install -Dm644 runtime/tools/steam.py "$rootfs/usr/lib/arlinux/steam.py"
-    install -Dm644 runtime/tools/shared.py "$rootfs/usr/lib/arlinux/shared.py"
-    install -Dm644 runtime/tools/steam_fex.py "$rootfs/usr/lib/arlinux/steam_fex.py"
-    install -Dm644 runtime/tools/steam_bionic.py "$rootfs/usr/lib/arlinux/steam_bionic.py"
-    install -Dm644 runtime/tools/steamworks.py "$rootfs/usr/lib/arlinux/steamworks.py"
-    install -Dm644 runtime/tools/steam_proxy.py "$rootfs/usr/lib/arlinux/steam_proxy.py"
-    install -Dm644 runtime/tools/windows.py "$rootfs/usr/lib/arlinux/windows.py"
-    install -Dm644 runtime/tools/windows_webview.py "$rootfs/usr/lib/arlinux/windows_webview.py"
-    install -Dm644 runtime/tools/windows_a11y.py "$rootfs/usr/lib/arlinux/windows_a11y.py"
-    install -Dm755 runtime/tools/arlinux-windows "$rootfs/usr/bin/arlinux-windows"
-    install -Dm644 runtime/tools/windows_apps.py "$rootfs/usr/lib/arlinux/windows_apps.py"
-    install -Dm755 runtime/tools/arlinux-windows-app "$rootfs/usr/bin/arlinux-windows-app"
-    install -Dm644 runtime/tools/windows-app-downloads.tsv "$rootfs/usr/lib/arlinux/guest/windows-app-downloads.tsv"
-    for app in paintnet powerbi fontforge; do
-        install -Dm644 "runtime/tools/arlinux-$app.desktop" "$rootfs/usr/share/applications/arlinux-$app.desktop"
-        install -Dm644 "runtime/tools/$app.png" "$rootfs/usr/share/pixmaps/arlinux-$app.png"
-    done
-    install -Dm644 runtime/tools/windows-downloads.tsv "$rootfs/usr/lib/arlinux/guest/windows-downloads.tsv"
-    install -Dm755 runtime/tools/arlinux-steam "$rootfs/usr/bin/arlinux-steam"
-    install -Dm755 runtime/tools/arlinux-vulkan-capture "$rootfs/usr/bin/arlinux-vulkan-capture"
     python3 tools/build/install-capture.py build/artifacts/capture "$rootfs/usr/lib/arlinux/gfxreconstruct"
-    install -Dm644 runtime/tools/arlinux-steam.desktop "$rootfs/usr/share/applications/arlinux-steam.desktop"
-    install -Dm644 runtime/tools/steam.png "$rootfs/usr/share/pixmaps/arlinux-steam.png"
-    install -Dm644 runtime/tools/opencode.py "$rootfs/usr/lib/arlinux/opencode.py"
-    install -Dm755 runtime/tools/arlinux-opencode "$rootfs/usr/bin/arlinux-opencode"
-    install -Dm644 runtime/tools/arlinux-opencode.desktop "$rootfs/usr/share/applications/arlinux-opencode.desktop"
-    install -Dm644 runtime/tools/opencode.png "$rootfs/usr/share/pixmaps/arlinux-opencode.png"
     install -Dm755 "build/linux/runtime/$product/bwrap" "$rootfs/usr/local/bin/bwrap"
-    cp tools/arlinux-app-data/hosted-ime.py tools/arlinux-app-data/org.arlinux.HostedInput.service \
+    cp tools/arlinux-app-data/org.arlinux.HostedInput.service \
       "$rootfs/usr/lib/arlinux/"
     install -Dm644 tools/arlinux-app-data/org.arlinux.HostedInput.service \
       "$rootfs/usr/share/dbus-1/services/org.arlinux.HostedInput.service"
@@ -236,7 +212,6 @@ PY
         cp "$rootfs/usr/share/arlinux/offline-desktop" "$assets/offline-desktop"
     fi
     cp -a "$product_dir/guest" "$assets/guest"
-    install -Dm644 runtime/tools/apps.py "$assets/guest/yibu-launcher.py"
     cp examples/desk-auto/dump-atspi.py examples/desk-auto/atspi-do.py "$assets/guest/"
     chmod 755 "$assets/guest/"*.py "$assets/guest/"*.sh
     [[ ! -f "$assets/guest/arlinux-a11y" ]] ||

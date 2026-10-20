@@ -59,6 +59,7 @@ def pack(product: Path, target: Path) -> None:
             files[name] = digest(source)
     manifest = {
         "protocol": PROTOCOL,
+        "guestToolsApi": 1,
         "distributionId": product.name,
         "name": config["name"],
         "compositor": config.get("compositor", "anlabwc"),

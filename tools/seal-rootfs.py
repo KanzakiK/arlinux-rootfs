@@ -127,9 +127,7 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
         # runtime entry points from this build's seed so reusing an offline
         # package snapshot cannot silently ship old Steam/Proton helpers.
         managed = {}
-        wrappers = {'usr/local/bin/bwrap', 'usr/bin/arlinux-steam',
-                    'usr/bin/arlinux-windows', 'usr/bin/arlinux-windows-app', 'usr/bin/arlinux-opencode',
-                    'usr/bin/arlinux-vulkan-capture'}
+        wrappers = {'usr/local/bin/bwrap'}
         seed_rootfs = subprocess.run(['zstd', '-dc'], input=archive.read('rootfs.tar.zst'),
                                     stdout=subprocess.PIPE, check=True)
         with tarfile.open(fileobj=io.BytesIO(seed_rootfs.stdout)) as tar:
@@ -254,7 +252,7 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                 if compressor.poll() is None:
                     compressor.kill()
                     compressor.wait()
-        required = required_snapshot_files(distribution) | {'usr/bin/arlinux-opencode'}
+        required = required_snapshot_files(distribution)
         if not required <= seen:
             raise ValueError('Incomplete package-cache desktop: ' + ', '.join(sorted(required - seen)))
         with compressed.open('rb') as stream:

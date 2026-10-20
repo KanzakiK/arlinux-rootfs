@@ -18,6 +18,9 @@ from component_inputs import package_inputs
 def rootfs_sources(framework, product):
     inputs = {name: inventory(framework / name) for name in (
         'runtime/tools', 'tools/arlinux-app-data', 'examples', 'third_party/libhybris/arlinux/graphics-protocols')}
+    inputs['runtime/tools'] = {name: value for name, value in inputs['runtime/tools'].items()
+                              if name in ('guest-sudo.c', 'bwrap-compat.c', 'bwrap-view.h', 'install-mesa-arch.sh')}
+    inputs['tools/arlinux-app-data'].pop('hosted-ime.py', None)
     for name in ('third_party/mesa', 'third_party/libhybris',
                  'third_party/android-headers', 'distributions/' + product):
         inputs[name] = source_state(framework / name)

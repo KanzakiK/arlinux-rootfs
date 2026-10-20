@@ -4,6 +4,27 @@ This repository builds Linux distributions and their native Linux GPU libraries.
 It has no Bionic Wine source, build graph, assembly or publishing pipeline.
 Application launchers download the independently published runtime when needed.
 
+## ARLinux Guest Tools
+
+First-party application integration is a separate `guest-tools` product, not part
+of the Linux image or Bionic Wine. `build.sh guest-tools` packages the Python
+launchers, download policies, application entries/icons and hosted IBus service
+into `build/artifacts/guest-tools/guest-tools.zip` with a hashed file/mode manifest
+and `guest-tools.json` receipt. It runs in this repository's independent ARM64
+workflow; it neither builds GPU libraries nor prepares distribution packages.
+The canonical component graph requests it alongside, not as a dependency of,
+the selected rootfs. `--product rootfs` returns both references in `products.json`.
+Each product has its own content identity, publication, capsule and download cache.
+Changes to these application scripts do not invalidate the base rootfs.
+
+Protocol 4 distribution manifests declare `guestToolsApi: 1`. Android installs a
+matching independently verified Guest Tools package before first boot, records
+its archive hash in the instance metadata, and never changes a running instance.
+The Debug device deployment downloads both products separately and reuses an
+unchanged verified base capsule. Release APKs embed both exact products as
+separate assets. Instance snapshots include the pinned Guest Tools archive.
+Pre-split distributions without this API declaration remain self-contained.
+
 OpenCode Desktop is also an on-demand vendor product, not a build dependency.
 `runtime/tools/opencode.py` resolves its current stable ARM64 installer from
 `https://opencode.ai/update/api/latest/desktop/opencode` on first installation,
@@ -23,7 +44,8 @@ For rootfs-only device iteration, the Android `build.ps1 rootfs -FrameworkRef
 COMMIT -Serial SERIAL -Instance INSTANCE` entry calls this same coordinator with
 `--metadata-only`. It resolves/builds the ordinary graph and writes `products.json`
 without downloading product capsules to Windows. The Debug APK downloads the
-immutable hashed component directly and imports its exact `default.zip`. The
+immutable hashed components directly and imports the exact base `default.zip`
+and independent `guest-tools.zip`. The
 canonical device procedure, fresh-instance replacement and authentication
 preparation are documented in the Android repository's `docs/BUILD.md`; this is
 not a second builder or a publication of public latest. APK builds still fetch
@@ -94,7 +116,8 @@ component is published. Concurrent invocations share the result instead of
 dispatching the same workflow twice; process exit automatically releases locks.
 Pinned full commit references do not need an extra GitHub commit-resolution call.
 
-Application runtime files and the final sealing recipe do not belong to the APT
+Guest Tools application files do not belong to the base-image or APT identity.
+The final sealing recipe does not belong to the APT
 snapshot identity. The snapshot tracks its package callback, installer recipes,
 bundle packer, distribution and GPU inputs. The desktop stage separately tracks
 the sealing and bundle recipes. This prevents compression changes from silently
@@ -104,8 +127,9 @@ schema has been populated.
 The package stage declares its compiled runtime helpers and Arch Mesa installer
 as inputs explicitly; application entry points are not classified by filename
 extension. Optional capture archives and their installation recipe belong to
-Linux assets and final sealing, not APT preparation. All current runtime files
-and capture tools are still input/output-verified in those stages.
+Linux assets and final sealing, not APT preparation. System integration files and
+capture tools remain input/output-verified there; application files are verified
+by the independent Guest Tools product.
 Debian package preparation uses deb.debian.org inside the disposable package
 rootfs, restoring the distribution's consumer sources before exporting the
 snapshot. This does not change the user's repository policy or bypass APT

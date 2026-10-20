@@ -4,6 +4,7 @@
   "workspace": "/opt/arlinux",
   "cacheLimitGiB": 10,
   "products": {
+    "guest-tools": "guest-tools",
     "capture": "vulkan-capture",
     "rootfs": "yibu",
     "debian": "debian",
@@ -13,6 +14,13 @@
     "lxqt": "lxqt"
   },
   "stages": {
+    "guest-tools": {
+      "repository": "taowen/arlinux-rootfs",
+      "runner": "ubuntu-24.04-arm",
+      "dependencies": [],
+      "product": "guest-tools",
+      "compilerCacheMiB": 0
+    },
     "vulkan-capture": {
       "repository": "taowen/gfxreconstruct",
       "runner": "ubuntu-24.04-arm",

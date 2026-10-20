@@ -6,7 +6,11 @@ import subprocess
 
 def source_inputs(repo, revision, stage, plan):
     distribution = stage if stage in ('yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt') else 'yibu'
-    if stage == 'vulkan-capture':
+    if stage == 'guest-tools':
+        paths = ('build.sh', 'tools/build/github-component.py', 'tools/build/component_inputs.py',
+                 'tools/build/guest-tools.py', 'tools/build/pipeline_cache.py', 'runtime/tools',
+                 'tools/arlinux-app-data/hosted-ime.py')
+    elif stage == 'vulkan-capture':
         paths = ('build.sh', 'tools/build/github-component.py', 'tools/build/component_inputs.py',
                  'tools/build/vulkan-capture-component.py', 'tools/build/pipeline_cache.py',
                  'third_party/gfxreconstruct', 'third_party/libhybris')
@@ -22,6 +26,12 @@ def source_inputs(repo, revision, stage, plan):
         if record:
             metadata, name = record.split(b'\t', 1)
             name = name.decode()
+            if stage in ('yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'):
+                if name.startswith('runtime/tools/') and name.rsplit('/', 1)[-1] not in (
+                        'guest-sudo.c', 'bwrap-compat.c', 'bwrap-view.h', 'install-mesa-arch.sh'):
+                    continue
+                if name in ('tools/build/guest-tools.py', 'tools/arlinux-app-data/hosted-ime.py'):
+                    continue
             # Workstation transport does not generate distribution contents.
             # Its downloads still verify the declared component/output hashes.
             if name in ('tools/build/github-products.py', 'tools/build/artifact_download.py'):

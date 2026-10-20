@@ -18,7 +18,7 @@ from component_inputs import request_identity, source_inputs
 
 
 ROOTFS = {'yibu', 'debian', 'arch', 'omarchy', 'plasma', 'lxqt'}
-STANDALONE = ROOTFS | {'vulkan-capture'}
+STANDALONE = ROOTFS | {'vulkan-capture', 'guest-tools'}
 LINUX_GPU = {'linux-mesa', 'linux-hybris'}
 
 def run(*args, **kwargs):
@@ -80,7 +80,9 @@ def prepare(data, framework):
         'libxcb-xfixes0-dev', 'libxcb-randr0-dev', 'libxdamage-dev', 'libxext-dev',
         'libelf-dev', 'libudev-dev', 'libgbm-dev', 'gperf', 'libglib2.0-dev', 'libglib2.0-dev-bin',
         'ccache', 'gettext', 'libgettextpo-dev', 'libssl-dev', 'unzip', 'autopoint', 'intltool', 'python-is-python3']
-    if data['stage'] == 'vulkan-capture':
+    if data['stage'] == 'guest-tools':
+        packages = ['python3', 'python3-venv', 'git', 'zstd', 'ccache']
+    elif data['stage'] == 'vulkan-capture':
         # The native capture product does not compile Mesa/libhybris or prepare
         # a distribution. Avoid their autotools, cross toolchain and SDK setup.
         packages = ['build-essential', 'git', 'cmake', 'ninja-build', 'ccache', 'pkg-config',
@@ -93,7 +95,7 @@ def prepare(data, framework):
         env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'))
     run('python3', '-m', 'venv', root / 'python')
     python_packages = ['zstandard==0.25.0']
-    if data['stage'] != 'vulkan-capture':
+    if data['stage'] not in ('vulkan-capture', 'guest-tools'):
         python_packages += ['meson==1.12.0', 'mako==1.3.10', 'packaging==25.0', 'PyYAML==6.0.2']
     run(root / 'python/bin/pip', 'install', *python_packages)
     bin_dir = root / 'bin'
@@ -101,7 +103,9 @@ def prepare(data, framework):
     cross = bin_dir / 'aarch64-linux-gnu-pkg-config'
     cross.write_text('#!/bin/sh\nexport PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig\nexec pkg-config "$@"\n')
     cross.chmod(0o755)
-    if data['stage'] == 'vulkan-capture':
+    if data['stage'] == 'guest-tools':
+        pass  # First-party scripts and resources require no submodules.
+    elif data['stage'] == 'vulkan-capture':
         run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1',
             'third_party/gfxreconstruct', 'third_party/libhybris')
         run('git', '-C', framework/'third_party/gfxreconstruct', 'submodule', 'update', '--init', '--depth', '1',
@@ -201,7 +205,9 @@ def build(data, framework):
     for dependency in data['dependencies']:
         import_dependency(root, dependency, visited)
     config = root / 'product.json'
-    if stage == 'vulkan-capture':
+    if stage == 'guest-tools':
+        run('bash', framework/'build.sh', 'guest-tools')
+    elif stage == 'vulkan-capture':
         run('bash', framework/'build.sh', 'capture',
             env=dict(os.environ, CCACHE_DIR=str(root/'cache/ccache'), CCACHE_BASEDIR=str(framework)))
     elif stage in LINUX_GPU:
@@ -231,7 +237,8 @@ def publish(data, framework):
     record = dict(data)
     paths = []
     if stage in STANDALONE:
-        paths = [framework/('build/artifacts/'+('capture' if stage == 'vulkan-capture' else 'rootfs/'+stage))]
+        product = 'guest-tools' if stage == 'guest-tools' else 'capture' if stage == 'vulkan-capture' else 'rootfs/'+stage
+        paths = [framework/('build/artifacts/'+product)]
     else:
         sys.path.insert(0, str(framework/'tools/build'))
         from pipeline_cache import inventory, build_references

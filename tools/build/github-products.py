@@ -232,7 +232,8 @@ def fetch_product(reference, output):
         if record['identity']!=reference['identity']:
             raise ValueError('Product identity mismatch')
         archive=download_capsule(record, directory)
-        product='capture' if record['stage']=='vulkan-capture' else 'rootfs/'+record['stage']
+        tools = record['stage'] == 'guest-tools'
+        product='guest-tools' if tools else 'capture' if record['stage']=='vulkan-capture' else 'rootfs/'+record['stage']
         prefix='framework/build/artifacts/'+product+'/'
         output.mkdir(parents=True,exist_ok=True)
         with archive.open('rb') as source,zstandard.ZstdDecompressor().stream_reader(source) as decoded:
@@ -251,10 +252,11 @@ def fetch_product(reference, output):
                         shutil.copyfileobj(capsule.extractfile(member),dest)
         (output/'github-component.json').write_text(json.dumps(record,indent=2)+'\n')
         capture = record['stage']=='vulkan-capture'
-        receipt=json.loads((output/('capture.json' if capture else 'default.json')).read_text())
-        with (output/('capture.zip' if capture else 'default.zip')).open('rb') as source:
+        basename = 'guest-tools' if tools else 'capture' if capture else 'default'
+        receipt=json.loads((output/(basename+'.json')).read_text())
+        with (output/(basename+'.zip')).open('rb') as source:
             digest=hashlib.file_digest(source,'sha256').hexdigest()
-        if digest!=receipt['archiveSha256' if capture else 'desktopSha256']:
+        if digest!=receipt['archiveSha256' if capture or tools else 'desktopSha256']:
             raise ValueError('Build receipt does not match the downloaded product')
         files={p.relative_to(output).as_posix():sha256_file(p)
                for p in output.rglob('*') if p.is_file() and p!=cache_receipt}
@@ -265,7 +267,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--framework-ref',default='main')
     parser.add_argument('--distribution', choices=('yibu','debian','arch','omarchy','plasma','lxqt'), default='yibu')
-    parser.add_argument('--product',choices=('rootfs','capture','all'),default='all')
+    parser.add_argument('--product',choices=('rootfs','guest-tools','capture','all'),default='all')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--parallel',type=int,default=8)
     parser.add_argument('--plan',action='store_true')
@@ -280,6 +282,8 @@ def main():
     framework_sha=(args.framework_ref if re.fullmatch('[0-9a-f]{40}',args.framework_ref)
                    else api('repos/taowen/arlinux-rootfs/commits/'+args.framework_ref)['sha'])
     products=['rootfs'] if args.product=='all' else [args.product]
+    if 'rootfs' in products:
+        products.append('guest-tools')
     if args.distribution != 'yibu':
         plan['products']['rootfs'] = args.distribution
     state=args.output/'github-state'
