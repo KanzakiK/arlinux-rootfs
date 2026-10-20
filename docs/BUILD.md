@@ -7,6 +7,16 @@ Application launchers download the independently published runtime when needed.
 The only Linux entry is `./build.sh`. Android APK development uses the Android
 repository's `build.ps1`, which obtains this independent distribution product.
 
+For rootfs-only device iteration, the Android `build.ps1 rootfs -FrameworkRef
+COMMIT -Serial SERIAL -Instance INSTANCE` entry calls this same coordinator with
+`--metadata-only`. It resolves/builds the ordinary graph and writes `products.json`
+without downloading product capsules to Windows. The Debug APK downloads the
+immutable hashed component directly and imports its exact `default.zip`. The
+canonical device procedure, fresh-instance replacement and authentication
+preparation are documented in the Android repository's `docs/BUILD.md`; this is
+not a second builder or a publication of public latest. APK builds still fetch
+the same product normally.
+
 The Android entry's `capture` command selects the independent `vulkan-capture`
 stage in `taowen/gfxreconstruct` on the ARM64 standard runner. Its pinned source
 is `third_party/gfxreconstruct`; native compilation, verified staging and

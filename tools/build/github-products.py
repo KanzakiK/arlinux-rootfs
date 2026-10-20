@@ -269,6 +269,8 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--parallel',type=int,default=8)
     parser.add_argument('--plan',action='store_true')
+    parser.add_argument('--metadata-only',action='store_true',
+                        help='Resolve/build the same graph, leaving payload downloads to the device')
     args=parser.parse_args()
     framework=Path(__file__).resolve().parents[2]
     plan=json.loads((framework/'tools/build/github-components.json').read_text())
@@ -283,8 +285,9 @@ def main():
     state=args.output/'github-state'
     coordinator=Coordinator(plan,framework_sha,None,state)
     result=coordinator.run(products,args.parallel)
-    for name,reference in result.items():
-        fetch_product(reference,args.output/name)
+    if not args.metadata_only:
+        for name,reference in result.items():
+            fetch_product(reference,args.output/name)
     (args.output/'products.json').write_text(json.dumps(dict(format=1,
         framework=framework_sha,products=result),indent=2)+'\n')
 
