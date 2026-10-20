@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import shutil
+import time
 import sys
 from urllib.parse import urlparse, unquote
 
@@ -137,54 +139,116 @@ def github_route_options(url, headers):
     return routes
 
 
-def github_routes(sources, offset):
-    """Compare official web/API routes in the same transfer mode as the download."""
+def github_transfer(sources, partial, expected):
+    """Keep the winning live connection instead of reconnecting after a probe."""
     routes = [(url, options) for url, headers in sources
               for options in github_route_options(url, headers)]
     if len(routes) == len(sources):
-        return routes
+        return False
 
-    def probe(route):
-        url, options = route
+    def response_mode(header, offset):
         try:
-            # A resumed response may use a different CDN cache from a full GET.
-            # Probe the actual offset instead of ranking an unrelated response.
-            result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '2', '--max-time', '4',
-                *(['--range', f'{offset}-'] if offset else []),
-                '--output', '/dev/null', '--write-out',
-                '%{http_code} %{size_download} %{speed_download}', *options, url],
-                capture_output=True, text=True, timeout=5)
-            status, size, speed = result.stdout.strip().split()
-            if result.returncode in (0, 28) and status in ('200', '206') and float(size) >= 16384:
-                return float(speed)
-        except (OSError, ValueError, subprocess.TimeoutExpired):
+            blocks = re.split(rb'\r?\n\r?\n', header.read_bytes())
+            block = next(block for block in reversed(blocks) if block.startswith(b'HTTP/'))
+            lines = block.splitlines()
+            status = lines[0].split()[1]
+            if status == b'200':
+                return 'replace'
+            if status == b'206':
+                fields = dict(line.lower().split(b':', 1) for line in lines[1:] if b':' in line)
+                value = fields.get(b'content-range', b'').strip()
+                match = re.fullmatch(rb'bytes ([0-9]+)-([0-9]+)/([0-9]+)', value)
+                if match and int(match[1]) == offset and offset <= int(match[2]) < int(match[3]):
+                    return 'append'
+        except (OSError, StopIteration, IndexError):
             pass
-        return 0
+        return None
 
-    with ThreadPoolExecutor(max_workers=min(10, len(routes))) as pool:
-        rates = list(pool.map(probe, routes))
-    order = sorted(range(len(routes)), key=lambda i: -rates[i])
-    # Report only route number/rate; signed redirect URLs and headers stay private.
-    if rates[order[0]]:
-        print(f'Selected GitHub download route {order[0]}: {rates[order[0]] / 1024:.0f} KiB/s',
-              flush=True, file=sys.stderr)
-    ranked = []
-    adaptive = False
-    for index in order:
-        url, options = routes[index]
-        if rates[index] >= 65536:
-            # A new connection may land on a much slower backend than the probe.
-            # Resume on a new connection/route instead of accepting 1 KiB/s for
-            # minutes. Bound the threshold so normal speed variation is tolerated.
-            options = [*options, '--speed-limit', str(min(262144, int(rates[index] / 4))),
-                       '--speed-time', '15', '--retry', '0']
-            adaptive = True
-        ranked.append((url, options))
-    if adaptive:
-        # Every fast probe may have been optimistic. Still allow a slow direct
-        # transfer to finish rather than making network variability fatal.
-        ranked.extend(sources)
-    return ranked
+    def stop(process):
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        process.wait()
+
+    remaining = list(enumerate(routes))
+    while remaining:
+        offset = partial.stat().st_size if partial.is_file() else 0
+        workers = []
+        try:
+            started = time.monotonic()
+            for index, (url, options) in remaining:
+                body = partial.with_name(partial.name + f'.route-{index}')
+                header = body.with_name(body.name + '.headers')
+                body.unlink(missing_ok=True)
+                header.unlink(missing_ok=True)
+                # Each candidate holds only its suffix; no copy of the existing
+                # download is needed. Redirect headers remain private and temporary.
+                process = subprocess.Popen(['curl', '-fsSL', '--connect-timeout', '5',
+                    '--speed-limit', '1024', '--speed-time', '30', '--max-redirs', '10',
+                    *(['--range', f'{offset}-'] if offset else []), *options,
+                    '--dump-header', str(header), '--output', str(body), url],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                workers.append((index, process, body, header))
+            eligible = []
+            while time.monotonic() - started < 8:
+                eligible = [worker for worker in workers if worker[2].is_file()
+                            and worker[2].stat().st_size and response_mode(worker[3], offset)]
+                complete = [worker for worker in eligible if worker[1].poll() == 0]
+                if complete or eligible and time.monotonic() - started >= 4:
+                    if complete:
+                        eligible = complete
+                    break
+                if all(worker[1].poll() is not None for worker in workers):
+                    break
+                time.sleep(.1)
+            if not eligible:
+                return False
+            winner = max(eligible, key=lambda worker: worker[2].stat().st_size)
+            index, process, body, header = winner
+            rate = body.stat().st_size / max(.1, time.monotonic() - started)
+            print(f'Selected live GitHub route {index}: {rate / 1024:.0f} KiB/s',
+                  flush=True, file=sys.stderr)
+            for worker in workers:
+                if worker is not winner:
+                    stop(worker[1])
+            minimum = min(262144, int(rate / 4)) if rate >= 65536 else 1024
+            window_at, window_bytes = time.monotonic(), body.stat().st_size
+            last_progress = window_at
+            while process.poll() is None:
+                time.sleep(.25)
+                now, size = time.monotonic(), body.stat().st_size
+                if now - last_progress >= 5:
+                    total = size + offset if response_mode(header, offset) == 'append' else size
+                    print(f'GitHub download: {total / 1048576:.1f} MiB received',
+                          flush=True, file=sys.stderr)
+                    last_progress = now
+                if now - window_at >= 15:
+                    if (size - window_bytes) / (now - window_at) < minimum:
+                        stop(process)
+                        break
+                    window_at, window_bytes = now, size
+            mode = response_mode(header, offset)
+            if mode == 'append':
+                with partial.open('ab') as output, body.open('rb') as source:
+                    shutil.copyfileobj(source, output)
+            elif mode == 'replace':
+                body.replace(partial)
+            if process.returncode == 0 and mode and digest(partial) == expected:
+                return True
+            if process.returncode == 0:
+                partial.unlink(missing_ok=True)
+            remaining = [(i, route) for i, route in remaining if i != index]
+            print('GitHub connection slowed or failed; resuming verified download',
+                  flush=True, file=sys.stderr)
+        finally:
+            for _, process, body, header in workers:
+                stop(process)
+                body.unlink(missing_ok=True)
+                header.unlink(missing_ok=True)
+    return False
 
 
 def download(url, expected, suffix, *, progress=True):
@@ -199,44 +263,50 @@ def download(url, expected, suffix, *, progress=True):
         if target.is_file() and digest(target) == expected:
             return target
         partial = target.with_suffix(target.suffix + '.part')
+        if partial.is_file() and digest(partial) == expected:
+            partial.replace(target)
+            return target
         try:
             def candidates():
                 for source in ranked_sources(urls):
-                    offset = partial.stat().st_size if partial.is_file() else 0
                     if re.fullmatch(r'https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/[1-9][0-9]*', source):
-                        yield from github_routes([(source, ['-H', 'Accept: application/octet-stream'])], offset)
-                        continue
-                    api = github_asset(source, expected)
-                    sources = ([(api, ['-H', 'Accept: application/octet-stream'])] if api else []) + [(source, [])]
-                    yield from github_routes(sources, offset)
+                        sources = [(source, ['-H', 'Accept: application/octet-stream'])]
+                    else:
+                        api = github_asset(source, expected)
+                        sources = ([(api, ['-H', 'Accept: application/octet-stream'])] if api else []) + [(source, [])]
+                    yield sources
             failure = None
-            for source, headers in candidates():
-                try:
-                    print('Downloading verified installer…', flush=True, file=sys.stderr)
-                    for attempt in range(2):
-                        try:
-                            subprocess.run(['curl', '-fL', *([] if progress else ['-sS']), '--retry', '2', '--connect-timeout', '10',
-                                            '--speed-limit', '1024', '--speed-time', '30',
-                                            '--continue-at', '-', *headers, '-o', str(partial), source],
-                                           check=True, stdout=sys.stderr)
-                            break
-                        except subprocess.CalledProcessError as error:
-                            # Some official mirrors do not support byte ranges.
-                            if attempt == 0 and error.returncode in (33, 36):
-                                partial.unlink(missing_ok=True)
-                                continue
-                            if attempt == 0 and error.returncode in (18, 28, 52, 55, 56):
-                                # A transient disconnect does not mean the fastest CDN is down.
-                                continue
-                            raise
-                    if digest(partial) != expected:
-                        # Never append a different CDN's bytes to a corrupt response.
-                        partial.unlink(missing_ok=True)
-                        raise ValueError('Shared download SHA-256 mismatch')
+            for sources in candidates():
+                if github_transfer(sources, partial, expected):
                     partial.replace(target)
                     return target
-                except (subprocess.CalledProcessError, ValueError) as error:
-                    failure = error
+                for source, headers in sources:
+                    try:
+                        print('Downloading verified installer…', flush=True, file=sys.stderr)
+                        for attempt in range(2):
+                            try:
+                                subprocess.run(['curl', '-fL', *([] if progress else ['-sS']), '--retry', '2', '--connect-timeout', '10',
+                                                '--speed-limit', '1024', '--speed-time', '30',
+                                                '--continue-at', '-', *headers, '-o', str(partial), source],
+                                               check=True, stdout=sys.stderr)
+                                break
+                            except subprocess.CalledProcessError as error:
+                                # Some official mirrors do not support byte ranges.
+                                if attempt == 0 and error.returncode in (33, 36):
+                                    partial.unlink(missing_ok=True)
+                                    continue
+                                if attempt == 0 and error.returncode in (18, 28, 52, 55, 56):
+                                    # A transient disconnect does not mean the fastest CDN is down.
+                                    continue
+                                raise
+                        if digest(partial) != expected:
+                            # Never append a different CDN's bytes to a corrupt response.
+                            partial.unlink(missing_ok=True)
+                            raise ValueError('Shared download SHA-256 mismatch')
+                        partial.replace(target)
+                        return target
+                    except (subprocess.CalledProcessError, ValueError) as error:
+                        failure = error
             if failure:
                 raise failure
         finally:
