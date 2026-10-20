@@ -3,6 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
+import stat
 import zipfile
 
 
@@ -36,10 +37,11 @@ def main():
     archive = output/'guest-tools.zip'
     temporary = archive.with_suffix('.zip.part')
     with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as target:
-        for name, data in [('manifest.json', (json.dumps(manifest, sort_keys=True)+'\n').encode()),
-                           *((name, data) for name, (data, mode) in files.items())]:
+        for name, data, mode in [('manifest.json', (json.dumps(manifest, sort_keys=True)+'\n').encode(), 0o644),
+                                 *((name, data, mode) for name, (data, mode) in files.items())]:
             entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = (stat.S_IFREG | mode) << 16
             target.writestr(entry, data)
     temporary.replace(archive)
     receipt = dict(format=1, product='arlinux-guest-tools', api=1,
