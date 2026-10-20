@@ -78,7 +78,7 @@ def runtime_index(archive):
     names = set()
     for item in index['manifests']:
         name, filename, checksum = item['name'], item['file'], item['sha256']
-        if (not re.fullmatch('[a-z0-9-]+', name) or filename != 'arlinux-'+name+'.json'
+        if (not re.fullmatch('[a-z0-9_-]+', name) or filename != 'arlinux-'+name+'.json'
                 or name in names or not re.fullmatch('[0-9a-f]{64}', checksum)
                 or not runtime_url(item['url'], filename)
                 or type(item['bytes']) is not int or item['bytes'] <= 0):
@@ -118,7 +118,7 @@ def install(archive, expected):
     for item in index['components']:
         checksum, name = item['sha256'], item['file']
         if (not re.fullmatch('[0-9a-f]{64}', checksum)
-                or not re.fullmatch(r'[a-z0-9-]+-'+checksum+r'\.tar\.gz', name)
+                or not re.fullmatch(r'[a-z0-9_-]+-'+checksum+r'\.tar\.gz', name)
                 or not runtime_url(item['url'], name) or name in names
                 or type(item['bytes']) is not int or item['bytes'] <= 0):
             raise ValueError('Invalid Bionic runtime component')
