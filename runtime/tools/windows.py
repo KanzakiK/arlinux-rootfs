@@ -168,7 +168,7 @@ def runtime(identity=None):
 
 
 def ensure_runtime():
-    """Resolve producers independently and link their already-installed files."""
+    """Resolve producers independently and reference their immutable files."""
     from concurrent.futures import ThreadPoolExecutor
     rows = [line.split('\t') for line in MANIFEST.read_text().splitlines()
             if line.strip() and not line.startswith('#')]
@@ -210,7 +210,10 @@ def ensure_runtime():
                         if source.is_symlink():
                             target.symlink_to(os.readlink(source))
                         else:
-                            os.link(source, target)
+                            # Android denies app_data_file hardlinks. Keep the
+                            # native host's paths usable without tawcroot's
+                            # private hardlink emulation or copying runtime bytes.
+                            target.symlink_to(os.path.relpath(source, destination/relative.parent))
                 (stage/'bionic-runtime.json').write_bytes(encoded)
                 stage.rename(destination)
     pointer = storage()/'runtime-id'
