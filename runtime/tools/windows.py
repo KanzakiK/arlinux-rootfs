@@ -16,7 +16,7 @@ import shared
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
 LATEST_SELECTION = Path('/var/lib/arlinux/windows-runtime-latest.json')
-RUNTIME_INDEX = 'arlinux-wine-runtime.json'
+RUNTIME_INDEX = 'arlinux-wine-manifests.json'
 COMPONENT_BASE = 'https://github.com/taowen/wine/releases/download/arlinux-wine-components/'
 
 
@@ -62,10 +62,53 @@ def validate(root):
     return metadata
 
 
+def runtime_url(url, filename):
+    return bool(re.fullmatch(r'https://github\.com/taowen/(?:wine|arlinux-steamworks|arlinux-windows-integration)'
+                            r'/releases/download/[^/]+/'+re.escape(filename), url))
+
+
+def runtime_index(archive):
+    index = json.loads(archive.read_text())
+    if index.get('format') == 1 and index.get('kind') == 'arlinux-bionic-components':
+        return index
+    if (index.get('format') != 2 or index.get('kind') != 'arlinux-bionic-manifests'
+            or not isinstance(index.get('manifests'), list) or not index['manifests']):
+        raise ValueError('Expected independently pinned Bionic runtime manifests')
+    merged = dict(format=1, kind='arlinux-bionic-components', runtime={}, components=[])
+    names = set()
+    for item in index['manifests']:
+        name, filename, checksum = item['name'], item['file'], item['sha256']
+        if (not re.fullmatch('[a-z0-9-]+', name) or filename != 'arlinux-'+name+'.json'
+                or name in names or not re.fullmatch('[0-9a-f]{64}', checksum)
+                or not runtime_url(item['url'], filename)
+                or type(item['bytes']) is not int or item['bytes'] <= 0):
+            raise ValueError('Invalid independent runtime manifest')
+        names.add(name)
+        source = shared.download(item['url'], checksum, '.json')
+        if source.stat().st_size != item['bytes']:
+            raise ValueError('Runtime manifest size mismatch: '+name)
+        child = json.loads(source.read_text())
+        if child.get('format') != 1 or child.get('kind') != 'arlinux-bionic-components':
+            raise ValueError('Expected a leaf runtime component manifest')
+        for key, value in child['runtime'].items():
+            if key in ('files', 'originalSources'):
+                previous = merged['runtime'].setdefault(key, {})
+                for field, content in value.items():
+                    if field in previous and (key == 'files' or previous[field] != content):
+                        raise ValueError('Conflicting runtime metadata: '+field)
+                    previous[field] = content
+            elif key in merged['runtime'] and merged['runtime'][key] != value:
+                raise ValueError('Conflicting runtime metadata: '+key)
+            else:
+                merged['runtime'][key] = value
+        merged['components'].extend(child['components'])
+    return merged
+
+
 def install(archive, expected):
     if not re.fullmatch('[0-9a-f]{64}', expected) or digest(archive) != expected:
         raise ValueError('Runtime manifest SHA-256 mismatch')
-    index = json.loads(archive.read_text())
+    index = runtime_index(archive)
     if (index.get('format') != 1 or index.get('kind') != 'arlinux-bionic-components'
             or not index.get('components') or index['runtime'].get('protocol') != 1
             or index['runtime'].get('libc') != 'bionic'):
@@ -76,7 +119,7 @@ def install(archive, expected):
         checksum, name = item['sha256'], item['file']
         if (not re.fullmatch('[0-9a-f]{64}', checksum)
                 or not re.fullmatch(r'[a-z0-9-]+-'+checksum+r'\.tar\.gz', name)
-                or item['url'] != COMPONENT_BASE+name or name in names
+                or not runtime_url(item['url'], name) or name in names
                 or type(item['bytes']) is not int or item['bytes'] <= 0):
             raise ValueError('Invalid Bionic runtime component')
         names.add(name)
