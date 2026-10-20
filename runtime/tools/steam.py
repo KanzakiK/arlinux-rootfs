@@ -316,17 +316,43 @@ def install(root, channel):
         # installed-file record and skip the real client download.
         if channel == 'stable':
             shutil.copyfile(listing, root/f'package/{CLIENT_MANIFEST}')
-    # Only a new installation gets our defaults. Never rewrite an existing
-    # client's settings, including during later startup or bootstrap updates.
+    # Installation/repair can already have a config (for example restored
+    # authentication). Set only these defaults here, never on ordinary startup.
     config = root/'config/config.vdf'
     config.parent.mkdir(parents=True, exist_ok=True)
+    if config.is_symlink():
+        raise RuntimeError('Refusing to replace a redirected Steam configuration')
+    original = config.read_text() if config.exists() else ''
+    settings = keyvalues(original)
+    system = settings
+    for name in ('InstallConfigStore', 'Software', 'Valve', 'Steam', 'System'):
+        key = next((key for key in system if key.lower() == name.lower()), name)
+        system = system.setdefault(key, {})
+        if not isinstance(system, dict):
+            raise ValueError('Invalid Steam configuration block: '+name)
+    for name in ('IdleScreensaverBatterySeconds', 'IdleScreensaverACSeconds'):
+        key = next((key for key in system if key.lower() == name.lower()), name)
+        system[key] = '0'
+
+    def encode(values, indent=''):
+        lines = []
+        for key, value in values.items():
+            if isinstance(value, dict):
+                lines.extend([indent+json.dumps(key), indent+'{', encode(value, indent+'\t'), indent+'}'])
+            else:
+                lines.append(indent+json.dumps(key)+'\t\t'+json.dumps(value))
+        return '\n'.join(lines)
+
+    with tempfile.NamedTemporaryFile(mode='w', dir=config.parent, delete=False) as output:
+        temporary_config = Path(output.name)
     try:
-        with config.open('x') as output:
-            output.write('"InstallConfigStore" { "Software" { "Valve" { "Steam" { '
-                         '"System" { "IdleScreensaverBatterySeconds" "0" '
-                         '"IdleScreensaverACSeconds" "0" } } } } }\n')
-    except FileExistsError:
-        pass
+        temporary_config.write_text(encode(settings)+'\n')
+        temporary_config.chmod(config.stat().st_mode & 0o777 if config.exists() else 0o600)
+        if client_processes(root) or (config.read_text() if config.exists() else '') != original:
+            raise RuntimeError('Steam configuration changed during installation; retry with Steam closed')
+        temporary_config.replace(config)
+    finally:
+        temporary_config.unlink(missing_ok=True)
     print(f'Steam ARM64 bootstrap build {version} ready; starting Valve updater.', flush=True)
 
 
