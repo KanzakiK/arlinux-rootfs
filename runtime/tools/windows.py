@@ -119,7 +119,7 @@ def install(archive, expected):
         checksum, name = item['sha256'], item['file']
         if (not re.fullmatch('[0-9a-f]{64}', checksum)
                 or not re.fullmatch(r'[a-z0-9_-]+-'+checksum+r'\.tar\.gz', name)
-                or not runtime_url(item['url'], name) or name in names
+                or not runtime_url(item['url'], item.get('asset', name)) or name in names
                 or type(item['bytes']) is not int or item['bytes'] <= 0):
             raise ValueError('Invalid Bionic runtime component')
         names.add(name)
@@ -143,6 +143,8 @@ def install(archive, expected):
                             # Components contain files/links, not shared parent
                             # directory entries. Never overwrite another component.
                             name = member.name
+                            if index.get('embeddedMetadata') and name == 'bionic-runtime.json':
+                                continue
                             if (name in members or name == 'bionic-runtime.json'
                                     or '\\' in name or ':' in name
                                     or any(part in ('', '.', '..') for part in name.split('/'))
@@ -186,45 +188,17 @@ def ensure_runtime():
         if not (runtime_storage()/candidate).exists():
             install(shared.directory('downloads')/(candidate+'.json'), candidate)
         return runtime(candidate)
-    # A changed release pin installs a new immutable bundle before selecting it.
-    rows = [line.split('\t') for line in MANIFEST.read_text().splitlines()
-            if line.strip() and not line.startswith('#')]
-    if not rows:
-        try:
-            return runtime()
-        except FileNotFoundError:
-            raise RuntimeError('Install a Bionic bundle using --install BUNDLE --sha256 SHA256') from None
-    if len(rows) != 1 or len(rows[0]) != 3:
-        raise ValueError('Invalid Windows runtime download manifest')
-    version, expected, url = rows[0]
-    if not re.fullmatch('[0-9a-f]{64}', expected) or not url.startswith('https://github.com/taowen/wine/releases/download/'):
-        raise ValueError('Invalid Bionic runtime source')
-    latest = '/releases/download/latest/' in url
-    if latest:
-        # Cache successful release lookups briefly, never pin an instance forever.
-        # A changed APK manifest also invalidates the selection immediately.
-        try:
-            selected = json.loads(LATEST_SELECTION.read_text())
-            age = time.time() - selected.get('checkedAt', 0)
-            if selected.get('manifestSHA256') == digest(MANIFEST) and 0 <= age < 3600:
-                return runtime(selected['sha256'])
-        except (FileNotFoundError, ValueError, KeyError, TypeError):
-            pass
-        expected, url = latest_runtime()
     try:
-        active = runtime()
-        if active.name == expected:
-            if latest:
-                validate(active)
-                remember_latest(expected)
-            return active
-    except FileNotFoundError:
+        selected = json.loads(LATEST_SELECTION.read_text())
+        age = time.time() - selected.get('checkedAt', 0)
+        if selected.get('manifestSHA256') == digest(MANIFEST) and 0 <= age < 3600:
+            return runtime(selected['sha256'])
+    except (FileNotFoundError, ValueError, KeyError, TypeError):
         pass
-    print(f'Preparing shared {version}…', flush=True)
-    install(shared.download(url, expected, '.json'), expected)
-    if latest:
-        remember_latest(expected)
-    return runtime()
+    expected, source = latest_runtime()
+    install(source, expected)
+    remember_latest(expected)
+    return runtime(expected)
 
 
 def remember_latest(identity):
@@ -235,56 +209,76 @@ def remember_latest(identity):
     temporary.replace(LATEST_SELECTION)
 
 
-def latest_runtime():
-    endpoint = 'https://api.github.com/repos/taowen/wine/releases/tags/latest'
-    try:
-        result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
-                                 endpoint], check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError:
-        return latest_runtime_web()
-    release = json.loads(result.stdout)
-    for asset in release.get('assets', []):
-        if asset.get('name') != RUNTIME_INDEX:
-            continue
-        checksum = asset.get('digest', '')
-        identity = asset.get('id')
-        if (not isinstance(checksum, str) or not re.fullmatch('sha256:[0-9a-f]{64}', checksum)
-                or type(identity) is not int or identity <= 0 or asset.get('state') != 'uploaded'):
-            raise ValueError('Invalid latest Bionic Wine release asset')
-        # The immutable asset ID also avoids resolving a different upload halfway through.
-        return checksum[7:], f'https://api.github.com/repos/taowen/wine/releases/assets/{identity}'
-    raise ValueError('Latest Bionic Wine release has no runtime asset')
-
-
-def latest_runtime_web():
-    """Resolve GitHub's published digest when the public API is rate limited.
-
-    Never accept the APK's old pin or infer a digest from a downloaded archive.
-    A replacement between this lookup and download fails SHA-256 verification.
-    """
-    class Assets(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.digests = []
-            self.runtime_link = False
-
-        def handle_starttag(self, tag, attrs):
-            attrs = dict(attrs)
-            if tag == 'a' and attrs.get('href') == '/taowen/wine/releases/download/latest/'+RUNTIME_INDEX:
-                self.runtime_link = True
-            if tag == 'clipboard-copy' and attrs.get('aria-label') == 'Copy to clipboard digest for '+RUNTIME_INDEX:
-                self.digests.append(attrs.get('value', ''))
-
+def release_asset(row):
+    name, repository, tag, filename = row
+    if (not re.fullmatch('[a-z0-9_-]+', name)
+            or not re.fullmatch('taowen/(wine|FEX|dxvk|arlinux-steamworks|arlinux-windows-integration)', repository)
+            or tag != 'arlinux-'+name+'-latest' or filename != 'runtime.tar.gz'):
+        raise ValueError('Invalid runtime release endpoint')
+    endpoint = f'https://api.github.com/repos/{repository}/releases/tags/{tag}'
     result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
-        'https://github.com/taowen/wine/releases/expanded_assets/latest'],
-        check=True, capture_output=True, text=True)
-    assets = Assets()
-    assets.feed(result.stdout)
-    if (not assets.runtime_link or len(assets.digests) != 1 or
-            not re.fullmatch('sha256:[0-9a-f]{64}', assets.digests[0])):
-        raise ValueError('Latest Bionic Wine release has no verified runtime digest')
-    return assets.digests[0][7:], 'https://github.com/taowen/wine/releases/download/latest/'+RUNTIME_INDEX
+                             endpoint], check=True, capture_output=True, text=True)
+    release = json.loads(result.stdout)
+    if release.get('draft') or release.get('tag_name') != tag:
+        raise ValueError('Invalid runtime release')
+    asset = next((a for a in release.get('assets', []) if a.get('name') == filename), None)
+    if (not asset or asset.get('state') != 'uploaded'
+            or not re.fullmatch('sha256:[0-9a-f]{64}', asset.get('digest', ''))
+            or type(asset.get('size')) is not int or asset['size'] <= 0
+            or type(asset.get('id')) is not int or asset['id'] <= 0):
+        raise ValueError('Runtime release has no verified asset: '+name)
+    checksum = asset['digest'][7:]
+    return dict(name=name, file=name+'-'+checksum+'.tar.gz', asset=filename,
+                sha256=checksum, bytes=asset['size'],
+                url=f'https://github.com/{repository}/releases/download/{tag}/{filename}')
 
+
+def latest_runtime():
+    """GitHub releases are the download index; no public JSON selection."""
+    from concurrent.futures import ThreadPoolExecutor
+    rows = [line.split('\t') for line in MANIFEST.read_text().splitlines()
+            if line.strip() and not line.startswith('#')]
+    if not rows or any(len(row) != 4 for row in rows) or len({r[0] for r in rows}) != len(rows):
+        raise ValueError('Invalid runtime release endpoints')
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        components = list(pool.map(release_asset, rows))
+    merged = {}
+    for item in components:
+        archive = shared.download(item['url'], item['sha256'], '.tar.gz')
+        if archive.stat().st_size != item['bytes']:
+            raise ValueError('Runtime release size mismatch')
+        with tarfile.open(archive) as packed:
+            member = packed.getmember('bionic-runtime.json')
+            if not member.isfile() or member.size > 4*1024*1024:
+                raise ValueError('Invalid embedded runtime metadata')
+            metadata = json.load(packed.extractfile(member))
+        if metadata.get('protocol') != 1 or metadata.get('libc') != 'bionic':
+            raise ValueError('Invalid runtime component metadata')
+        for key, value in metadata.items():
+            if key in ('files', 'originalSources', 'compatibility'):
+                target = merged.setdefault(key, {})
+                for field, content in value.items():
+                    if field in target and (key == 'files' or target[field] != content):
+                        raise ValueError('Incompatible runtime releases: '+field)
+                    target[field] = content
+            elif key == 'sources':
+                continue
+            elif key in merged and merged[key] != value:
+                raise ValueError('Incompatible runtime metadata: '+key)
+            else:
+                merged[key] = value
+    # This is an internal cache receipt, never a published download manifest.
+    index = dict(format=1, kind='arlinux-bionic-components', embeddedMetadata=True,
+                 runtime=merged, components=components)
+    encoded = (json.dumps(index, sort_keys=True, indent=2)+'\n').encode()
+    checksum = hashlib.sha256(encoded).hexdigest()
+    source = shared.directory('downloads')/(checksum+'.json')
+    with shared.locked(source.with_suffix('.lock')):
+        with tempfile.NamedTemporaryFile(dir=source.parent, delete=False) as output:
+            temporary = Path(output.name)
+            output.write(encoded)
+        temporary.replace(source)
+    return checksum, source
 
 def host_path(path):
     """Map guest files to Android backing files (including per-instance HOME)."""
