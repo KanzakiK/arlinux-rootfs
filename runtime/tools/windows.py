@@ -245,9 +245,8 @@ def release_asset(row):
         raise ValueError('Invalid runtime release endpoint')
     endpoint = f'https://api.github.com/repos/{repository}/releases/tags/{tag}'
     try:
-        result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
-                                 endpoint], check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError:
+        release = json.loads(shared.github_metadata(endpoint))
+    except (OSError, subprocess.SubprocessError, ValueError):
         # Preserve GitHub's public digest fallback when the unauthenticated API
         # is rate limited. Download size is then recorded after hash validation.
         class Assets(HTMLParser):
@@ -263,18 +262,15 @@ def release_asset(row):
                 if tag_name == 'clipboard-copy' and attrs.get('aria-label') == 'Copy to clipboard digest for '+filename:
                     self.checksums.append(attrs.get('value', ''))
 
-        page = subprocess.run(['curl', '-fsSL', '--connect-timeout', '10', '--max-time', '30',
-                               f'https://github.com/{repository}/releases/expanded_assets/{tag}'],
-                              check=True, capture_output=True, text=True)
+        page = shared.github_metadata(f'https://github.com/{repository}/releases/expanded_assets/{tag}')
         assets = Assets()
-        assets.feed(page.stdout)
+        assets.feed(page.decode('utf-8'))
         if not assets.link or len(assets.checksums) != 1 or not re.fullmatch('sha256:[0-9a-f]{64}', assets.checksums[0]):
             raise ValueError('Runtime release has no verified digest: '+name)
         checksum = assets.checksums[0][7:]
         return dict(name=name, file=name+'-'+checksum+'.tar.gz', asset=filename,
                     sha256=checksum, bytes=None,
                     url=f'https://github.com/{repository}/releases/download/{tag}/{filename}')
-    release = json.loads(result.stdout)
     if release.get('draft') or release.get('tag_name') != tag:
         raise ValueError('Invalid runtime release')
     asset = next((a for a in release.get('assets', []) if a.get('name') == filename), None)

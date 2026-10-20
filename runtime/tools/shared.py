@@ -5,7 +5,7 @@ of instance selection, deletion and reinstall.
 There is deliberately no per-HOME fallback: an old host must be upgraded.
 """
 from contextlib import contextmanager
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
@@ -14,6 +14,7 @@ import re
 import subprocess
 import shutil
 import time
+import tempfile
 import sys
 from urllib.parse import urlparse, unquote
 
@@ -51,36 +52,20 @@ def github_asset(url, expected):
     owner, repo, tag, filename = match.groups()
     endpoint = f'https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}'
 
-    def lookup(options):
-        try:
-            result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '2', '--max-time', '5',
-                                     *options, endpoint], check=True, capture_output=True, text=True,
-                                    timeout=6)
-            release = json.loads(result.stdout)
-            for asset in release.get('assets', []):
-                if asset.get('name') != unquote(filename):
-                    continue
-                identity = asset.get('id')
-                if not isinstance(identity, int) or identity <= 0:
-                    return None
-                checksum = asset.get('digest')
-                if checksum is not None and checksum != 'sha256:' + expected:
-                    return None
-                return f'https://api.github.com/repos/{owner}/{repo}/releases/assets/{identity}'
-        except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
-            pass
-        return None
-
-    # Metadata is small: race valid responses instead of waiting for a blocked
-    # direct API request before the accelerated asset transfer can even begin.
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        jobs = [pool.submit(lookup, options) for options in github_route_options(endpoint, [])]
-        for job in as_completed(jobs):
-            asset = job.result()
-            if asset:
-                for pending in jobs:
-                    pending.cancel()
-                return asset
+    try:
+        release = json.loads(github_metadata(endpoint))
+        for asset in release.get('assets', []):
+            if asset.get('name') != unquote(filename):
+                continue
+            identity = asset.get('id')
+            if not isinstance(identity, int) or identity <= 0:
+                return None
+            checksum = asset.get('digest')
+            if checksum is not None and checksum != 'sha256:' + expected:
+                return None
+            return f'https://api.github.com/repos/{owner}/{repo}/releases/assets/{identity}'
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        pass
     return None
 
 
@@ -168,8 +153,10 @@ def github_history(key=None, rate=0, success=False):
         return {}
 
 
-def github_transfer(sources, partial, expected):
+def github_transfer(sources, partial, expected, *, limit=None):
     """Keep the winning live connection instead of reconnecting after a probe."""
+    if expected is None and limit is None:
+        raise ValueError('Metadata transfer requires a size limit')
     routes = [(url, options, number) for url, headers in sources
               for number, options in enumerate(github_route_options(url, headers))]
     if len(routes) == len(sources):
@@ -204,9 +191,13 @@ def github_transfer(sources, partial, expected):
 
     remaining = list(enumerate(routes))
     while remaining:
+        # Release metadata is mutable; retry a complete response instead of
+        # combining byte ranges from different snapshots of its JSON/HTML.
+        if limit is not None:
+            partial.unlink(missing_ok=True)
         offset = partial.stat().st_size if partial.is_file() else 0
         def key(route):
-            return f'{urlparse(route[0]).hostname}/{"resume" if offset else "full"}/{route[2]}'
+            return f'{urlparse(route[0]).hostname}{"/metadata" if limit else ""}/{"resume" if offset else "full"}/{route[2]}'
         history = github_history()
         def weight(item):
             row = history.get(key(item[1]), {})
@@ -214,7 +205,7 @@ def github_transfer(sources, partial, expected):
             return row.get('rate', 0)/(1+row.get('failures', 0))/(1+age/86400)
         remaining.sort(key=weight, reverse=True)
         best = history.get(key(remaining[0][1]), {})
-        reuse = (best.get('verified') and best.get('rate', 0) >= 65536
+        reuse = (best.get('verified') and best.get('rate', 0) >= (1 if limit else 65536)
                  and time.time()-best.get('updated', 0) < 86400)
         batch = remaining[:1] if reuse else remaining
         workers = []
@@ -229,7 +220,8 @@ def github_transfer(sources, partial, expected):
                 # download is needed. Redirect headers remain private and temporary.
                 process = subprocess.Popen(['curl', '-fsSL', '--connect-timeout', '5',
                     '--speed-limit', '1024', '--speed-time', '30', '--max-redirs', '10',
-                    *(['--range', f'{offset}-'] if offset else []), *options,
+                    *(['--range', f'{offset}-'] if offset else []),
+                    *(['--max-filesize', str(limit), '--max-time', '10'] if limit else []), *options,
                     '--dump-header', str(header), '--output', str(body), url],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 workers.append((index, process, body, header))
@@ -282,7 +274,8 @@ def github_transfer(sources, partial, expected):
                     shutil.copyfileobj(source, output)
             elif mode == 'replace':
                 body.replace(partial)
-            success = process.returncode == 0 and mode and digest(partial) == expected
+            success = process.returncode == 0 and mode and (
+                0 < partial.stat().st_size <= limit if expected is None else digest(partial) == expected)
             route = next(route for i, route in remaining if i == index)
             github_history(key(route), (partial.stat().st_size-offset)/max(.1, time.monotonic()-started), bool(success))
             if success:
@@ -298,6 +291,23 @@ def github_transfer(sources, partial, expected):
                 body.unlink(missing_ok=True)
                 header.unlink(missing_ok=True)
     return False
+
+
+def github_metadata(url):
+    """Fetch bounded official metadata through the same measured route policy."""
+    if urlparse(url).scheme != 'https' or urlparse(url).hostname not in ('api.github.com', 'github.com'):
+        raise ValueError('Expected official GitHub metadata URL')
+    limit = 2 * 1024 * 1024
+    with tempfile.TemporaryDirectory(prefix='.github-metadata-', dir=directory('downloads')) as temporary:
+        target = Path(temporary)/'response'
+        if not github_transfer([(url, [])], target, None, limit=limit):
+            subprocess.run(['curl', '-fsSL', '--connect-timeout', '3', '--max-time', '10',
+                            '--max-filesize', str(limit), '-o', str(target), url],
+                           check=True, timeout=12, stdout=sys.stderr)
+        data = target.read_bytes()
+        if not 0 < len(data) <= limit:
+            raise ValueError('GitHub metadata exceeds size limit')
+        return data
 
 
 def download(url, expected, suffix, *, progress=True):
