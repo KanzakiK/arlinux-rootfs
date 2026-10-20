@@ -152,7 +152,7 @@ def github_transfer(sources, partial, expected):
             block = next(block for block in reversed(blocks) if block.startswith(b'HTTP/'))
             lines = block.splitlines()
             status = lines[0].split()[1]
-            if status == b'200':
+            if status == b'200' and not offset:
                 return 'replace'
             if status == b'206':
                 fields = dict(line.lower().split(b':', 1) for line in lines[1:] if b':' in line)
@@ -266,51 +266,48 @@ def download(url, expected, suffix, *, progress=True):
         if partial.is_file() and digest(partial) == expected:
             partial.replace(target)
             return target
-        try:
-            def candidates():
-                for source in ranked_sources(urls):
-                    if re.fullmatch(r'https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/[1-9][0-9]*', source):
-                        sources = [(source, ['-H', 'Accept: application/octet-stream'])]
-                    else:
-                        api = github_asset(source, expected)
-                        sources = ([(api, ['-H', 'Accept: application/octet-stream'])] if api else []) + [(source, [])]
-                    yield sources
-            failure = None
-            for sources in candidates():
-                if github_transfer(sources, partial, expected):
+        def candidates():
+            for source in ranked_sources(urls):
+                if re.fullmatch(r'https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/[1-9][0-9]*', source):
+                    sources = [(source, ['-H', 'Accept: application/octet-stream'])]
+                else:
+                    api = github_asset(source, expected)
+                    sources = ([(api, ['-H', 'Accept: application/octet-stream'])] if api else []) + [(source, [])]
+                yield sources
+        failure = None
+        for sources in candidates():
+            if github_transfer(sources, partial, expected):
+                partial.replace(target)
+                return target
+            for source, headers in sources:
+                try:
+                    print('Downloading verified installer…', flush=True, file=sys.stderr)
+                    for attempt in range(2):
+                        try:
+                            subprocess.run(['curl', '-fL', *([] if progress else ['-sS']), '--retry', '2', '--connect-timeout', '10',
+                                            '--speed-limit', '1024', '--speed-time', '30',
+                                            '--continue-at', '-', *headers, '-o', str(partial), source],
+                                           check=True, stdout=sys.stderr)
+                            break
+                        except subprocess.CalledProcessError as error:
+                            # Some official mirrors do not support byte ranges.
+                            if attempt == 0 and error.returncode in (33, 36):
+                                partial.unlink(missing_ok=True)
+                                continue
+                            if attempt == 0 and error.returncode in (18, 28, 52, 55, 56):
+                                # A transient disconnect does not mean the fastest CDN is down.
+                                continue
+                            raise
+                    if digest(partial) != expected:
+                        # Never append a different CDN's bytes to a corrupt response.
+                        partial.unlink(missing_ok=True)
+                        raise ValueError('Shared download SHA-256 mismatch')
                     partial.replace(target)
                     return target
-                for source, headers in sources:
-                    try:
-                        print('Downloading verified installer…', flush=True, file=sys.stderr)
-                        for attempt in range(2):
-                            try:
-                                subprocess.run(['curl', '-fL', *([] if progress else ['-sS']), '--retry', '2', '--connect-timeout', '10',
-                                                '--speed-limit', '1024', '--speed-time', '30',
-                                                '--continue-at', '-', *headers, '-o', str(partial), source],
-                                               check=True, stdout=sys.stderr)
-                                break
-                            except subprocess.CalledProcessError as error:
-                                # Some official mirrors do not support byte ranges.
-                                if attempt == 0 and error.returncode in (33, 36):
-                                    partial.unlink(missing_ok=True)
-                                    continue
-                                if attempt == 0 and error.returncode in (18, 28, 52, 55, 56):
-                                    # A transient disconnect does not mean the fastest CDN is down.
-                                    continue
-                                raise
-                        if digest(partial) != expected:
-                            # Never append a different CDN's bytes to a corrupt response.
-                            partial.unlink(missing_ok=True)
-                            raise ValueError('Shared download SHA-256 mismatch')
-                        partial.replace(target)
-                        return target
-                    except (subprocess.CalledProcessError, ValueError) as error:
-                        failure = error
-            if failure:
-                raise failure
-        finally:
-            partial.unlink(missing_ok=True)
+                except (subprocess.CalledProcessError, ValueError) as error:
+                    failure = error
+        if failure:
+            raise failure
 
 
 if __name__ == '__main__':
