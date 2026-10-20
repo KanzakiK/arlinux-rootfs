@@ -1,0 +1,9 @@
+{
+  "repository": "taowen/libhybris",
+  "runner": "ubuntu-24.04-arm",
+  "dependencies": [],
+  "product": "graphics",
+  "compilerCacheMiB": 2048,
+  "release": "arlinux-linux-hybris-latest",
+  "products": []
+}

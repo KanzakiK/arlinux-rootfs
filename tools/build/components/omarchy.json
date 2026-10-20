@@ -1,0 +1,15 @@
+{
+  "repository": "taowen/arlinux-omarchy",
+  "runner": "ubuntu-24.04-arm",
+  "dependencies": [
+    "linux-mesa",
+    "linux-hybris",
+    "vulkan-capture"
+  ],
+  "product": "rootfs",
+  "compilerCacheMiB": 2048,
+  "release": "arlinux-omarchy-latest",
+  "products": [
+    "omarchy"
+  ]
+}

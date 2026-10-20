@@ -1,0 +1,11 @@
+{
+  "repository": "taowen/arlinux-rootfs",
+  "runner": "ubuntu-24.04-arm",
+  "dependencies": [],
+  "product": "guest-tools",
+  "compilerCacheMiB": 0,
+  "release": "arlinux-guest-tools-latest",
+  "products": [
+    "guest-tools"
+  ]
+}

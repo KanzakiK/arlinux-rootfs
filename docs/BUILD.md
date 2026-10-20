@@ -77,8 +77,12 @@ python tools/build/install-github-workflows.py
 
 Use Python with zstandard and authenticated gh. Component ownership, ARM64
 standard runner labels and dependencies are defined in
-`tools/build/github-components.json`. Each repository runs an independent
-workflow_dispatch and owns its own 10 GB cache. No WSL compilation is required.
+the independent `tools/build/components/COMPONENT.json` recipes. Each repository runs an independent
+workflow_dispatch and owns its own 10 GB cache. Each recipe declares one fixed
+`arlinux-COMPONENT-latest` release. The coordinator queries that endpoint directly;
+input identities select verified caches, not release tags. Payloads upload before
+the completion metadata, and all downloads retain SHA-256 verification.
+No WSL compilation is required.
 Request identities use source content and dependency identities rather than the
 integration commit alone. Actions caches retain stage archives, receipts and Linux
 GPU outputs. Root-owned scratch rootfs trees are deliberately excluded: their

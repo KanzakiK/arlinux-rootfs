@@ -1,0 +1,11 @@
+{
+  "repository": "taowen/gfxreconstruct",
+  "runner": "ubuntu-24.04-arm",
+  "dependencies": [],
+  "product": "capture",
+  "compilerCacheMiB": 2048,
+  "release": "arlinux-vulkan-capture-latest",
+  "products": [
+    "capture"
+  ]
+}

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Internal hosted-runner adapter; recipes remain behind build.sh."""
+from component_recipes import load_plan
 import argparse
 import hashlib
 import json
@@ -33,7 +34,7 @@ def sha(path):
 def request():
     data = json.loads(os.environ['ARLINUX_COMPONENT_REQUEST'])
     framework = Path(__file__).resolve().parents[2]
-    plan = json.loads((framework / 'tools/build/github-components.json').read_text())
+    plan = load_plan()
     stage = plan['stages'].get(data.get('stage'))
     if not stage or os.environ.get('GITHUB_REPOSITORY') != stage['repository']:
         raise ValueError('Component must run in its owning repository')
@@ -255,7 +256,7 @@ def publish(data, framework):
     contents = ({'outputs': state['outputs'], 'references': state['references']}
                 if stage not in STANDALONE else {str(p.relative_to(root)): inventory(p) for p in paths})
     record['outputIdentity'] = hashlib.sha256(json.dumps(contents, sort_keys=True).encode()).hexdigest()
-    tag = 'arlinux-'+stage+'-'+data['identity'][:24]
+    tag = load_plan()['stages'][stage]['release']
     repository = os.environ['GITHUB_REPOSITORY']
     previous = subprocess.run(['gh','api',f'repos/{repository}/releases/tags/{tag}'], capture_output=True, text=True)
     if not previous.returncode:
@@ -265,10 +266,11 @@ def publish(data, framework):
             expected = completed['digest'].removeprefix('sha256:')
             saved = download(completed['browser_download_url'], output/'previous.json', expected)
             prior = json.loads(saved.read_text())
-            if prior['identity'] != data['identity'] or prior.get('outputIdentity') != record['outputIdentity']:
+            if prior['identity'] == data['identity'] and prior.get('outputIdentity') != record['outputIdentity']:
                 raise ValueError('Published component differs from the verified rerun outputs')
-            print('OK identical published component '+stage, flush=True)
-            return
+            if prior['identity'] == data['identity']:
+                print('OK identical published component '+stage, flush=True)
+                return
     archive = output / 'capsule.tar'
     # Toolchains, pinned checkouts and declared pipeline dependencies are
     # provisioned separately and must not be duplicated into every capsule.
@@ -308,20 +310,20 @@ def publish(data, framework):
             shutil.copyfileobj(source, writer)
     archive.unlink()
     record['archiveSha256'] = sha(compressed)
-    tag = 'arlinux-'+stage+'-'+data['identity'][:24]
+    tag = load_plan()['stages'][stage]['release']
     repository = os.environ['GITHUB_REPOSITORY']
     record['parts'] = []
     with compressed.open('rb') as source:
         while block := source.read(1024*1024*1024):
-            name = f'capsule-{len(record["parts"]):03d}.zst.part'
+            name = f'capsule-{record["archiveSha256"]}-{len(record["parts"]):03d}.zst.part'
             part = output/name
             part.write_bytes(block)
             record['parts'].append(dict(name=name, sha256=sha(part),
                 url=f'https://github.com/{repository}/releases/download/{tag}/{name}'))
     manifest = output/'component.json'
     manifest.write_text(json.dumps(record,sort_keys=True,indent=2)+'\n')
-    # Component releases are immutable build inputs. Never touch application
-    # releases, Wine latest, or a moving download manifest here.
+    # Each component owns one fixed release. Upload verified payloads first;
+    # component.json is the final completion marker for this generation.
     existing = subprocess.run(['gh','api',f'repos/{repository}/releases/tags/{tag}'],
                               capture_output=True,text=True)
     if existing.returncode:
@@ -330,12 +332,12 @@ def publish(data, framework):
         assets = {}
     else:
         assets = {asset['name']:asset for asset in json.loads(existing.stdout)['assets']}
-    # Upload the manifest last as the completion marker. An interrupted upload
-    # can resume, but an already published asset must never change silently.
+    # Payload names contain their archive digest so an in-flight reader cannot
+    # mix generations. Replace the completion marker only after all uploads.
     for file in [*(output/part['name'] for part in record['parts']), manifest]:
         if file.name in assets:
             if assets[file.name].get('digest') != 'sha256:'+sha(file):
-                raise ValueError('Immutable component release conflicts with rebuilt output: '+file.name)
+                run('gh','release','upload',tag,'--repo',repository,file,'--clobber')
         else:
             run('gh','release','upload',tag,'--repo',repository,file)
 
