@@ -204,10 +204,13 @@ def github_transfer(sources, partial, expected, *, limit=None):
             age = max(0, time.time()-row.get('updated', 0))
             return row.get('rate', 0)/(1+row.get('failures', 0))/(1+age/86400)
         remaining.sort(key=weight, reverse=True)
-        best = history.get(key(remaining[0][1]), {})
-        reuse = (best.get('verified') and best.get('rate', 0) >= (1 if limit else 65536)
-                 and time.time()-best.get('updated', 0) < 86400)
-        batch = remaining[:1] if reuse else remaining
+        trusted = [item for item in remaining
+                   if (row := history.get(key(item[1]), {})).get('verified')
+                   and row.get('rate', 0) >= (1 if limit else 65536)
+                   and time.time()-row.get('updated', 0) < 86400]
+        reuse = bool(trusted)
+        batch = trusted[:1] if reuse else remaining
+        best = history.get(key(batch[0][1]), {})
         workers = []
         try:
             started = time.monotonic()
