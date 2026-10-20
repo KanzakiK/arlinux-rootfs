@@ -63,7 +63,7 @@ def validate(root):
 
 
 def runtime_url(url, filename):
-    return bool(re.fullmatch(r'https://github\.com/taowen/(?:wine|arlinux-steamworks|arlinux-windows-integration)'
+    return bool(re.fullmatch(r'https://github\.com/taowen/(?:wine|FEX|dxvk|arlinux-steamworks|arlinux-windows-integration)'
                             r'/releases/download/[^/]+/'+re.escape(filename), url))
 
 
