@@ -185,7 +185,7 @@ def github_routes(url, headers):
     return ranked
 
 
-def download(url, expected, suffix):
+def download(url, expected, suffix, *, progress=True):
     """Keep one verified vendor artifact, with a cross-instance download lock."""
     urls = [url] if isinstance(url, str) else list(url)
     if (not re.fullmatch(r'[0-9a-f]{64}', expected)
@@ -213,7 +213,7 @@ def download(url, expected, suffix):
                     print('Downloading verified installer…', flush=True, file=sys.stderr)
                     for attempt in range(2):
                         try:
-                            subprocess.run(['curl', '-fL', '--retry', '2', '--connect-timeout', '10',
+                            subprocess.run(['curl', '-fL', *([] if progress else ['-sS']), '--retry', '2', '--connect-timeout', '10',
                                             '--speed-limit', '1024', '--speed-time', '30',
                                             '--continue-at', '-', *headers, '-o', str(partial), source],
                                            check=True, stdout=sys.stderr)

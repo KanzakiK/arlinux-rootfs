@@ -92,7 +92,8 @@ def install_component(name, source, expected):
                 if (not re.fullmatch('[0-9a-f]{64}', checksum)
                         or not runtime_url(item['url'], asset)):
                     raise ValueError('Invalid runtime component archive')
-                archive = shared.download(item['url'], checksum, '.tar.gz')
+                print('Preparing runtime component: '+name, flush=True)
+                archive = shared.download(item['url'], checksum, '.tar.gz', progress=False)
                 if item.get('bytes') is not None and archive.stat().st_size != item['bytes']:
                     raise ValueError('Runtime component size mismatch: '+name)
                 with tarfile.open(archive, 'r:*') as bundle:
