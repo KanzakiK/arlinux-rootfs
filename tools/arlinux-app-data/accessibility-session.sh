@@ -45,6 +45,11 @@ if command -v dbus-send >/dev/null 2>&1; then
         string:ScreenReaderEnabled variant:boolean:true >/dev/null 2>&1 || true
 fi
 
+# X resources are session state. Load the user's file, not an APK-owned DPI policy.
+if [ -n "${DISPLAY:-}" ] && [ -f "$HOME/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then
+    xrdb -merge "$HOME/.Xresources"
+fi
+
 # One app drawer for every desktop, with this session's input and accessibility bus.
 python3 /usr/lib/arlinux/guest/yibu-launcher.py > "$XDG_RUNTIME_DIR/apps.log" 2>&1 &
 exec "$@"
