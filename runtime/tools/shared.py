@@ -137,18 +137,20 @@ def github_route_options(url, headers):
     return routes
 
 
-def github_routes(url, headers):
-    """Rank 302's four GitHub routes against the direct route using real bytes."""
-    routes = github_route_options(url, headers)
-    if len(routes) == 1:
+def github_routes(sources, offset):
+    """Compare official web/API routes in the same transfer mode as the download."""
+    routes = [(url, options) for url, headers in sources
+              for options in github_route_options(url, headers)]
+    if len(routes) == len(sources):
         return routes
 
-    def probe(options):
+    def probe(route):
+        url, options = route
         try:
-            # Range responses can use different CDN caches and exaggerate the
-            # speed of the full installer. Sample the real response for four
-            # seconds, keeping the same redirects/TLS path as the download.
+            # A resumed response may use a different CDN cache from a full GET.
+            # Probe the actual offset instead of ranking an unrelated response.
             result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '2', '--max-time', '4',
+                *(['--range', f'{offset}-'] if offset else []),
                 '--output', '/dev/null', '--write-out',
                 '%{http_code} %{size_download} %{speed_download}', *options, url],
                 capture_output=True, text=True, timeout=5)
@@ -159,7 +161,7 @@ def github_routes(url, headers):
             pass
         return 0
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=min(10, len(routes))) as pool:
         rates = list(pool.map(probe, routes))
     order = sorted(range(len(routes)), key=lambda i: -rates[i])
     # Report only route number/rate; signed redirect URLs and headers stay private.
@@ -169,7 +171,7 @@ def github_routes(url, headers):
     ranked = []
     adaptive = False
     for index in order:
-        options = routes[index]
+        url, options = routes[index]
         if rates[index] >= 65536:
             # A new connection may land on a much slower backend than the probe.
             # Resume on a new connection/route instead of accepting 1 KiB/s for
@@ -177,11 +179,11 @@ def github_routes(url, headers):
             options = [*options, '--speed-limit', str(min(262144, int(rates[index] / 4))),
                        '--speed-time', '15', '--retry', '0']
             adaptive = True
-        ranked.append(options)
+        ranked.append((url, options))
     if adaptive:
         # Every fast probe may have been optimistic. Still allow a slow direct
         # transfer to finish rather than making network variability fatal.
-        ranked.append(headers)
+        ranked.extend(sources)
     return ranked
 
 
@@ -200,13 +202,13 @@ def download(url, expected, suffix, *, progress=True):
         try:
             def candidates():
                 for source in ranked_sources(urls):
+                    offset = partial.stat().st_size if partial.is_file() else 0
                     if re.fullmatch(r'https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/[1-9][0-9]*', source):
-                        yield from ((source, options) for options in github_routes(source, ['-H', 'Accept: application/octet-stream']))
+                        yield from github_routes([(source, ['-H', 'Accept: application/octet-stream'])], offset)
                         continue
                     api = github_asset(source, expected)
-                    if api:
-                        yield from ((api, options) for options in github_routes(api, ['-H', 'Accept: application/octet-stream']))
-                    yield from ((source, options) for options in github_routes(source, []))
+                    sources = ([(api, ['-H', 'Accept: application/octet-stream'])] if api else []) + [(source, [])]
+                    yield from github_routes(sources, offset)
             failure = None
             for source, headers in candidates():
                 try:
