@@ -8,7 +8,7 @@
   ],
   "product": "rootfs",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-omarchy-latest",
+  "release": "arlinux-omarchy-debug",
   "products": [
     "omarchy"
   ]

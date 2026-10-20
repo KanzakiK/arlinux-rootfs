@@ -8,7 +8,7 @@
   ],
   "product": "rootfs",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-arch-latest",
+  "release": "arlinux-arch-debug",
   "products": [
     "arch"
   ]

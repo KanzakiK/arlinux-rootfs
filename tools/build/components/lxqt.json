@@ -8,7 +8,7 @@
   ],
   "product": "rootfs",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-lxqt-latest",
+  "release": "arlinux-lxqt-debug",
   "products": [
     "lxqt"
   ]

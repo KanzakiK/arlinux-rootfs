@@ -4,6 +4,6 @@
   "dependencies": [],
   "product": "graphics",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-linux-hybris-latest",
+  "release": "arlinux-linux-hybris-debug",
   "products": []
 }

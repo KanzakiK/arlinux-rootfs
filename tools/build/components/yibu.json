@@ -8,7 +8,7 @@
   ],
   "product": "rootfs",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-yibu-latest",
+  "release": "arlinux-yibu-debug",
   "products": [
     "rootfs"
   ]

@@ -8,7 +8,7 @@
   ],
   "product": "rootfs",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-plasma-latest",
+  "release": "arlinux-plasma-debug",
   "products": [
     "plasma"
   ]

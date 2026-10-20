@@ -4,7 +4,7 @@
   "dependencies": [],
   "product": "guest-tools",
   "compilerCacheMiB": 0,
-  "release": "arlinux-guest-tools-latest",
+  "release": "arlinux-guest-tools-debug",
   "products": [
     "guest-tools"
   ]

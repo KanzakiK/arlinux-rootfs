@@ -4,7 +4,7 @@
   "dependencies": [],
   "product": "capture",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-vulkan-capture-latest",
+  "release": "arlinux-vulkan-capture-debug",
   "products": [
     "capture"
   ]

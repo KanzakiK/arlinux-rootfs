@@ -4,6 +4,6 @@
   "dependencies": [],
   "product": "graphics",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-linux-mesa-latest",
+  "release": "arlinux-linux-mesa-debug",
   "products": []
 }

@@ -8,7 +8,7 @@
   ],
   "product": "rootfs",
   "compilerCacheMiB": 2048,
-  "release": "arlinux-debian-latest",
+  "release": "arlinux-debian-debug",
   "products": [
     "debian"
   ]
