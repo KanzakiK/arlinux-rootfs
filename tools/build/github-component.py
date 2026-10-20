@@ -133,7 +133,7 @@ def prepare(data, framework):
         out.write('cache-paths<<ARLINUX_CACHE_PATHS\n'+'\n'.join(paths)+'\nARLINUX_CACHE_PATHS\n')
 
 
-def import_dependency(root, dependency, visited=None):
+def import_dependency(root, dependency, visited=None, *, recursive=True):
     if visited is None:
         visited = set()
     if dependency['identity'] in visited:
@@ -145,8 +145,9 @@ def import_dependency(root, dependency, visited=None):
     record = json.loads(manifest.read_text())
     if record['identity'] != dependency['identity']:
         raise ValueError('Dependency identity mismatch')
-    for parent in record.get('dependencies', []):
-        import_dependency(root, parent, visited)
+    if recursive:
+        for parent in record.get('dependencies', []):
+            import_dependency(root, parent, visited)
     for part in record['parts']:
         download(part['url'], directory/part['name'], part['sha256'])
     archive = directory / 'capsule.tar.zst'
@@ -195,7 +196,9 @@ def restore_seed(root, framework, data, visited):
     if any(stage_cache.glob('*/receipt.json')):
         print('Keep restored Actions cache before release seed: '+data['stage'], flush=True)
         return
-    import_dependency(root, data['cacheSeed'], visited)
+    # Seed only this component. Current dependencies follow separately; their
+    # fixed debug endpoints may already have replaced the seed's old inputs.
+    import_dependency(root, data['cacheSeed'], visited, recursive=False)
 
 
 def build(data, framework):
