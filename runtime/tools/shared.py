@@ -139,10 +139,39 @@ def github_route_options(url, headers):
     return routes
 
 
+def github_history(key=None, rate=0, success=False):
+    """Best-effort transport hints, independent of archive identities or trust."""
+    path = directory('downloads')/'github-route-history.json'
+    try:
+        with locked(path.with_suffix('.lock')):
+            try:
+                history = json.loads(path.read_text())
+                if not isinstance(history, dict):
+                    history = {}
+                history = {name: row for name, row in history.items()
+                           if isinstance(row, dict) and
+                           all(isinstance(row.get(field), (int, float)) and 0 <= row[field] < 1e18
+                               for field in ('rate', 'updated', 'failures'))}
+            except (OSError, ValueError):
+                history = {}
+            if key is not None:
+                old = history.get(key, {})
+                previous = max(0, float(old.get('rate', 0)))
+                history[key] = dict(rate=round(previous * .5 + max(0, rate) * .5) if previous else round(max(0, rate)),
+                                    failures=0 if success else int(old.get('failures', 0))+1,
+                                    verified=success, updated=time.time())
+                temporary = path.with_suffix('.tmp')
+                temporary.write_text(json.dumps(history, sort_keys=True)+'\n')
+                temporary.replace(path)
+            return history
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
 def github_transfer(sources, partial, expected):
     """Keep the winning live connection instead of reconnecting after a probe."""
-    routes = [(url, options) for url, headers in sources
-              for options in github_route_options(url, headers)]
+    routes = [(url, options, number) for url, headers in sources
+              for number, options in enumerate(github_route_options(url, headers))]
     if len(routes) == len(sources):
         return False
 
@@ -176,10 +205,22 @@ def github_transfer(sources, partial, expected):
     remaining = list(enumerate(routes))
     while remaining:
         offset = partial.stat().st_size if partial.is_file() else 0
+        def key(route):
+            return f'{urlparse(route[0]).hostname}/{"resume" if offset else "full"}/{route[2]}'
+        history = github_history()
+        def weight(item):
+            row = history.get(key(item[1]), {})
+            age = max(0, time.time()-row.get('updated', 0))
+            return row.get('rate', 0)/(1+row.get('failures', 0))/(1+age/86400)
+        remaining.sort(key=weight, reverse=True)
+        best = history.get(key(remaining[0][1]), {})
+        reuse = (best.get('verified') and best.get('rate', 0) >= 65536
+                 and time.time()-best.get('updated', 0) < 86400)
+        batch = remaining[:1] if reuse else remaining
         workers = []
         try:
             started = time.monotonic()
-            for index, (url, options) in remaining:
+            for index, (url, options, _) in batch:
                 body = partial.with_name(partial.name + f'.route-{index}')
                 header = body.with_name(body.name + '.headers')
                 body.unlink(missing_ok=True)
@@ -197,7 +238,7 @@ def github_transfer(sources, partial, expected):
                 eligible = [worker for worker in workers if worker[2].is_file()
                             and worker[2].stat().st_size and response_mode(worker[3], offset)]
                 complete = [worker for worker in eligible if worker[1].poll() == 0]
-                if complete or eligible and time.monotonic() - started >= 4:
+                if complete or eligible and (len(workers) == 1 or time.monotonic() - started >= 4):
                     if complete:
                         eligible = complete
                     break
@@ -205,16 +246,21 @@ def github_transfer(sources, partial, expected):
                     break
                 time.sleep(.1)
             if not eligible:
-                return False
+                for _, route in batch:
+                    github_history(key(route))
+                rejected = {index for index, _ in batch}
+                remaining = [(i, route) for i, route in remaining if i not in rejected]
+                continue
             winner = max(eligible, key=lambda worker: worker[2].stat().st_size)
             index, process, body, header = winner
             rate = body.stat().st_size / max(.1, time.monotonic() - started)
-            print(f'Selected live GitHub route {index}: {rate / 1024:.0f} KiB/s',
+            print(f'{"Reusing historical" if reuse else "Selected live"} GitHub route {index}',
                   flush=True, file=sys.stderr)
             for worker in workers:
                 if worker is not winner:
                     stop(worker[1])
-            minimum = min(262144, int(rate / 4)) if rate >= 65536 else 1024
+            baseline = best['rate'] if reuse else rate
+            minimum = min(262144, int(baseline / 4)) if baseline >= 65536 else 1024
             window_at, window_bytes = time.monotonic(), body.stat().st_size
             last_progress = window_at
             while process.poll() is None:
@@ -236,7 +282,10 @@ def github_transfer(sources, partial, expected):
                     shutil.copyfileobj(source, output)
             elif mode == 'replace':
                 body.replace(partial)
-            if process.returncode == 0 and mode and digest(partial) == expected:
+            success = process.returncode == 0 and mode and digest(partial) == expected
+            route = next(route for i, route in remaining if i == index)
+            github_history(key(route), (partial.stat().st_size-offset)/max(.1, time.monotonic()-started), bool(success))
+            if success:
                 return True
             if process.returncode == 0:
                 partial.unlink(missing_ok=True)
