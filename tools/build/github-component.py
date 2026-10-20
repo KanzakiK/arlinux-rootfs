@@ -34,7 +34,7 @@ def sha(path):
 def request():
     data = json.loads(os.environ['ARLINUX_COMPONENT_REQUEST'])
     framework = Path(__file__).resolve().parents[2]
-    plan = load_plan()
+    plan = load_plan(framework/'tools/build')
     stage = plan['stages'].get(data.get('stage'))
     if not stage or os.environ.get('GITHUB_REPOSITORY') != stage['repository']:
         raise ValueError('Component must run in its owning repository')
@@ -256,7 +256,7 @@ def publish(data, framework):
     contents = ({'outputs': state['outputs'], 'references': state['references']}
                 if stage not in STANDALONE else {str(p.relative_to(root)): inventory(p) for p in paths})
     record['outputIdentity'] = hashlib.sha256(json.dumps(contents, sort_keys=True).encode()).hexdigest()
-    tag = load_plan()['stages'][stage]['release']
+    tag = load_plan(framework/'tools/build')['stages'][stage]['release']
     repository = os.environ['GITHUB_REPOSITORY']
     previous = subprocess.run(['gh','api',f'repos/{repository}/releases/tags/{tag}'], capture_output=True, text=True)
     if not previous.returncode:
@@ -310,7 +310,7 @@ def publish(data, framework):
             shutil.copyfileobj(source, writer)
     archive.unlink()
     record['archiveSha256'] = sha(compressed)
-    tag = load_plan()['stages'][stage]['release']
+    tag = load_plan(framework/'tools/build')['stages'][stage]['release']
     repository = os.environ['GITHUB_REPOSITORY']
     record['parts'] = []
     with compressed.open('rb') as source:
