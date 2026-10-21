@@ -36,6 +36,11 @@ installations launch offline without an added update lookup. New installations
 prefer an available DeepSeek Flash Free model from the official Zen catalog;
 otherwise they retain the upstream free default. Existing user configuration
 is not overwritten and model lookup failure does not fail installation.
+The launcher selects OpenCode's upstream portable shell permission scanner via
+inline runtime config. Bun's WebAssembly tree-sitter loader can terminate a
+syscall-translated Android guest with SIGSYS before a shell command runs. The
+portable scanner retains command and directory permission checks. Explicit
+caller inline configuration takes precedence; user config files are not rewritten.
 
 The only Linux entry is `./build.sh`. Android APK development uses the Android
 repository's `build.ps1`, which obtains this independent distribution product.

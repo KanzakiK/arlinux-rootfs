@@ -156,10 +156,16 @@ def main():
             install()
     # Keep the same accessibility and rendering path for Apps and voice AI.
     # Once preparation finishes, close its terminal without closing the GUI.
+    env = dict(os.environ)
+    # Bun's WebAssembly signal setup can terminate syscall-translated guests
+    # with SIGSYS. Use OpenCode's upstream portable permission scanner instead.
+    # Inline config merges with user settings; keep explicit caller overrides.
+    env.setdefault('OPENCODE_CONFIG_CONTENT',
+                   '{"experimental":{"portable_shell_scanner":true}}')
     with (cache / 'desktop.log').open('ab') as log:
         subprocess.Popen([str(BINARY), '--force-renderer-accessibility',
                           '--ozone-platform=x11'], cwd='/', start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env)
     return 0
 
 
