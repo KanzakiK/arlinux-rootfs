@@ -14,7 +14,7 @@ dbus-send --session --print-reply --dest=org.arlinux.HostedInput \
 # adapter after HostedInput has registered its engine; otherwise ibus-ui-gtk3
 # exits when it observes a session with no global engine yet.
 if [ -x /usr/libexec/ibus-ui-gtk3 ]; then
-    env -u GTK_IM_MODULE -u QT_IM_MODULE /usr/libexec/ibus-ui-gtk3 \
+    env -u GTK_IM_MODULE -u QT_IM_MODULE GDK_BACKEND=wayland /usr/libexec/ibus-ui-gtk3 \
         --enable-wayland-im >"$XDG_RUNTIME_DIR/ibus-wayland.log" 2>&1 &
 fi
 if command -v dbus-send >/dev/null 2>&1; then

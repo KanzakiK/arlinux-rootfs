@@ -9,17 +9,23 @@ root="$(realpath "${1:?rootfs directory required}")"
 # needs a writable /tmp before debootstrap can configure the base system.
 mkdir -p "$root/proc" "$root/sys" "$root/dev" "$root/run" "$root/tmp" "$root/var/tmp"
 chmod 1777 "$root/tmp" "$root/var/tmp"
-mount -t proc proc "$root/proc"
-mount --rbind /dev "$root/dev"
-mount --make-rslave "$root/dev"
-mount --rbind /sys "$root/sys"
-mount --make-rslave "$root/sys"
+mount_virtual_filesystems() {
+    mount -t proc proc "$root/proc"
+    mount --rbind /dev "$root/dev"
+    mount --make-rslave "$root/dev"
+    mount --rbind /sys "$root/sys"
+    mount --make-rslave "$root/sys"
+}
+mount_virtual_filesystems
 export DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
 if [[ -x "$root/debootstrap/debootstrap" ]]; then
     if ! chroot "$root" /debootstrap/debootstrap --second-stage; then
         cat "$root/debootstrap/debootstrap.log" >&2
         exit 1
     fi
+    # debootstrap's exit cleanup unmounts its proc/sys/dev submounts. Package
+    # maintainer scripts run in the next stage and need a live procfs again.
+    mount_virtual_filesystems
 fi
 for attempt in 1 2 3; do
     set +e
