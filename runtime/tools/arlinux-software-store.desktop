@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Software Store (Synaptic)
+Name[zh]=软件商店（Synaptic）
+Name[zh_CN]=软件商店（Synaptic）
+Comment=Install Synaptic from your Debian repositories on first use, then open the graphical package manager
+Comment[zh_CN]=首次点击从 Debian 软件源安装 Synaptic，之后直接打开图形软件包管理器
+TryExec=/usr/bin/apt-get
+Exec=arlinux-software-store
+Icon=/usr/share/pixmaps/arlinux-software-store.svg
+Terminal=true
+Categories=System;PackageManager;
+StartupNotify=false

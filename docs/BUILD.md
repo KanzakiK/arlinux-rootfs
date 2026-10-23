@@ -30,6 +30,12 @@ The Debug device deployment downloads both products separately and reuses an
 unchanged verified base capsule. Release APKs embed both exact products as
 separate assets. Instance snapshots include the pinned Guest Tools archive.
 Pre-split distributions without this API declaration remain self-contained.
+Guest Tools also supplies the Debian-only Software Store entry. Its standard
+desktop `TryExec` hides it on guests without APT. First use installs Synaptic
+from the configured distribution repositories, then launches it using guest
+virtual-root privileges; later launches do not reinstall it. This is not a
+PackageKit/Flatpak service or a replacement for Spark Store. Arch-family guests
+have neither this Debian entry nor the Android-generated Spark Store entry.
 
 OpenCode Desktop is also an on-demand vendor product, not a build dependency.
 `runtime/tools/opencode.py` resolves its current stable ARM64 installer from

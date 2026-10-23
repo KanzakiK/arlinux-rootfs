@@ -28,7 +28,7 @@ def main():
         add(path, 'usr/lib/arlinux/guest/'+path.name)
     for path in sorted(source.glob('*.desktop')):
         add(path, 'usr/share/applications/'+path.name)
-    for path in sorted(source.glob('*.png')):
+    for path in sorted([*source.glob('*.png'), *source.glob('*.svg')]):
         add(path, 'usr/share/pixmaps/arlinux-'+path.name)
     for path in sorted(source.glob('arlinux-*')):
         if path.is_file() and '.' not in path.name:
