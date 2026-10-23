@@ -42,6 +42,18 @@ installations launch offline without an added update lookup. New installations
 prefer an available DeepSeek Flash Free model from the official Zen catalog;
 otherwise they retain the upstream free default. Existing user configuration
 is not overwritten and model lookup failure does not fail installation.
+User-facing downloads consume Android's single `/etc/arlinux-network.json`
+policy. Only Chinese app locales enable Steam relaying, GitHub destination hints,
+public Release proxy candidates or official OpenCode CDN selection. Missing or
+disabled policy uses ordinary direct requests, without relay certificates or
+certificate-tool installation. English Steam preparation removes this relay's
+previous trust if the user changed language. Debug maintenance has its own
+developer-triggered routing and is independent of this user policy.
+The common downloader retains TLS verification, HTTPS-only redirects, immutable
+payload SHA-256 verification, shared caching and validated Range continuation.
+Third-party Release proxies never receive metadata or authenticated API calls.
+OpenCode metadata and payloads retain their official host and TLS identity;
+Android compares verified DNS addresses and the downloader keeps direct fallback.
 The launcher selects OpenCode's upstream portable shell permission scanner via
 inline runtime config. Bun's WebAssembly tree-sitter loader can terminate a
 syscall-translated Android guest with SIGSYS before a shell command runs. The

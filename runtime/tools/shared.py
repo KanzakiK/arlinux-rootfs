@@ -19,6 +19,7 @@ import sys
 from urllib.parse import urlparse, unquote
 
 ROOT = Path('/arlinux-shared')
+CURL_TLS = ['--proto', '=https', '--proto-redir', '=https']
 
 
 def directory(name):
@@ -41,6 +42,19 @@ def locked(path):
 def digest(path):
     with path.open('rb') as source:
         return hashlib.file_digest(source, 'sha256').hexdigest()
+
+
+def network_policy():
+    """Android owns locale and routes; a missing policy means ordinary direct networking."""
+    try:
+        policy = json.loads(Path('/etc/arlinux-network.json').read_text())
+        return policy if isinstance(policy, dict) and policy.get('enabled') is True else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def acceleration_enabled():
+    return bool(network_policy())
 
 
 def github_asset(url, expected):
@@ -71,13 +85,12 @@ def github_asset(url, expected):
 
 def ranked_sources(urls):
     """Compare bounded real transfers across official mirrors, never log signed URLs."""
-    language = Path('/etc/arlinux-steam-language')
-    if len(urls) < 2 or not language.is_file() or language.read_text().strip() != 'zh':
+    if len(urls) < 2 or not acceleration_enabled():
         return urls
 
     def probe(url):
         try:
-            result = subprocess.run(['curl', '-fsSL', '--connect-timeout', '2', '--max-time', '4',
+            result = subprocess.run(['curl', *CURL_TLS, '-fsSL', '--connect-timeout', '2', '--max-time', '4',
                 '--range', '0-262143', '--output', '/dev/null', '--write-out',
                 '%{http_code} %{size_download} %{speed_download}', url],
                 capture_output=True, text=True, timeout=5)
@@ -99,28 +112,22 @@ def ranked_sources(urls):
 
 
 
-# Destination hints from SteamCommunity302. They never change the request Host,
-# TLS SNI, certificate verification, release identity or expected SHA-256.
-GITHUB_CONTENT_HOSTS = ('release-assets.githubusercontent.com', 'objects.githubusercontent.com',
-                        'raw.githubusercontent.com', 'media.githubusercontent.com')
-
-
-def github_route_options(url, headers):
-    """Share the Chinese-only route policy between metadata and payload requests."""
-    language = Path('/etc/arlinux-steam-language')
+def download_route_options(url, headers):
+    """Consume host-selected CDN routes without changing HTTP Host or TLS trust."""
+    policy = network_policy()
     host = urlparse(url).hostname
-    if (host not in ('github.com', 'api.github.com', 'codeload.github.com', *GITHUB_CONTENT_HOSTS)
-            or not language.is_file() or language.read_text().strip() != 'zh'):
+    if not policy:
         return [headers]
     routes = [headers]
-    for number, address in enumerate(('20.205.243.166', '20.207.73.82', '20.27.177.113', '20.233.83.145'), 1):
-        destinations = {'github.com': address, 'api.github.com': f'{number}.ghapi.steam302.xyz',
-                        'codeload.github.com': f'{number}.ghcodel.steam302.xyz'}
-        destinations.update({name: f'{number}.ghcontent.steam302.xyz' for name in GITHUB_CONTENT_HOSTS})
+    for destinations in policy.get('githubRoutes', []):
+        if host not in destinations:
+            continue
         options = [*headers, '--noproxy', ','.join(destinations)]
         for name, edge in destinations.items():
             options.extend(('--connect-to', f'{name}:443:{edge}:443'))
         routes.append(options)
+    for address in policy.get('cdnRoutes', {}).get(host, []):
+        routes.append([*headers, '--noproxy', host, '--resolve', f'{host}:443:{address}'])
     return routes
 
 
@@ -153,12 +160,21 @@ def github_history(key=None, rate=0, success=False):
         return {}
 
 
-def github_transfer(sources, partial, expected, *, limit=None):
+def download_transfer(sources, partial, expected, *, limit=None):
     """Keep the winning live connection instead of reconnecting after a probe."""
     if expected is None and limit is None:
         raise ValueError('Metadata transfer requires a size limit')
     routes = [(url, options, number) for url, headers in sources
-              for number, options in enumerate(github_route_options(url, headers))]
+              for number, options in enumerate(download_route_options(url, headers))]
+    # Public Release payloads only. Metadata and authenticated API requests never
+    # go to a third party, and all proxy payloads require an official SHA-256.
+    proxy = network_policy().get('releaseProxy')
+    if expected is not None and proxy:
+        for url, headers in sources:
+            parsed = urlparse(url)
+            if parsed.scheme == 'https' and parsed.netloc == 'github.com' and re.fullmatch(
+                    r'/[^/]+/[^/]+/releases/download/[^/]+/[^/]+', parsed.path):
+                routes.append((proxy + url, [*headers, '--noproxy', '*'], 5))
     if len(routes) == len(sources):
         return False
 
@@ -204,13 +220,7 @@ def github_transfer(sources, partial, expected, *, limit=None):
             age = max(0, time.time()-row.get('updated', 0))
             return row.get('rate', 0)/(1+row.get('failures', 0))/(1+age/86400)
         remaining.sort(key=weight, reverse=True)
-        trusted = [item for item in remaining
-                   if (row := history.get(key(item[1]), {})).get('verified')
-                   and row.get('rate', 0) >= (1 if limit else 65536)
-                   and time.time()-row.get('updated', 0) < 86400]
-        reuse = bool(trusted)
-        batch = trusted[:1] if reuse else remaining
-        best = history.get(key(batch[0][1]), {})
+        batch = remaining
         workers = []
         try:
             started = time.monotonic()
@@ -221,7 +231,7 @@ def github_transfer(sources, partial, expected, *, limit=None):
                 header.unlink(missing_ok=True)
                 # Each candidate holds only its suffix; no copy of the existing
                 # download is needed. Redirect headers remain private and temporary.
-                process = subprocess.Popen(['curl', '-fsSL', '--connect-timeout', '5',
+                process = subprocess.Popen(['curl', *CURL_TLS, '-fsSL', '--connect-timeout', '5',
                     '--speed-limit', '1024', '--speed-time', '30', '--max-redirs', '10',
                     *(['--range', f'{offset}-'] if offset else []),
                     *(['--max-filesize', str(limit), '--max-time', '10'] if limit else []), *options,
@@ -229,11 +239,11 @@ def github_transfer(sources, partial, expected, *, limit=None):
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 workers.append((index, process, body, header))
             eligible = []
-            while time.monotonic() - started < 8:
+            while time.monotonic() - started < 15:
                 eligible = [worker for worker in workers if worker[2].is_file()
                             and worker[2].stat().st_size and response_mode(worker[3], offset)]
                 complete = [worker for worker in eligible if worker[1].poll() == 0]
-                if complete or eligible and (len(workers) == 1 or time.monotonic() - started >= 4):
+                if complete or eligible and (len(eligible) == len(workers) or time.monotonic() - started >= 8):
                     if complete:
                         eligible = complete
                     break
@@ -249,13 +259,12 @@ def github_transfer(sources, partial, expected, *, limit=None):
             winner = max(eligible, key=lambda worker: worker[2].stat().st_size)
             index, process, body, header = winner
             rate = body.stat().st_size / max(.1, time.monotonic() - started)
-            print(f'{"Reusing historical" if reuse else "Selected live"} GitHub route {index}',
+            print(f'Selected live download route {index}',
                   flush=True, file=sys.stderr)
             for worker in workers:
                 if worker is not winner:
                     stop(worker[1])
-            baseline = best['rate'] if reuse else rate
-            minimum = min(262144, int(baseline / 4)) if baseline >= 65536 else 1024
+            minimum = 0 if limit or len(remaining) == 1 else max(65536, min(262144, int(rate / 4)))
             window_at, window_bytes = time.monotonic(), body.stat().st_size
             last_progress = window_at
             while process.poll() is None:
@@ -263,7 +272,7 @@ def github_transfer(sources, partial, expected, *, limit=None):
                 now, size = time.monotonic(), body.stat().st_size
                 if now - last_progress >= 5:
                     total = size + offset if response_mode(header, offset) == 'append' else size
-                    print(f'GitHub download: {total / 1048576:.1f} MiB received',
+                    print(f'Download: {total / 1048576:.1f} MiB received',
                           flush=True, file=sys.stderr)
                     last_progress = now
                 if now - window_at >= 15:
@@ -286,7 +295,7 @@ def github_transfer(sources, partial, expected, *, limit=None):
             if process.returncode == 0:
                 partial.unlink(missing_ok=True)
             remaining = [(i, route) for i, route in remaining if i != index]
-            print('GitHub connection slowed or failed; resuming verified download',
+            print('Connection slowed or failed; resuming verified download',
                   flush=True, file=sys.stderr)
         finally:
             for _, process, body, header in workers:
@@ -300,16 +309,22 @@ def github_metadata(url):
     """Fetch bounded official metadata through the same measured route policy."""
     if urlparse(url).scheme != 'https' or urlparse(url).hostname not in ('api.github.com', 'github.com'):
         raise ValueError('Expected official GitHub metadata URL')
-    limit = 2 * 1024 * 1024
-    with tempfile.TemporaryDirectory(prefix='.github-metadata-', dir=directory('downloads')) as temporary:
+    return download_metadata(url)
+
+
+def download_metadata(url, limit=2 * 1024 * 1024):
+    """Bounded official metadata; CDN selection never sends it to a release proxy."""
+    if urlparse(url).scheme != 'https':
+        raise ValueError('Expected HTTPS metadata URL')
+    with tempfile.TemporaryDirectory(prefix='.download-metadata-', dir=directory('downloads')) as temporary:
         target = Path(temporary)/'response'
-        if not github_transfer([(url, [])], target, None, limit=limit):
-            subprocess.run(['curl', '-fsSL', '--connect-timeout', '3', '--max-time', '10',
+        if not download_transfer([(url, [])], target, None, limit=limit):
+            subprocess.run(['curl', *CURL_TLS, '-fsSL', '--connect-timeout', '3', '--max-time', '10',
                             '--max-filesize', str(limit), '-o', str(target), url],
                            check=True, timeout=12, stdout=sys.stderr)
         data = target.read_bytes()
         if not 0 < len(data) <= limit:
-            raise ValueError('GitHub metadata exceeds size limit')
+            raise ValueError('Download metadata exceeds size limit')
         return data
 
 
@@ -338,7 +353,7 @@ def download(url, expected, suffix, *, progress=True):
                 yield sources
         failure = None
         for sources in candidates():
-            if github_transfer(sources, partial, expected):
+            if download_transfer(sources, partial, expected):
                 partial.replace(target)
                 return target
             for source, headers in sources:
@@ -346,7 +361,7 @@ def download(url, expected, suffix, *, progress=True):
                     print('Downloading verified installer…', flush=True, file=sys.stderr)
                     for attempt in range(2):
                         try:
-                            subprocess.run(['curl', '-fL', *([] if progress else ['-sS']), '--retry', '2', '--connect-timeout', '10',
+                            subprocess.run(['curl', *CURL_TLS, '-fL', *([] if progress else ['-sS']), '--retry', '2', '--connect-timeout', '10',
                                             '--speed-limit', '1024', '--speed-time', '30',
                                             '--continue-at', '-', *headers, '-o', str(partial), source],
                                            check=True, stdout=sys.stderr)

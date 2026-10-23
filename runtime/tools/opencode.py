@@ -11,7 +11,6 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from urllib.parse import urlparse
 import shared
 
@@ -34,14 +33,7 @@ END = '<!-- END ARLINUX MANAGED INSTRUCTIONS -->'
 
 
 def official_json(address):
-    request = urllib.request.Request(address, headers={'User-Agent': 'ARLinux-OpenCode'})
-    with urllib.request.urlopen(request, timeout=15) as response:
-        if not response.geturl().startswith('https://'):
-            raise ValueError('Insecure OpenCode metadata redirect')
-        body = response.read(1024 * 1024 + 1)
-    if len(body) > 1024 * 1024:
-        raise ValueError('OpenCode metadata exceeds 1 MiB')
-    return json.loads(body)
+    return json.loads(shared.download_metadata(address, limit=1024 * 1024))
 
 
 def latest_installer():

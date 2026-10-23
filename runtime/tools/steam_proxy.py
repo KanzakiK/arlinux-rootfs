@@ -10,15 +10,9 @@ import shutil
 import socket
 import ssl
 import subprocess
+import shared
 
-DOMAINS = (
-    'store.steampowered.com', 'steamcommunity.com', 'www.steamcommunity.com',
-    'api.steampowered.com', 'store.akamai.steamstatic.com',
-    'community.akamai.steamstatic.com', 'cdn.akamai.steamstatic.com',
-    'avatars.akamai.steamstatic.com',
-    'client-update.steamstatic.com', 'client-update.fastly.steamstatic.com',
-    'client-update.akamai.steamstatic.com', 'cdn.steamstatic.com',
-)
+DOMAINS = tuple(shared.network_policy().get('steamDomains', []))
 def application_directory():
     return Path(os.environ['BIONICX_FILES'])/'steam-proxy'
 
@@ -36,8 +30,7 @@ TRUST = Path('/usr/local/share/ca-certificates/arlinux-steam-proxy.crt')
 
 
 def enabled():
-    language = Path('/etc/arlinux-steam-language')
-    return language.is_file() and language.read_text().strip() == 'zh'
+    return shared.acceleration_enabled()
 
 
 def dependencies():
@@ -113,6 +106,15 @@ def trust(ca):
 def prepare():
     """Prepare certificates and guest trust; Android serves TLS and HTTP."""
     if not enabled():
+        # A user may change Android's language after using the Chinese relay.
+        # Remove only our old trust, without installing any tools or certificates.
+        if TRUST.is_file():
+            TRUST.unlink()
+            run('sudo', 'update-ca-certificates')
+        nss = Path.home()/'.pki/nssdb'
+        if (nss/'cert9.db').is_file() and shutil.which('certutil'):
+            subprocess.run(['certutil', '-D', '-d', 'sql:' + str(nss), '-n', CA_NAME],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return False
     dependencies()
     directory = application_directory()
@@ -123,6 +125,8 @@ def prepare():
 
 def activate():
     """Verify CONNECT and application TLS before exposing proxy configuration."""
+    if not enabled():
+        raise RuntimeError('Network acceleration is disabled')
     ca = application_directory()/'ca.crt'
     context = ssl.create_default_context(cafile=str(ca))
     with socket.create_connection((ADDRESS, 18443), timeout=5) as connection:
