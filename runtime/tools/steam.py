@@ -447,8 +447,7 @@ def send_client_command(root, arguments):
 
 def system_language_arguments(arguments):
     """Apply Android's current language on every cold start, including restarts."""
-    marker = Path('/etc/arlinux-steam-language')
-    chinese = marker.is_file() and marker.read_text().strip() == 'zh'
+    chinese = shared.acceleration_enabled()
     filtered = []
     values = iter(arguments)
     for value in values:
