@@ -212,6 +212,13 @@ def seal(seed: Path, snapshot: Path, output: Path) -> None:
                             body = io.BytesIO(b'1\n')
                         target.addfile(member, body)
                         seen.add(name)
+                    # Snapshot homes are deliberately excluded. Still initialize
+                    # the root account's standard empty home for privileged GUI
+                    # package managers; never export the builder's root settings.
+                    root_home = tarfile.TarInfo('./root')
+                    root_home.type = tarfile.DIRTYPE
+                    root_home.mode = 0o700
+                    target.addfile(root_home)
                     for name, (member, data) in sorted(managed.items()):
                         member.name = './' + name
                         member.uid = member.gid = member.mtime = 0
