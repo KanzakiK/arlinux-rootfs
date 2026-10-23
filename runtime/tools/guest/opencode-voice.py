@@ -14,19 +14,28 @@ class AccessibleNotReady(RuntimeError):
     """An application or control has not appeared in the live AT-SPI tree yet."""
 
 
-def select_accessibility_bus() -> None:
+def select_accessibility_bus(*, deadline=None) -> None:
     import dbus
 
     os.environ["NO_AT_BRIDGE"] = "0"
     # Every desktop publishes its session bus before launching applications.
     # Resolve AT-SPI through that bus instead of requiring an X11 root property.
-    address = (Path(os.environ['XDG_RUNTIME_DIR'])/'desktop-session-bus').read_text().strip()
-    bus = dbus.bus.BusConnection(address)
-    try:
-        service = bus.get_object('org.a11y.Bus', '/org/a11y/bus')
-        os.environ['AT_SPI_BUS_ADDRESS'] = str(dbus.Interface(service, 'org.a11y.Bus').GetAddress(timeout=3))
-    finally:
-        bus.close()
+    while True:
+        try:
+            address = (Path(os.environ['XDG_RUNTIME_DIR'])/'desktop-session-bus').read_text().strip()
+            bus = dbus.bus.BusConnection(address)
+            try:
+                service = bus.get_object('org.a11y.Bus', '/org/a11y/bus')
+                os.environ['AT_SPI_BUS_ADDRESS'] = str(dbus.Interface(service, 'org.a11y.Bus').GetAddress(timeout=3))
+                return
+            finally:
+                bus.close()
+        except (FileNotFoundError, dbus.DBusException):
+            # A restarted desktop replaces its published session address. Read
+            # it again rather than caching a socket belonging to the old session.
+            if deadline is None or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
 
 
 def descendants(root, reverse: bool = False):
@@ -147,7 +156,7 @@ def activate(node, action_name: str) -> bool:
     return False
 
 
-def focus_prompt() -> None:
+def focus_prompt(*, deadline=None) -> None:
     raise_opencode()
     try:
         find_opencode()
@@ -158,7 +167,8 @@ def focus_prompt() -> None:
     # A web document is published before its controls during cold startup.
     # Use one startup budget ending at the actual composer, not a second short
     # timeout starting at the empty document. Navigate at most once per request.
-    deadline = time.monotonic() + 24
+    if deadline is None:
+        deadline = time.monotonic() + 24
     navigation_started = False
     last_pending = "OpenCode prompt is loading"
     while time.monotonic() < deadline:
@@ -244,9 +254,10 @@ def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in {"focus", "focus-wait", "send"}:
         print("usage: opencode-voice.py focus|focus-wait|send", file=sys.stderr)
         return 2
-    select_accessibility_bus()
+    deadline = time.monotonic() + 24 if sys.argv[1] in {"focus", "focus-wait"} else None
+    select_accessibility_bus(deadline=deadline)
     if sys.argv[1] in {"focus", "focus-wait"}:
-        focus_prompt()
+        focus_prompt(deadline=deadline)
     else:
         send_prompt()
     return 0
