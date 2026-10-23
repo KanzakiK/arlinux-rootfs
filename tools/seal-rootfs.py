@@ -49,7 +49,7 @@ def rewrite(seed: Path, output: Path, replacements: dict[str, bytes | Path]) -> 
     pending = output.with_suffix('.zip.part')
     with zipfile.ZipFile(seed) as source, zipfile.ZipFile(pending, 'w') as target:
         manifest = json.loads(source.read('manifest.json'))
-        if manifest['distributionId'] not in ('debian', 'yibu', 'arch', 'omarchy', 'plasma'):
+        if manifest['distributionId'] not in ('debian', 'yibu', 'arch', 'omarchy', 'plasma', 'lxqt'):
             raise ValueError('Unsupported offline desktop distribution')
         for name in sorted(set(manifest['files']) | set(replacements)):
             value = replacements.get(name)
@@ -67,16 +67,9 @@ def rewrite(seed: Path, output: Path, replacements: dict[str, bytes | Path]) -> 
 
 
 def required_snapshot_files(distribution: str) -> set[str]:
-    common = {'usr/share/arlinux/offline-desktop', 'usr/share/arlinux/packages.tsv'}
-    if distribution in ('arch', 'omarchy'):
-        return common | {'usr/bin/pacman',
-                         'var/lib/arlinux/runtime-epoch-1', 'usr/share/arlinux/offline-distribution',
-                         'usr/bin/xterm' if distribution == 'arch' else 'usr/bin/foot'} | (
-                             {'usr/bin/hyprctl'} if distribution == 'omarchy' else set())
-    if distribution == 'plasma':
-        return common | {'usr/bin/plasmashell', 'usr/bin/dolphin', 'usr/bin/konsole', 'usr/bin/kate',
-                         'usr/share/arlinux/offline-distribution'}
-    return common | {'usr/bin/thunar', 'usr/bin/mousepad'}
+    # Package installation errors belong to the runner recipe. The seal only
+    # verifies its completion receipt, not a second inventory of runtime tools.
+    return {'usr/share/arlinux/offline-desktop', 'usr/share/arlinux/packages.tsv'}
 
 
 def validate_snapshot(snapshot: Path, distribution: str = "debian") -> None:

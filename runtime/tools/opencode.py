@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Install the current official OpenCode Desktop on first use, then launch it."""
 import argparse
+import configparser
 import fcntl
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,7 @@ from urllib.parse import urlparse
 import shared
 
 BINARY = Path('/opt/OpenCode/ai.opencode.desktop')
+LAUNCHER = Path('/opt/OpenCode/.arlinux-launch')
 UPDATE_URL = 'https://opencode.ai/update/api/latest/desktop/opencode'
 
 
@@ -123,15 +126,29 @@ def install():
                 else:
                     subprocess.run(['bsdtar', '-xpf', str(package), '-C', str(stage)], check=True)
                 app = stage / 'opt/OpenCode'
-                if not os.access(app / BINARY.name, os.X_OK):
-                    raise RuntimeError('OpenCode executable missing from vendor package')
+                # The vendor may rename its binary without changing the package
+                # version. Read the package's desktop entry, not a filename list.
+                executables = set()
+                for entry in (stage / 'usr/share/applications').glob('*.desktop'):
+                    desktop = configparser.ConfigParser(interpolation=None, strict=False)
+                    desktop.read(entry)
+                    command = shlex.split(desktop.get('Desktop Entry', 'Exec', fallback=''))
+                    if not command or not command[0].startswith('/opt/OpenCode/'):
+                        continue
+                    relative = Path(command[0]).relative_to('/opt/OpenCode')
+                    candidate = app / relative
+                    if candidate.resolve().is_relative_to(app.resolve()) and os.access(candidate, os.X_OK):
+                        executables.add(relative)
+                if len(executables) != 1:
+                    raise RuntimeError('Vendor desktop entries do not identify one OpenCode executable')
+                (app / LAUNCHER.name).symlink_to(executables.pop())
                 app.rename(destination)
     BINARY.parent.parent.mkdir(parents=True, exist_ok=True)
     if BINARY.parent.is_symlink():
         BINARY.parent.unlink()
     if not BINARY.parent.exists():
         BINARY.parent.symlink_to(destination, target_is_directory=True)
-    if not os.access(BINARY, os.X_OK):
+    if not os.access(LAUNCHER, os.X_OK):
         raise RuntimeError('OpenCode executable missing after installation')
     # Keep one Apps entry: the package ships two vendor launchers. Standard
     # per-user desktop overrides hide them without modifying package files.
@@ -149,10 +166,10 @@ def main():
     cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'arlinux/opencode'
     cache.mkdir(parents=True, exist_ok=True)
     with (cache / 'install.lock').open('w') as lock:
-        if not os.access(BINARY, os.X_OK):
+        if not any(os.access(path, os.X_OK) for path in (LAUNCHER, BINARY)):
             print('Checking OpenCode installation…', flush=True)
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if not os.access(BINARY, os.X_OK):
+        if not any(os.access(path, os.X_OK) for path in (LAUNCHER, BINARY)):
             install()
     # Keep the same accessibility and rendering path for Apps and voice AI.
     # Once preparation finishes, close its terminal without closing the GUI.
@@ -173,7 +190,8 @@ def main():
     if address:
         env['AT_SPI_BUS_ADDRESS'] = address[1]
     with (cache / 'desktop.log').open('ab') as log:
-        subprocess.Popen([str(BINARY), '--force-renderer-accessibility',
+        binary = LAUNCHER if os.access(LAUNCHER, os.X_OK) else BINARY
+        subprocess.Popen([str(binary), '--force-renderer-accessibility',
                           '--ozone-platform=x11'], cwd='/', start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env)
     return 0

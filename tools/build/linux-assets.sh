@@ -179,7 +179,7 @@ PY
       "$rootfs/usr/share/glib-2.0/schemas/90-arlinux-ibus.gschema.override"
     glib-compile-schemas "$rootfs/usr/share/glib-2.0/schemas"
     cp -a "$product_dir/guest/." "$rootfs/usr/lib/arlinux/guest/"
-    if [[ "$product" == yibu || "$product" == debian || "$product" == plasma ]]; then
+    if [[ "$product" == yibu || "$product" == debian || "$product" == plasma || "$product" == lxqt ]]; then
         mkdir -p "$rootfs/usr/lib/arlinux/mesa-packages"
         cp build/linux/mesa-debs/*.deb "$rootfs/usr/lib/arlinux/mesa-packages/"
     elif [[ "$product" == arch || "$product" == omarchy ]]; then

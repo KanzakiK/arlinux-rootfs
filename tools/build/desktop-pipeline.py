@@ -72,13 +72,6 @@ def main():
         if target.exists():
             shutil.rmtree(target)
         shutil.copytree(assets, target, symlinks=True)
-        if product == 'lxqt':
-            def seed_bundle(out):
-                out.mkdir()
-                invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'default.zip')
-            result = cache.stage('desktop', dict(common, dependencies=cache.records.copy()), seed_bundle)
-            publish_result(args, config, cache, result)
-            return
         def packages(out):
             out.mkdir()
             invoke('python3', 'tools/bundle.py', 'pack', 'distributions/' + product, out / 'seed.zip')
