@@ -113,6 +113,12 @@ python tools/build/install-github-workflows.py
 ./build.sh publish-rootfs yibu TAG build/products/rootfs/default.zip
 ```
 
+Windows calls this same Python publisher through Android's `build.ps1
+publish-rootfs -Distribution ID -FrameworkRef COMMIT -Tag VERSION -Archive ZIP`.
+It consumes the exact tested producer ZIP and adjacent `.json` receipt, verifies
+its hash and normal bundle validation, and uploads without rebuilding. Split
+Guest Tools remain APK-owned; these downloads require ARLinux 0.6.4 or newer.
+
 Use Python with zstandard and authenticated gh. Component ownership, ARM64
 standard runner labels and dependencies are defined in
 the independent `tools/build/components/COMPONENT.json` recipes. Each repository runs an independent

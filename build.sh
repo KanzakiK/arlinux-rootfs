@@ -11,7 +11,7 @@ case "$command" in
   gpu) exec python3 tools/build/linux-gpu-component.py "$@" ;;
   github) exec python3 tools/build/github-products.py "$@" ;;
   rootfs) exec python3 tools/build/desktop-pipeline.py "$@" ;;
-  publish-rootfs) exec bash tools/publish-distribution.sh "$@" ;;
+  publish-rootfs) exec python3 tools/publish-distribution.py "$@" ;;
   doctor) exec bash tools/build/doctor.sh "$@" ;;
   list) find distributions -mindepth 2 -maxdepth 2 -name product.json -printf '%h\n' | sed 's|.*/||' | sort ;;
   validate) [[ $# -gt 0 ]] || exit 2; for p in "$@"; do python3 tools/validate-distribution.py "$p"; done ;;
