@@ -9,6 +9,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from opencode import installed_binary
+
 
 class AccessibleNotReady(RuntimeError):
     """An application or control has not appeared in the live AT-SPI tree yet."""
@@ -58,10 +61,10 @@ def descendants(root, reverse: bool = False):
 def find_opencode():
     import pyatspi
 
-    launcher = Path('/opt/OpenCode/.arlinux-launch')
-    # Use the executable selected from the vendor's desktop entry. Existing
-    # installations made before that receipt retain their original identity.
-    application = launcher.resolve().name if launcher.is_file() else 'ai.opencode.desktop'
+    binary = installed_binary()
+    if binary is None:
+        raise AccessibleNotReady('OpenCode is not installed')
+    application = binary.name
     desktop = pyatspi.Registry.getDesktop(0)
     for app in desktop:
         try:
@@ -258,6 +261,8 @@ def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in {"focus", "focus-wait", "send"}:
         print("usage: opencode-voice.py focus|focus-wait|send", file=sys.stderr)
         return 2
+    if sys.argv[1] == 'focus' and installed_binary() is None:
+        return 4
     deadline = time.monotonic() + 24 if sys.argv[1] in {"focus", "focus-wait"} else None
     select_accessibility_bus(deadline=deadline)
     if sys.argv[1] in {"focus", "focus-wait"}:

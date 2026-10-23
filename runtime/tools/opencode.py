@@ -18,6 +18,14 @@ import shared
 BINARY = Path('/opt/OpenCode/ai.opencode.desktop')
 LAUNCHER = Path('/opt/OpenCode/.arlinux-launch')
 UPDATE_URL = 'https://opencode.ai/update/api/latest/desktop/opencode'
+
+
+def installed_binary():
+    """Return the vendor executable, preserving offline legacy installations."""
+    for path in (LAUNCHER, BINARY):
+        if os.access(path, os.X_OK):
+            return path.resolve()
+    return None
 GUEST = Path('/usr/lib/arlinux/guest')
 # A distribution may add its own notes, for example an Omarchy skill.
 DISTRIBUTION_AGENTS = Path('/etc/arlinux/opencode-AGENTS.md')
@@ -198,10 +206,10 @@ def main():
     cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'arlinux/opencode'
     cache.mkdir(parents=True, exist_ok=True)
     with (cache / 'install.lock').open('w') as lock:
-        if not any(os.access(path, os.X_OK) for path in (LAUNCHER, BINARY)):
+        if installed_binary() is None:
             print('Checking OpenCode installation…', flush=True)
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if not any(os.access(path, os.X_OK) for path in (LAUNCHER, BINARY)):
+        if installed_binary() is None:
             install()
     install_instructions()
     # Keep the same accessibility and rendering path for Apps and voice AI.
@@ -227,7 +235,9 @@ def main():
     with (cache / 'desktop.log').open('ab') as log:
         # Electron derives its AT-SPI application name from argv[0]. Do not
         # launch under our private link name; preserve the vendor executable.
-        binary = LAUNCHER.resolve() if os.access(LAUNCHER, os.X_OK) else BINARY
+        binary = installed_binary()
+        if binary is None:
+            raise RuntimeError('OpenCode executable missing after installation')
         subprocess.Popen([str(binary), '--force-renderer-accessibility',
                           '--ozone-platform=x11'], cwd='/', start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env)
