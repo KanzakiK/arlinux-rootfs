@@ -16,6 +16,10 @@ The canonical component graph requests it alongside, not as a dependency of,
 the selected rootfs. `--product rootfs` returns both references in `products.json`.
 Each product has its own content identity, publication, capsule and download cache.
 Changes to these application scripts do not invalidate the base rootfs.
+The shared right-edge OpenCode voice helper lives in `runtime/tools/guest` and
+ships with Guest Tools for every distribution, including Yibu and Classic. It
+waits for the actual AT-SPI composer within one bounded startup deadline, not
+merely for the Electron document. Keep it out of individual desktop recipes.
 
 Protocol 4 distribution manifests declare `guestToolsApi: 1`. Android installs a
 matching independently verified Guest Tools package before first boot, records
