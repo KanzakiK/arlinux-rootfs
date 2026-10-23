@@ -58,10 +58,14 @@ def descendants(root, reverse: bool = False):
 def find_opencode():
     import pyatspi
 
+    launcher = Path('/opt/OpenCode/.arlinux-launch')
+    # Use the executable selected from the vendor's desktop entry. Existing
+    # installations made before that receipt retain their original identity.
+    application = launcher.resolve().name if launcher.is_file() else 'ai.opencode.desktop'
     desktop = pyatspi.Registry.getDesktop(0)
     for app in desktop:
         try:
-            if app.name == "ai.opencode.desktop":
+            if app.name == application:
                 return app
         except Exception:
             pass

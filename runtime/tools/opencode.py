@@ -190,7 +190,9 @@ def main():
     if address:
         env['AT_SPI_BUS_ADDRESS'] = address[1]
     with (cache / 'desktop.log').open('ab') as log:
-        binary = LAUNCHER if os.access(LAUNCHER, os.X_OK) else BINARY
+        # Electron derives its AT-SPI application name from argv[0]. Do not
+        # launch under our private link name; preserve the vendor executable.
+        binary = LAUNCHER.resolve() if os.access(LAUNCHER, os.X_OK) else BINARY
         subprocess.Popen([str(binary), '--force-renderer-accessibility',
                           '--ozone-platform=x11'], cwd='/', start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env)
