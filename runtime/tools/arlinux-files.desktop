@@ -7,6 +7,6 @@ Comment=Open your default file manager; install the desktop's file manager from 
 Comment[zh_CN]=打开默认文件管理器；尚未安装时从发行版软件源安装桌面配套的文件管理器
 Exec=arlinux-files
 Icon=/usr/share/pixmaps/arlinux-files.svg
-Terminal=true
+Terminal=false
 Categories=System;FileManager;
 StartupNotify=false

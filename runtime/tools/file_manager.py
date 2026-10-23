@@ -12,8 +12,15 @@ from gi.repository import Gio, GLib
 
 def main():
     home = str(Path.home())
+    installing = sys.argv[1:] == ['--install']
     default = Gio.AppInfo.get_default_for_type('inode/directory', False)
-    if default and default.get_id() != 'arlinux-files.desktop':
+    if not installing and default and default.get_id() != 'arlinux-files.desktop':
+        # Match running_app.py: launch in the owned tree, not the session daemon.
+        if isinstance(default, Gio.DesktopAppInfo):
+            entry = GLib.KeyFile()
+            entry.load_from_file(default.get_filename(), GLib.KeyFileFlags.NONE)
+            entry.set_boolean('Desktop Entry', 'DBusActivatable', False)
+            default = Gio.DesktopAppInfo.new_from_keyfile(entry)
         if default.launch([Gio.File.new_for_path(home)], None):
             return
         raise RuntimeError('The configured default file manager could not be launched')
@@ -21,6 +28,10 @@ def main():
     desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').upper().split(':')
     # Match the file managers already selected by our distribution recipes.
     command = 'dolphin' if 'KDE' in desktop else 'pcmanfm-qt' if 'LXQT' in desktop else 'thunar'
+    if not shutil.which(command) and not installing:
+        # Ordinary launches have no terminal. Only installation needs progress
+        # output and an interactive retryable error message.
+        os.execvp('foot', ['foot', 'arlinux-files', '--install'])
     cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home()/'.cache'))/'arlinux/files'
     cache.mkdir(parents=True, exist_ok=True)
     with (cache/'install.lock').open('a') as lock:
@@ -51,4 +62,13 @@ if __name__ == '__main__':
                 input('\nPress Enter to close this window. ')
             except (EOFError, KeyboardInterrupt):
                 pass
+        else:
+            import gi
+            gi.require_version('Gtk', '3.0')
+            from gi.repository import Gtk
+            dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.ERROR,
+                                       buttons=Gtk.ButtonsType.CLOSE, text='File Manager')
+            dialog.format_secondary_text(str(error))
+            dialog.run()
+            dialog.destroy()
         sys.exit(1)
