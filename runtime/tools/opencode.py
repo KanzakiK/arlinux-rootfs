@@ -18,6 +18,11 @@ import shared
 BINARY = Path('/opt/OpenCode/ai.opencode.desktop')
 LAUNCHER = Path('/opt/OpenCode/.arlinux-launch')
 UPDATE_URL = 'https://opencode.ai/update/api/latest/desktop/opencode'
+GUEST = Path('/usr/lib/arlinux/guest')
+# A distribution may add its own notes, for example an Omarchy skill.
+DISTRIBUTION_AGENTS = Path('/etc/arlinux/opencode-AGENTS.md')
+BEGIN = '<!-- BEGIN ARLINUX MANAGED INSTRUCTIONS -->'
+END = '<!-- END ARLINUX MANAGED INSTRUCTIONS -->'
 
 
 def official_json(address):
@@ -93,6 +98,33 @@ def configure_default_model():
                 temporary.unlink(missing_ok=True)
     except OSError as error:
         print(f'Could not save initial OpenCode preferences: {error}', flush=True)
+
+
+def install_instructions():
+    """Refresh the managed AGENTS.md section and plugin; keep the user's own text."""
+    config = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'opencode'
+    (config / 'plugin').mkdir(parents=True, exist_ok=True)
+    agents = config / 'AGENTS.md'
+    kept, managed = [], False
+    if agents.exists():
+        for line in agents.read_text().splitlines():
+            if line == BEGIN:
+                managed = True
+            elif line == END:
+                managed = False
+            elif not managed:
+                kept.append(line)
+    sections = [(GUEST / 'opencode-AGENTS.md').read_text().strip()]
+    if DISTRIBUTION_AGENTS.is_file():
+        sections.append(DISTRIBUTION_AGENTS.read_text().strip())
+    text = '\n'.join([*kept, BEGIN, '\n\n'.join(sections), END]) + '\n'
+    for target, content in ((agents, text),
+                            (config / 'plugin/arlinux-environment.js',
+                             (GUEST / 'opencode-arlinux-environment.js').read_text())):
+        with tempfile.NamedTemporaryFile('w', dir=target.parent, prefix='.arlinux-', delete=False) as output:
+            output.write(content)
+        os.chmod(output.name, 0o600)
+        os.replace(output.name, target)
 
 
 def install():
@@ -171,9 +203,12 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX)
         if not any(os.access(path, os.X_OK) for path in (LAUNCHER, BINARY)):
             install()
+    install_instructions()
     # Keep the same accessibility and rendering path for Apps and voice AI.
     # Once preparation finishes, close its terminal without closing the GUI.
     env = dict(os.environ)
+    # Shell tools import the arlinux helper package shipped with Guest Tools.
+    env['PYTHONPATH'] = os.pathsep.join(filter(None, ('/usr/lib/arlinux/python', env.get('PYTHONPATH'))))
     # Bun's WebAssembly signal setup can terminate syscall-translated guests
     # with SIGSYS. Use OpenCode's upstream portable permission scanner instead.
     # Inline config merges with user settings; keep explicit caller overrides.

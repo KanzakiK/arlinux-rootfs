@@ -19,8 +19,11 @@ def main():
     for path in sorted(source.glob('*.py')):
         target = 'usr/lib/arlinux/guest/yibu-launcher.py' if path.name == 'apps.py' else 'usr/lib/arlinux/'+path.name
         add(path, target)
-    for path in sorted((source/'guest').rglob('*.py')):
-        add(path, 'usr/lib/arlinux/guest/'+path.relative_to(source/'guest').as_posix())
+    for path in sorted((source/'guest').rglob('*')):
+        if path.is_file() and '__pycache__' not in path.parts:
+            add(path, 'usr/lib/arlinux/guest/'+path.relative_to(source/'guest').as_posix())
+    for path in sorted((source/'python').rglob('*.py')):
+        add(path, 'usr/lib/arlinux/python/'+path.relative_to(source/'python').as_posix())
     for path in sorted(source.glob('*.tsv')):
         add(path, 'usr/lib/arlinux/guest/'+path.name)
     for path in sorted(source.glob('*.desktop')):

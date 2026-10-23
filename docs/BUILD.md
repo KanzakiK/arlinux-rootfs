@@ -8,14 +8,16 @@ Application launchers download the independently published runtime when needed.
 
 First-party application integration is a separate `guest-tools` product, not part
 of the Linux image or Bionic Wine. `build.sh guest-tools` packages the Python
-launchers, download policies, application entries/icons and hosted IBus service
-into `build/artifacts/guest-tools/guest-tools.zip` with a hashed file/mode manifest
+launchers, download policies, application entries/icons, hosted IBus service and
+OpenCode integration (the `arlinux` helper package, instructions and plugin) into `build/artifacts/guest-tools/guest-tools.zip` with a hashed file/mode manifest
 and `guest-tools.json` receipt. It runs in this repository's independent ARM64
 workflow; it neither builds GPU libraries nor prepares distribution packages.
 The canonical component graph requests it alongside, not as a dependency of,
 the selected rootfs. `--product rootfs` returns both references in `products.json`.
 Each product has its own content identity, publication, capsule and download cache.
 Changes to these application scripts do not invalidate the base rootfs.
+The OpenCode launcher rewrites its managed `AGENTS.md` section on every start and
+appends `/etc/arlinux/opencode-AGENTS.md` when a distribution provides one.
 The shared right-edge OpenCode voice helper lives in `runtime/tools/guest` and
 ships with Guest Tools for every distribution, including Yibu and Classic. It
 waits for the actual AT-SPI composer within one bounded startup deadline, not
