@@ -37,6 +37,15 @@ virtual-root privileges; later launches do not reinstall it. This is not a
 PackageKit/Flatpak service or a replacement for Spark Store. Arch-family guests
 have neither this Debian entry nor the Android-generated Spark Store entry.
 
+Guest Tools supplies one File Manager entry on every distribution. It opens the
+user's existing `inode/directory` MIME default without changing that association.
+Without a configured default it uses the desktop's paired manager: Dolphin on
+Plasma, PCManFM-Qt on LXQt, and Thunar on the other current ARLinux profiles.
+Installed managers open offline; a missing fallback installs from the configured
+APT or pacman repositories on first click. Plain Arch has no official default;
+Thunar is our lightweight fallback, not an Arch recommendation. Apps consolidates
+FileManager-category launchers behind this entry; native desktop menus stay intact.
+
 OpenCode Desktop is also an on-demand vendor product, not a build dependency.
 `runtime/tools/opencode.py` resolves its current stable ARM64 installer from
 `https://opencode.ai/update/api/latest/desktop/opencode` on first installation,

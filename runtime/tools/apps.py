@@ -45,7 +45,12 @@ def kind(app):
 
 
 def entries():
-    apps = [app for app in Gio.AppInfo.get_all()
+    apps = Gio.AppInfo.get_all()
+    if any(app.get_id() == 'arlinux-files.desktop' and app.should_show() for app in apps):
+        # Keep one Files tile without changing native desktop menus or MIME defaults.
+        apps = [app for app in apps if app.get_id() == 'arlinux-files.desktop'
+                or 'FileManager' not in (app.get_categories() or '').split(';')]
+    apps = [app for app in apps
             if app.should_show() and app.get_id() not in HIDDEN and "Settings" not in (app.get_categories() or "").split(";")]
     return sorted(apps, key=lambda app: app.get_display_name().casefold())
 

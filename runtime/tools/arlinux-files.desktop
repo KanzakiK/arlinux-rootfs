@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=File Manager
+Name[zh]=文件管理器
+Name[zh_CN]=文件管理器
+Comment=Open your default file manager; install the desktop's file manager from distribution repositories if needed
+Comment[zh_CN]=打开默认文件管理器；尚未安装时从发行版软件源安装桌面配套的文件管理器
+Exec=arlinux-files
+Icon=/usr/share/pixmaps/arlinux-files.svg
+Terminal=true
+Categories=System;FileManager;
+StartupNotify=false
