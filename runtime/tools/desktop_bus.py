@@ -27,8 +27,3 @@ def environment(source):
                            'Do not delete its sockets or replace its services.') from error
     env.update(DBUS_SESSION_BUS_ADDRESS=address, AT_SPI_BUS_ADDRESS=accessibility, NO_AT_BRIDGE='0')
     return env
-
-
-if __name__ == '__main__':
-    import os
-    environment(os.environ)

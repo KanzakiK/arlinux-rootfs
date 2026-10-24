@@ -29,6 +29,7 @@ if command -v dbus-send >/dev/null 2>&1; then
     done
     [ -n "$address" ] || { echo 'Desktop accessibility bus did not become ready' >&2; exit 1; }
     export AT_SPI_BUS_ADDRESS="$address" NO_AT_BRIDGE=0
+    # Accessibility is a desktop dependency, not an optional application feature.
     dbus-send --bus="$address" --print-reply --reply-timeout=3000 \
         --dest=org.a11y.atspi.Registry /org/a11y/atspi/accessible/root \
         org.freedesktop.DBus.Peer.Ping >/dev/null
@@ -49,10 +50,6 @@ if command -v dbus-send >/dev/null 2>&1; then
         org.freedesktop.DBus.Properties.Set string:org.a11y.Status \
         string:ScreenReaderEnabled variant:boolean:true >/dev/null
 fi
-
-# Accessibility is a desktop dependency, not an optional application feature.
-# This only joins the services activated above; it must not replace them.
-python3 /usr/lib/arlinux/desktop_bus.py
 
 # X resources are session state. Load the user's file, not an APK-owned DPI policy.
 if [ -n "${DISPLAY:-}" ] && [ -f "$HOME/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then
