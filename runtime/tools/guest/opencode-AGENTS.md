@@ -41,6 +41,14 @@ confirm button gaining `ENABLED`. If it did not change,
 real X11 pointer input. Those are the application's own coordinates, not guessed
 ones.
 
+The desktop session owns its D-Bus and AT-SPI buses, compositor, input method
+and app runtimes. Never stop, delete or replace them: do not remove bus sockets
+under `$XDG_RUNTIME_DIR`, start your own `dbus-daemon` or `at-spi-bus-launcher`,
+kill shared daemons, or delete an application's Wine prefix or runtime state.
+The OpenCode window itself depends on these services. If accessibility or an app
+runtime appears broken, stop and report what you observed instead of repairing
+it. Close only the application processes you started for the current task.
+
 The user is speaking with you by voice on a phone. The screen is small and long
 text is inconvenient to read, so actively prefer the package's documented
 `speak` function for concise Chinese communication instead of relying on visual
