@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 import time
 import shared
+import desktop_bus
 
 MANIFEST = Path('/usr/lib/arlinux/guest/windows-downloads.tsv')
 
@@ -310,7 +311,7 @@ def guest_path(path):
 
 def environment(root, prefix):
     # These are guest adapter settings, never a command for executing native Wine.
-    env = os.environ.copy()
+    env = desktop_bus.environment(os.environ)
     env.update(ARLINUX_WINDOWS_RUNTIME=root.name, ARLINUX_WINDOWS_PREFIX=str(prefix),
                WINEPREFIX=str(prefix/'pfx'))
     return env

@@ -11,6 +11,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from opencode import installed_binary
+import desktop_bus
 
 
 class AccessibleNotReady(RuntimeError):
@@ -18,22 +19,15 @@ class AccessibleNotReady(RuntimeError):
 
 
 def select_accessibility_bus(*, deadline=None) -> None:
-    import dbus
-
-    os.environ["NO_AT_BRIDGE"] = "0"
     # Every desktop publishes its session bus before launching applications.
     # Resolve AT-SPI through that bus instead of requiring an X11 root property.
     while True:
         try:
-            address = (Path(os.environ['XDG_RUNTIME_DIR'])/'desktop-session-bus').read_text().strip()
-            bus = dbus.bus.BusConnection(address)
-            try:
-                service = bus.get_object('org.a11y.Bus', '/org/a11y/bus')
-                os.environ['AT_SPI_BUS_ADDRESS'] = str(dbus.Interface(service, 'org.a11y.Bus').GetAddress(timeout=3))
-                return
-            finally:
-                bus.close()
-        except (FileNotFoundError, dbus.DBusException):
+            joined = desktop_bus.environment(os.environ)
+            for name in ('DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS', 'NO_AT_BRIDGE'):
+                os.environ[name] = joined[name]
+            return
+        except RuntimeError:
             # A restarted desktop replaces its published session address. Read
             # it again rather than caching a socket belonging to the old session.
             if deadline is None or time.monotonic() >= deadline:

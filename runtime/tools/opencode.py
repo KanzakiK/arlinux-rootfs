@@ -13,6 +13,7 @@ import sys
 import tempfile
 from urllib.parse import urlparse
 import shared
+import desktop_bus
 
 BINARY = Path('/opt/OpenCode/ai.opencode.desktop')
 LAUNCHER = Path('/opt/OpenCode/.arlinux-launch')
@@ -206,7 +207,7 @@ def main():
     install_instructions()
     # Keep the same accessibility and rendering path for Apps and voice AI.
     # Once preparation finishes, close its terminal without closing the GUI.
-    env = dict(os.environ)
+    env = desktop_bus.environment(os.environ)
     # Shell tools import the arlinux helper package shipped with Guest Tools.
     env['PYTHONPATH'] = os.pathsep.join(filter(None, ('/usr/lib/arlinux/python', env.get('PYTHONPATH'))))
     # Bun's WebAssembly signal setup can terminate syscall-translated guests
@@ -214,16 +215,6 @@ def main():
     # Inline config merges with user settings; keep explicit caller overrides.
     env.setdefault('OPENCODE_CONFIG_CONTENT',
                    '{"experimental":{"portable_shell_scanner":true}}')
-    # The Electron server spawns shell tools outside the desktop's bus discovery.
-    # Publish the live desktop address to its children, including arlinux.a11y.
-    try:
-        published = subprocess.check_output(['xprop', '-root', 'AT_SPI_BUS'],
-                                            text=True, stderr=subprocess.DEVNULL, timeout=3)
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        published = ''
-    address = re.search(r'AT_SPI_BUS\(STRING\) = "([^"]+)"', published)
-    if address:
-        env['AT_SPI_BUS_ADDRESS'] = address[1]
     with (cache / 'desktop.log').open('ab') as log:
         # Electron derives its AT-SPI application name from argv[0]. Do not
         # launch under our private link name; preserve the vendor executable.

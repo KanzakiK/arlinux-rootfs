@@ -49,6 +49,9 @@ The OpenCode window itself depends on these services. If accessibility or an app
 runtime appears broken, stop and report what you observed instead of repairing
 it. Close only the application processes you started for the current task.
 
+Once the requested result is verified and saved, report completion and stop.
+Do not keep polishing, reopening or changing it unless the user asks.
+
 The user is speaking with you by voice on a phone. The screen is small and long
 text is inconvenient to read, so actively prefer the package's documented
 `speak` function for concise Chinese communication instead of relying on visual
