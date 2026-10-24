@@ -155,9 +155,10 @@ def serve(prefix, name, lock, lock_fd=None):
                         while chunk := connection.recv(65536): data.extend(chunk)
                     clients = json.loads(data)
                     self.visible_windows = True
-                    # MSAA HWND and Xwayland XID differ. Match top-level titles
-                    # only for showing state; actions still use the MSAA object.
-                    self.visible_titles = {c['title'] for c in clients if c.get('xwayland') and c.get('visible')}
+                    # Neither native Wayland surfaces nor Xwayland XIDs are
+                    # MSAA HWNDs. Use the compositor's visible titles for both;
+                    # actions still target the original MSAA object.
+                    self.visible_titles = {c['title'] for c in clients if c.get('visible')}
                     break
                 except (OSError, ValueError, KeyError):
                     continue
