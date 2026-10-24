@@ -2,6 +2,8 @@
 
 The Windows observer uses documented accessibility objects and control messages.
 Consumers use ordinary pyatspi interfaces; unsupported operations return false.
+Visibility and coordinates describe the Wine desktop, as reported by MSAA.
+Host compositor occlusion and screenshot-coordinate translation are not exposed.
 """
 from pathlib import Path
 import argparse
@@ -17,12 +19,14 @@ import time
 ROOT = '/org/a11y/atspi/accessible/root'
 PREFIX = '/org/a11y/atspi/accessible'
 NULL = '/org/a11y/atspi/null'
+MSAA_INVISIBLE = 0x8000
+MSAA_OFFSCREEN = 0x10000
 
 
 def ensure(root, prefix, name, env):
     """Start one accessibility adapter per prefix and desktop session."""
     if not env.get('AT_SPI_BUS_ADDRESS'):
-        return
+        raise RuntimeError('Windows accessibility requires the active desktop accessibility session')
     state = Path(env['XDG_RUNTIME_DIR']) / 'windows-accessibility'
     state.mkdir(mode=0o700, exist_ok=True)
     key = hashlib.sha256(os.fsencode(prefix) + env['AT_SPI_BUS_ADDRESS'].encode()).hexdigest()[:24]
@@ -47,7 +51,8 @@ class Observer:
         self.response, self.socket = windows.request(
             windows.runtime(env['ARLINUX_WINDOWS_RUNTIME']),
             Path(env['ARLINUX_WINDOWS_PREFIX']),
-            windows.runtime(env['ARLINUX_WINDOWS_RUNTIME']) / 'files/lib/arlinux/windows-accessibility.exe', stdio=True)
+            windows.runtime(env['ARLINUX_WINDOWS_RUNTIME']) / 'files/lib/arlinux/windows-accessibility.exe',
+            stdio=True, task=False)
         self.stdin = self.socket.makefile('wb', buffering=0)
         self.stdout = self.socket.makefile('rb', buffering=0)
         self.selector = selectors.DefaultSelector()
@@ -99,7 +104,7 @@ def serve(prefix, name, lock, lock_fd=None):
         fcntl.flock(marker, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         return
-    env = windows.environment(windows.ensure_runtime(), prefix)
+    env = windows.environment(windows.runtime(os.environ['ARLINUX_WINDOWS_RUNTIME']), prefix)
     DBusGMainLoop(set_as_default=True)
     bus = dbus.bus.BusConnection(env['AT_SPI_BUS_ADDRESS'])
     observer = Observer(env)
@@ -126,7 +131,6 @@ def serve(prefix, name, lock, lock_fd=None):
             self.updated = 0
             self.application_id = 0
             self.desktop = ('org.a11y.atspi.Registry', ROOT)
-            self.visible_windows = None
 
         def ref(self, id):
             return dbus.Struct((bus_name, ROOT if id == 0 else PREFIX + '/n' + str(id)), signature='so')
@@ -138,34 +142,11 @@ def serve(prefix, name, lock, lock_fd=None):
             if not force and time.monotonic() - self.updated < 1:
                 return
             items = observer.call('snapshot')
-            for item in items:
-                self.nodes[item['id']] = item
+            self.nodes = {item['id']: item for item in items}
             self.children = {0: []}
             for item in items:
                 self.children.setdefault(item['parent'], []).append(item['id'])
-            # The compositor knows which Yibu task is actually showing. MSAA
-            # IsWindowVisible alone also includes Wine windows in the background.
-            self.visible_windows = None
-            import socket
-            for path in Path(env['XDG_RUNTIME_DIR']).glob('hypr/*/.socket.sock'):
-                try:
-                    with socket.socket(socket.AF_UNIX) as connection:
-                        connection.settimeout(2); connection.connect(str(path))
-                        connection.sendall(b'j/clients'); data = bytearray()
-                        while chunk := connection.recv(65536): data.extend(chunk)
-                    clients = json.loads(data)
-                    self.visible_windows = True
-                    # Neither native Wayland surfaces nor Xwayland XIDs are
-                    # MSAA HWNDs. Use the compositor's visible titles for both;
-                    # actions still target the original MSAA object.
-                    self.visible_titles = {c['title'] for c in clients if c.get('visible')}
-                    break
-                except (OSError, ValueError, KeyError):
-                    continue
             self.updated = time.monotonic()
-            if len(self.nodes) > 40000:
-                keep = {item['id']: item for item in items}
-                self.nodes = keep
 
         def node(self, id, fresh=False):
             if id == 0:
@@ -178,18 +159,16 @@ def serve(prefix, name, lock, lock_fd=None):
             return self.nodes[id]
 
         def showing(self, id):
-            n = self.node(id)
-            if n['state'] & (0x8000 | 0x10000):
-                return False
-            if self.visible_windows is not None and id:
-                while n['parent']:
-                    n = self.node(n['parent'])
-                return n['name'] in self.visible_titles
+            while id:
+                n = self.node(id)
+                if n['state'] & (MSAA_INVISIBLE | MSAA_OFFSCREEN):
+                    return False
+                id = n['parent']
             return True
 
         def state(self, id):
             n = self.node(id)
-            states = ['VISIBLE']
+            states = [] if n['state'] & MSAA_INVISIBLE else ['VISIBLE']
             if self.showing(id): states.append('SHOWING')
             if not n['state'] & 1: states += ['ENABLED', 'SENSITIVE']
             for bit, state in ((2, 'SELECTED'), (4, 'FOCUSED'), (0x10, 'CHECKED'),
@@ -394,6 +373,7 @@ def serve(prefix, name, lock, lock_fd=None):
     registry = bus.get_object('org.a11y.atspi.Registry', ROOT, introspect=False)
     adapter.desktop = dbus.Interface(registry, 'org.a11y.atspi.Socket').Embed(adapter.ref(0), signature='(so)')
     loop = GLib.MainLoop()
+    bus.call_on_disconnection(lambda connection: loop.quit())
     try:
         loop.run()
     finally:

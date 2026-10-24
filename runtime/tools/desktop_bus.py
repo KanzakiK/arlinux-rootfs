@@ -18,9 +18,17 @@ def environment(source):
         finally:
             bus.close()
         connection = dbus.bus.BusConnection(accessibility)
-        connection.close()
+        try:
+            connection.get_name_owner('org.a11y.atspi.Registry')
+        finally:
+            connection.close()
     except (OSError, KeyError, dbus.DBusException) as error:
         raise RuntimeError('Desktop accessibility bus unavailable; save work and reopen the desktop. '
                            'Do not delete its sockets or replace its services.') from error
     env.update(DBUS_SESSION_BUS_ADDRESS=address, AT_SPI_BUS_ADDRESS=accessibility, NO_AT_BRIDGE='0')
     return env
+
+
+if __name__ == '__main__':
+    import os
+    environment(os.environ)
