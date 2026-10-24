@@ -116,7 +116,12 @@ def prepare(data, framework):
         if data['stage'] in ROOTFS:
             modules.append('distributions/'+data['stage'])
         run('git', '-C', framework, 'submodule', 'update', '--init', '--depth', '1', *modules)
-    for marker in [framework/'.git', *framework.glob('third_party/*/.git'), *framework.glob('distributions/*/.git')]:
+        if data['stage'] in ROOTFS:
+            product = framework/'distributions'/data['stage']
+            run('git', '-C', product, 'submodule', 'update', '--init', '--recursive', '--depth', '1')
+    nested_products = (framework/'distributions').glob('*/third_party/**/.git')
+    for marker in [framework/'.git', *framework.glob('third_party/*/.git'),
+                   *framework.glob('distributions/*/.git'), *nested_products]:
         if marker.exists():
             run('git', 'config', '--global', '--add', 'safe.directory', marker.parent)
     with Path(os.environ['GITHUB_PATH']).open('a') as out:
