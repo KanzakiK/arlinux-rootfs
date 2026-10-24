@@ -10,7 +10,7 @@ For a dense tree, optional `arlinux.a11y.find(query, app=...)` returns live
 overview. Read their signatures and docstrings in
 `usr/lib/arlinux/python/arlinux/a11y.py`; use upstream node interfaces to act and
 verify the result. A short overview is not the full accessibility tree.
-For Unicode input into an application that exposes `Text` but not
+For bulk text (ASCII as well as Unicode) into an application that exposes `Text` but not
 `EditableText` (notably Chromium/Electron contenteditable controls), focus the
 semantic target and use the target window's real display backend. For an X11 or
 Xwayland window, keep `xclip -selection clipboard -quiet` running in the
@@ -18,8 +18,19 @@ foreground with UTF-8 on stdin, run `xdotool key --clearmodifiers ctrl+v`, then
 terminate that clipboard owner. For a native Wayland window, pipe UTF-8
 to `wl-copy` and run `wtype -M ctrl v -m ctrl`. Both `DISPLAY` and
 `WAYLAND_DISPLAY` may be set, so use `xdotool search` to identify an X11 window
-instead of guessing from environment variables. Do not synthesize Unicode one
-character at a time.
+instead of guessing from environment variables. Do not use `xdotool type` for bulk
+text: zero-delay event injection can lose letters and modifiers. Use key tools
+for shortcuts, and verify the complete inserted text before submitting.
+
+Windows applications use the instance's shared Bionic Wine prefix. For file
+dialogs, import `windows` from `/usr/lib/arlinux` and use
+`windows.dos_path(Path.home() / 'filename.png')` to obtain the existing drive
+mapping. Do not construct `Z:` paths from Android private directories or hardcode
+`D:`; protected ancestors can fail shell-dialog validation despite direct file
+access. Save directly to that translated path and verify the actual file;
+do not stage it on `C:` and copy it as a workaround. If using `cmd.exe` through
+`windows.run`, pass ordinary command arguments separately, for example
+`['/c', 'dir', dos_directory]`, not a nested shell-quoted command string.
 
 Arlinux adds only the platform-specific speech integration that upstream APIs do
 not provide. Its complete public API, signature, and docstring are in
@@ -36,7 +47,11 @@ applications with the same name.
 An action that returns true has only been delivered. A toolkit's `Toggle` can
 change a check box's state without running the click handler the application
 listens to. After toggling or pressing, query the dependent control, such as a
-confirm button gaining `ENABLED`. If it did not change,
+confirm button gaining `ENABLED`. A custom Windows/WinForms button need not
+implement `BM_CLICK`; message delivery is not a click result. Use its advertised
+native accessibility action and verify the effect. If no action is exposed,
+report it as unsupported rather than inventing a semantic action or using Wine
+desktop coordinates on the Android screen. For Linux X11 controls, if it did not change,
 `arlinux.a11y.click(node)` clicks the center of the node's reported extents with
 real X11 pointer input. Those are the application's own coordinates, not guessed
 ones.

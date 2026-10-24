@@ -410,6 +410,24 @@ def run(root, prefix, executable, arguments=(), env=None, check=False, capture=F
     return result
 
 
+def dos_path(path):
+    """Translate a guest filename using the installed prefix's real Wine drives.
+
+    Accepts a not-yet-created Save As filename; its parent must already exist.
+    Shell dialogs may not traverse Android's protected Z: ancestors even when
+    direct file I/O succeeds. Never guess a drive letter from the Unix path.
+    """
+    path = Path(path).expanduser().resolve()
+    if not path.parent.is_dir():
+        raise FileNotFoundError('Windows destination directory does not exist: '+str(path.parent))
+    result = run(runtime(), instance_prefix(), 'winepath.exe',
+                 ['-w', str(host_path(path))], check=True, capture=True, timeout=15)
+    translated = result.stdout.strip()
+    if not re.fullmatch(r'[A-Za-z]:\\[^\r\n]*', translated):
+        raise RuntimeError('Wine did not return a single DOS filename')
+    return translated
+
+
 def launch(executable, arguments=(), prefix=None):
     executable = executable.resolve(strict=True)
     root = ensure_runtime()
