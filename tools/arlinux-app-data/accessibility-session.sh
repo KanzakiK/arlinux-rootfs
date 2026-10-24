@@ -2,9 +2,6 @@
 # Publish the AT-SPI bus before starting the desktop application.
 set -eu
 
-# Out-of-process launchers rejoin this session without inspecting /proc.
-printf '%s\n' "$DBUS_SESSION_BUS_ADDRESS" > "$XDG_RUNTIME_DIR/desktop-session-bus"
-
 # Start the same standard input bridge for every desktop using this session.
 # Waiting for activation avoids launching toolkit clients before IBus is ready.
 dbus-send --session --print-reply --dest=org.arlinux.HostedInput \
@@ -50,6 +47,12 @@ if command -v dbus-send >/dev/null 2>&1; then
         org.freedesktop.DBus.Properties.Set string:org.a11y.Status \
         string:ScreenReaderEnabled variant:boolean:true >/dev/null
 fi
+
+# Publish only a fully initialized session to out-of-process launchers. Atomic
+# replacement prevents readers from observing an empty or partial address.
+bus_file=$(mktemp "$XDG_RUNTIME_DIR/.desktop-session-bus.XXXXXX")
+printf '%s\n' "$DBUS_SESSION_BUS_ADDRESS" > "$bus_file"
+mv -f "$bus_file" "$XDG_RUNTIME_DIR/desktop-session-bus"
 
 # X resources are session state. Load the user's file, not an APK-owned DPI policy.
 if [ -n "${DISPLAY:-}" ] && [ -f "$HOME/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then
