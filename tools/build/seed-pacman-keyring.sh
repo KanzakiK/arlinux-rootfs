@@ -2,9 +2,17 @@
 set -euo pipefail
 root=${1:?rootfs required}
 shift
-home=$root/etc/pacman.d/gnupg
-mkdir -p "$home"
-chmod 700 "$home"
+destination=$root/etc/pacman.d/gnupg
+# Agent sockets must not inherit the deeply nested build-cache path. Only the
+# public keyring and trust database belong in the image, not host agent state.
+home=$(mktemp -d /tmp/arlinux-keyring.XXXXXXXX)
+cleanup() {
+    gpgconf --homedir "$home" --kill all || true
+    rm -rf -- "$home"
+}
+trap cleanup EXIT
+mkdir -p "$destination"
+chmod 700 "$destination"
 keyrings=$root/usr/share/pacman/keyrings
 keys=() trusted=()
 for name in "$@"; do
@@ -19,6 +27,6 @@ awk -F: 'NF >= 2 && $1 ~ /^[[:xdigit:]]{40}$/ { print $1 ":6:" }' \
     "${trusted[@]}" |
     gpg --homedir "$home" --batch --quiet --import-ownertrust
 gpg --homedir "$home" --batch --quiet --check-trustdb
-touch "$home/secring.gpg" "$home/arlinux-populated"
-chmod 644 "$home/pubring.gpg" "$home/trustdb.gpg"
-chmod 600 "$home/secring.gpg"
+install -m 644 "$home/pubring.gpg" "$home/trustdb.gpg" "$destination/"
+touch "$destination/secring.gpg" "$destination/arlinux-populated"
+chmod 600 "$destination/secring.gpg"

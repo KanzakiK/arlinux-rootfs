@@ -29,6 +29,9 @@ seed_rootfs() (
         sha256sum product.json rootfs.lock.json
         find tools guest -type f -not -path '*/__pycache__/*' -print0 |
             sort -z | xargs -0 -r sha256sum
+        case "$product" in
+            arch|omarchy) sha256sum "$repo/tools/build/seed-pacman-keyring.sh" | cut -d' ' -f1 ;;
+        esac
     } | sha256sum | cut -c1-24)"
     base="$(realpath -m "$ARLINUX_CACHE_DIR/seeds")"
     mkdir -p "$base"
