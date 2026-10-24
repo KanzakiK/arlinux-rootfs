@@ -9,6 +9,9 @@ root="$(realpath "${1:?rootfs directory required}")"
 # needs a writable /tmp before debootstrap can configure the base system.
 mkdir -p "$root/proc" "$root/sys" "$root/dev" "$root/run" "$root/tmp" "$root/var/tmp"
 chmod 1777 "$root/tmp" "$root/var/tmp"
+# Give the chroot its own visible root mount. libalpm resolves package/cache
+# paths against mountinfo; the runner's enclosing mount lies outside chroot.
+mount --bind "$root" "$root"
 mount_virtual_filesystems() {
     mount -t proc proc "$root/proc"
     mount --rbind /dev "$root/dev"
