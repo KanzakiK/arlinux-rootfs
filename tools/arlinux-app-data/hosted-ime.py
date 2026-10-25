@@ -60,15 +60,11 @@ class Engine(IBus.Engine):
         if not isinstance(text, str):
             raise ValueError('text must be a string')
         if operation == 'commit':
-            self.set_preedit('')
-            self.commit_text(IBus.Text.new_from_string(text))
+            self.commit(text)
         elif operation == 'preedit':
             self.set_preedit(text)
         elif operation == 'finish':
-            text = self.preedit
-            self.set_preedit('')
-            if text:
-                self.commit_text(IBus.Text.new_from_string(text))
+            self.commit(self.preedit)
         elif operation == 'key':
             values = [message[name] for name in ('keyval', 'keycode', 'state')]
             if any(type(value) is not int or not 0 <= value <= 0xffffffff for value in values):
@@ -87,6 +83,14 @@ class Engine(IBus.Engine):
     def tap(self, keyval, keycode):
         self.forward_key_event(keyval, keycode, 0)
         self.forward_key_event(keyval, keycode, int(IBus.ModifierType.RELEASE_MASK))
+
+    def commit(self, text):
+        # Deliver the result before ending composition, as IBus EngineSimple
+        # does. Clients may discard a commit after composition has been reset.
+        self.preedit = ''
+        if text:
+            self.commit_text(IBus.Text.new_from_string(text))
+        self.set_preedit('')
 
     def set_preedit(self, text):
         self.preedit = text
