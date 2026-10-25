@@ -110,8 +110,12 @@ capture. These diagnostics are not performance/compatibility acceptance.
 ```sh
 python tools/build/install-github-workflows.py
 ./build.sh github --framework-ref COMMIT --product rootfs --output build/products
-./build.sh publish-rootfs yibu TAG build/products/rootfs/default.zip
+./build.sh publish-rootfs lxqt TAG build/products/rootfs/default.zip
 ```
+
+Yibu is supplied only inside the Release APK. Its internal archive remains a
+build and Debug import product, with no standalone ZIP publication.
+The publisher supports the other distributions only.
 
 Windows calls this same Python publisher through Android's `build.ps1
 publish-rootfs -Distribution ID -FrameworkRef COMMIT -Tag VERSION -Archive ZIP`.

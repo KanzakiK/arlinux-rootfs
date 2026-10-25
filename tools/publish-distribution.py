@@ -18,7 +18,7 @@ def output(*args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('distribution', choices=('yibu', 'lxqt', 'plasma', 'arch', 'omarchy'))
+    parser.add_argument('distribution', choices=('lxqt', 'plasma', 'arch', 'omarchy'))
     parser.add_argument('tag')
     parser.add_argument('archive', type=Path)
     args = parser.parse_args()
