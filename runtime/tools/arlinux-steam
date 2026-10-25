@@ -1,2 +1,4 @@
 #!/bin/bash
-exec python3 /usr/lib/arlinux/steam.py "$@"
+# Xwayland advertises GLX_OML_sync_control but rejects its sync-value query.
+# Avoid CEF's per-refresh failure while retaining normal 60 Hz presentation.
+exec python3 /usr/lib/arlinux/steam.py --disable-gpu-vsync "$@"
