@@ -84,3 +84,10 @@ accelerated browser window composition.
 For the supported paths, no user or distribution configuration is required.
 Inherit the Arlinux session environment and launch the application with its
 normal command line.
+
+The generic vendor-Vulkan profile also packages
+`VK_LAYER_ARLINUX_null_descriptor` for Mali drivers that do not expose
+`VK_EXT_robustness2.nullDescriptor`. Zink currently requires that feature to
+create a screen. The layer is explicit and the Android runtime enables it only
+for the generic Mali path. Qualcomm Turnip continues to use the driver's native
+robustness support.

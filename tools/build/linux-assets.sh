@@ -271,6 +271,9 @@ PY
     generic="$stage/$product/gpu-generic"
     mkdir -p "$generic"
     cp -a "$overlay/." "$generic/"
+    cp "$hybris/libVkLayer_arlinux_null_descriptor.so" \
+      "$hybris/VkLayer_arlinux_null_desc.json" \
+      "$generic/usr/lib/arlinux/vulkan/"
     rm -f "$generic/usr/lib/mesa/libvulkan_freedreno.so" \
       "$generic/usr/share/vulkan/icd.d/freedreno_icd.json"
     mkdir -p "$generic/usr/lib/hybris"
