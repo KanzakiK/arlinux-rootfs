@@ -2,9 +2,13 @@
 
 `python3 /usr/lib/arlinux/steam_bionic.py register STEAM_DIRECTORY` registers
 `arlinux-wine-bionic` under `compatibilitytools.d`. Steam startup also registers
-it directly, without a Proton depot or patch pack. Bionic Wine is the ARLinux
-Windows default; explicit third-party and native Linux choices are preserved.
-Previous ARLinux Proton selections migrate to Bionic. Restart Steam to rescan tools.
+it directly, without a Proton depot or patch pack. Before the client starts,
+installed non-runtime AppIDs without an explicit compatibility choice are
+mapped to Bionic Wine. This mirrors DroidDeck Mali's per-game Windows launch
+selection for titles which also ship a native Linux build; Steam still owns
+the final launch. Explicit third-party and native Linux choices are preserved.
+Previous ARLinux Proton selections migrate to Bionic. Restart Steam to rescan
+tools.
 
 Steam invokes `/run %verb%`; the guest adapter accepts `run` and
 `waitforexitandrun`, uses the single instance-level Wine prefix
@@ -23,8 +27,7 @@ Valve. On Play, `windows_webview.prepare()` prepares the instance-wide browser
 dependencies and `steamworks.session()` supplies the Steamworks bridge. Discovery
 helpers without a game identity run without a Steamworks session. These paths
 share the Windows launcher's Wine prefix. The adapter does not inject engine
-arguments or create title-specific compatibility selections. User selections
-and launch arguments are retained.
+arguments. User selections and launch arguments are retained.
 `runtime/tools/windows_webview.py` owns one instance-wide WebView2 policy,
 shared with Windows Launcher and built-in Windows apps. The fixed runtime and
 browser arguments are identical for all hosts. Android's prefix initialization

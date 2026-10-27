@@ -54,11 +54,13 @@ class AdapterTest(unittest.TestCase):
  def test_default_migration_preserves_explicit_choices(self):
   from steam import keyvalues
   config='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "Other" "unchanged" "CompatToolMapping" { "0" { "name" "proton_11" } "2758540" { "name" "arlinux-proton-arm64" "priority" "250" } "10" { "name" "proton_11" } "11" { "name" "third-party" } "12" { "name" "SteamLinuxRuntime_fex" } } } } } }'
-  updated=module.default_config(config)
+  updated=module.default_config(config,{'20'})
   mapping=keyvalues(updated)['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
   self.assertEqual(mapping['0']['name'],module.TOOL)
   self.assertEqual(mapping['2758540']['name'],module.TOOL)
   self.assertEqual(mapping['2758540']['priority'],'250')
+  self.assertEqual(mapping['20']['name'],module.TOOL)
+  self.assertEqual(mapping['20']['priority'],'250')
   self.assertEqual(mapping['10']['name'],'proton_11')
   self.assertEqual(mapping['11']['name'],'third-party')
   self.assertEqual(mapping['12']['name'],'SteamLinuxRuntime_fex')
@@ -75,16 +77,23 @@ class AdapterTest(unittest.TestCase):
     self.assertEqual(mapping['2758540']['name'],'native')
     self.assertEqual(mapping['10']['name'],'third-party')
     self.assertEqual(module.default_config(updated),updated)
- def test_only_global_default_is_created_without_title_overrides(self):
+ def test_installed_games_get_bionic_without_replacing_explicit_choices(self):
   from steam import keyvalues
   base='"InstallConfigStore" { "Software" { "Valve" { "Steam" { "CompatToolMapping" { %s } } } } }'
   for entry in ['', '"0" { "name" "native" }', '"1289310" { "name" "SteamLinuxRuntime_fex" }']:
-   updated=module.default_config(base%entry)
+   updated=module.default_config(base%entry,{'684410','1289310'})
    mapping=keyvalues(updated)['InstallConfigStore']['Software']['Valve']['Steam']['CompatToolMapping']
    self.assertEqual(mapping['0']['name'],module.TOOL)
+   self.assertEqual(mapping['684410']['name'],module.TOOL)
    if '1289310' in entry:self.assertEqual(mapping['1289310']['name'],'SteamLinuxRuntime_fex')
-   else:self.assertEqual(set(mapping),{'0'})
+   else:self.assertEqual(mapping['1289310']['name'],module.TOOL)
    self.assertEqual(module.default_config(updated),updated)
+ def test_installed_games_excludes_runtime_tools(self):
+  with tempfile.TemporaryDirectory() as temp:
+   steam=Path(temp);apps=steam/'steamapps';apps.mkdir()
+   for appid,state in [('684410','4'),('3127680','4'),('220','68'),('340','2')]:
+    (apps/f'appmanifest_{appid}.acf').write_text('"AppState" { "appid" "%s" "StateFlags" "%s" }'%(appid,state))
+   self.assertEqual(module.installed_games(steam),{'220','684410'})
  def test_first_install_has_default_before_first_login(self):
   from steam import keyvalues
   with tempfile.TemporaryDirectory() as temp:

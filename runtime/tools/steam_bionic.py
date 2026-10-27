@@ -16,6 +16,17 @@ TOOL = 'arlinux-wine-bionic'
 ENVIRONMENT = ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG', 'ARLINUX_VULKAN_CAPTURE', 'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
                'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER',
                'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS')
+NON_GAME_APPS = {
+    '1070560',  # Steam Linux Runtime 1.0
+    '1391110',  # Steam Linux Runtime 2.0
+    '1628350',  # Steam Linux Runtime 3.0
+    '228980',   # Steamworks Common Redistributables
+    '228990',   # Steamworks Common Redistributables (legacy)
+    '3127680',  # FEX
+    '4185400',  # Steam Linux Runtime 4.0
+    '4427310',  # Proton Experimental (ARM64)
+    '4628740',  # Proton 11 (ARM64)
+}
 
 
 def register(steam):
@@ -45,6 +56,28 @@ def configure(steam):
     select_default(steam)
 
 
+def installed_games(steam):
+    """Return installed app IDs which may have a Windows depot.
+
+    Steam applies a per-app compatibility choice only where a Windows build
+    exists. Runtimes and compatibility tools are excluded so their own launch
+    contracts stay untouched.
+    """
+    games = set()
+    for manifest in (steam/'steamapps').glob('appmanifest_*.acf'):
+        try:
+            text = manifest.read_text()
+        except OSError:
+            continue
+        appid = re.search(r'"appid"\s+"(\d+)"', text)
+        state = re.search(r'"StateFlags"\s+"(\d+)"', text)
+        if not appid or not state or not int(state[1]) & 4:
+            continue
+        if appid[1] not in NON_GAME_APPS:
+            games.add(appid[1])
+    return games
+
+
 def select_default(steam):
     """Select Bionic before client startup, preserving unrelated user choices."""
     for process in Path('/proc').iterdir():
@@ -63,7 +96,7 @@ def select_default(steam):
     config.parent.mkdir(parents=True, exist_ok=True)
     original = config.read_text() if existed else ('"InstallConfigStore" { '
         '"Software" { "Valve" { "Steam" { } } } }\n')
-    updated = default_config(original)
+    updated = default_config(original, installed_games(steam))
     if updated == original:
         return
     backup = config.with_name('config.vdf.before-arlinux-bionic')
@@ -81,7 +114,7 @@ def select_default(steam):
         temporary.unlink(missing_ok=True)
 
 
-def default_config(text):
+def default_config(text, app_ids=()):
     """Edit only CompatToolMapping; leave all other bytes and fields untouched."""
     from steam import keyvalues
     keyvalues(text)
@@ -105,11 +138,12 @@ def default_config(text):
     else:
         raise RuntimeError('Steam configuration has no InstallConfigStore/Software/Valve/Steam')
     changed = False
-    for app, entry in list(mapping.items()) + ([] if '0' in mapping else [('0', {})]):
+    requested = {'0', *map(str, app_ids)}
+    for app, entry in list(mapping.items()) + [(app, {}) for app in requested if app not in mapping]:
         name = entry.get('name', '')
         # Migrate our removed adapter and the Windows default. Keep explicit
         # per-game Valve/third-party choices and native Linux FEX selections.
-        if name == 'arlinux-proton-arm64' or (app == '0' and
+        if name == 'arlinux-proton-arm64' or (not name and app != '0') or (app == '0' and
                 (not name or name.lower() == 'native' or name.lower().startswith('proton_'))):
             entry = dict(entry, name=TOOL)
             entry.setdefault('config', '')
