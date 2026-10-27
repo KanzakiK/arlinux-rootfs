@@ -84,3 +84,16 @@ accelerated browser window composition.
 For the supported paths, no user or distribution configuration is required.
 Inherit the Arlinux session environment and launch the application with its
 normal command line.
+
+Zink uses its native null-descriptor path when Vulkan provides
+`robustness2.nullDescriptor`. Otherwise it uses ordinary descriptor sets and
+context-owned, initialized placeholder resources. It does not advertise a
+Vulkan feature missing from the driver. Storage-buffer/image shaders, compute
+and bindless textures are unavailable on this fallback; the OpenGL version and
+extensions reflect those limits. The state tracker supplies typed incomplete
+textures instead of passing null textures to the driver.
+
+`ZINK_DEBUG=nonull` disables Zink's use of native null descriptors before device
+creation, allowing device diagnostics to exercise the same fallback on a driver
+that normally supports the feature. This is an explicit diagnostic setting,
+not a global launch default or a substitute for acceptance on the affected GPU.
