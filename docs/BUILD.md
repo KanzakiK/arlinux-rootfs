@@ -4,6 +4,11 @@ This repository builds Linux distributions and their native Linux GPU libraries.
 It has no Bionic Wine source, build graph, assembly or publishing pipeline.
 Application launchers download the independently published runtime when needed.
 
+The `third_party/libhybris` submodule follows libhybris's single `arlinux`
+integration branch, shared with Wine. Keep the two consumers pinned to the same
+commit. Linux glibc and Android Bionic retain independent build modes and
+artifacts; see the [component ownership guide](../third_party/libhybris/arlinux/BUILD.md).
+
 ## ARLinux Guest Tools
 
 First-party application integration is a separate `guest-tools` product, not part
