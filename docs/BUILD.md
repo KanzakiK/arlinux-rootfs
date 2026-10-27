@@ -7,7 +7,7 @@ Application launchers download the independently published runtime when needed.
 The `third_party/libhybris` submodule follows libhybris's single `arlinux`
 integration branch, shared with Wine. Keep the two consumers pinned to the same
 commit. Linux glibc and Android Bionic retain independent build modes and
-artifacts; see the [component ownership guide](../third_party/libhybris/arlinux/BUILD.md).
+artifacts; see the [component ownership guide](https://github.com/taowen/libhybris/blob/arlinux/arlinux/BUILD.md).
 
 ## ARLinux Guest Tools
 
