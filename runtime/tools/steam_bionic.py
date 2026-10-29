@@ -13,7 +13,9 @@ import sys
 import tempfile
 
 TOOL = 'arlinux-wine-bionic'
-ENVIRONMENT = ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG', 'ARLINUX_VULKAN_CAPTURE', 'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
+ENVIRONMENT = ('WINEDEBUG', 'ARLINUX_EXCEPTION_LOG', 'ARLINUX_VULKAN_CAPTURE',
+               'HYBRIS_VULKAN_TRACE', 'HYBRIS_BC_TRANSCODE', 'HYBRIS_BC_FAST',
+               'SteamAppId', 'SteamGameId', 'SteamOverlayGameId',
                'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER',
                'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS')
 NON_GAME_APPS = {

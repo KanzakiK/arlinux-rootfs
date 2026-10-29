@@ -32,10 +32,10 @@ class AdapterTest(unittest.TestCase):
  def test_diagnostics_reach_host_without_guest_driver_paths(self):
   calls=[]
   fake=types.SimpleNamespace(instance_prefix=lambda:Path('/instance/prefix'),ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append(k) or types.SimpleNamespace(returncode=0)))
-  environment={'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1','LD_LIBRARY_PATH':'/guest/glibc','VK_ICD_FILENAMES':'/guest/icd.json','WINEDLLOVERRIDES':'d3d11=b'}
+  environment={'STEAM_COMPAT_DATA_PATH':'/compat','SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1','HYBRIS_VULKAN_TRACE':'1','HYBRIS_BC_TRANSCODE':'0','HYBRIS_BC_FAST':'0','LD_LIBRARY_PATH':'/guest/glibc','VK_ICD_FILENAMES':'/guest/icd.json','WINEDLLOVERRIDES':'d3d11=b'}
   with patch.dict(sys.modules,windows=fake,steamworks=types.SimpleNamespace(session=lambda *a:nullcontext('/launcher.exe')),windows_webview=types.SimpleNamespace(prepare=lambda r,p,env:env)),patch.dict(os.environ,environment,clear=True):
    self.assertEqual(module.launch('waitforexitandrun',['/games/Hell Clock.exe']),0)
-  self.assertEqual(calls[0]['env'],{'SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1'})
+  self.assertEqual(calls[0]['env'],{'SteamAppId':'1782460','WINEDEBUG':'+rawinput','ARLINUX_EXCEPTION_LOG':'1','HYBRIS_VULKAN_TRACE':'1','HYBRIS_BC_TRANSCODE':'0','HYBRIS_BC_FAST':'0'})
  def test_launch_never_injects_engine_specific_arguments(self):
   calls=[]
   fake=types.SimpleNamespace(instance_prefix=lambda:Path('/instance/prefix'),ensure_runtime=lambda:Path('/runtime'),run=lambda *a,**k:(calls.append(a) or types.SimpleNamespace(returncode=0)))
