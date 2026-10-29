@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dispatch independent repository workflows from Windows or Linux, without WSL."""
+"""Dispatch independent repository workflows from a WSL ext4 or Linux checkout."""
 from component_recipes import load_plan
 import argparse
 from contextlib import contextmanager

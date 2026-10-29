@@ -122,13 +122,15 @@ Yibu is supplied only inside the Release APK. Its internal archive remains a
 build and Debug import product, with no standalone ZIP publication.
 The publisher supports the other distributions only.
 
-Windows calls this same Python publisher through Android's `build.ps1
-publish-rootfs -Distribution ID -FrameworkRef COMMIT -Tag VERSION -Archive ZIP`.
+The Android WSL entry calls this same Python publisher through
+`./build.sh publish-rootfs -Distribution ID -FrameworkRef COMMIT -Tag VERSION -Archive ZIP`.
 It consumes the exact tested producer ZIP and adjacent `.json` receipt, verifies
 its hash and normal bundle validation, and uploads without rebuilding. Split
 Guest Tools remain APK-owned; these downloads require ARLinux 0.6.4 or newer.
 
-Use Python with zstandard and authenticated gh. Component ownership, ARM64
+Run the coordinator from a WSL ext4 checkout or a Linux checkout. Do not build
+from `/mnt/*`; compilation, caches and temporary rootfs trees stay on the Linux
+filesystem. Use Python with zstandard and authenticated gh. Component ownership, ARM64
 standard runner labels and dependencies are defined in
 the independent `tools/build/components/COMPONENT.json` recipes. Each repository runs an independent
 workflow_dispatch and owns its own 10 GB cache. Each recipe declares one fixed
@@ -137,7 +139,9 @@ Public distribution promotion remains explicit and does not create SHA-tagged
 development releases. The coordinator queries the debug endpoint directly;
 input identities select verified caches, not release tags. Payloads upload before
 the completion metadata, and all downloads retain SHA-256 verification.
-No WSL compilation is required.
+The coordinator may run in WSL, but heavy rootfs, Mesa, Guest Tools and Bionic
+component compilation remains on the public repository's standard GitHub-hosted
+runners.
 Request identities use source content and dependency identities rather than the
 integration commit alone. Actions caches retain stage archives, receipts and Linux
 GPU outputs. Root-owned scratch rootfs trees are deliberately excluded: their
