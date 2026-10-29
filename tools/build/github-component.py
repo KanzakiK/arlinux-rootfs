@@ -36,7 +36,8 @@ def request():
     framework = Path(__file__).resolve().parents[2]
     plan = load_plan(framework/'tools/build')
     stage = plan['stages'].get(data.get('stage'))
-    if not stage or os.environ.get('GITHUB_REPOSITORY') != stage['repository']:
+    expected_repository = data.get('repository', stage['repository'] if stage else '')
+    if not stage or os.environ.get('GITHUB_REPOSITORY') != expected_repository:
         raise ValueError('Component must run in its owning repository')
     for name in ('framework',):
         if not re.fullmatch('[0-9a-f]{40}', data.get(name, '')):

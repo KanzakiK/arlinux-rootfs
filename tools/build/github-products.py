@@ -76,9 +76,11 @@ def request_lock(path, stopped):
 
 
 class Coordinator:
-    def __init__(self, plan, framework, android, state, workflow_refs=None, poll=30):
+    def __init__(self, plan, framework, android, state, workflow_refs=None,
+                 repository_overrides=None, poll=30):
         self.plan,self.framework,self.android,self.state,self.poll = plan,framework,android,state,poll
         self.workflow_refs=workflow_refs or {}
+        self.repository_overrides=set((repository_overrides or {}).values())
         state.mkdir(parents=True,exist_ok=True)
         self.stopped = Event()
 
@@ -112,8 +114,11 @@ class Coordinator:
 
     def component(self, stage, dependencies):
         framework = Path(__file__).resolve().parents[2]
+        repository=self.plan['stages'][stage]['repository']
         request = dict(format=2,stage=stage,framework=self.framework,android=self.android,
                        dependencies=dependencies,sourceInputs=source_inputs(framework,self.framework,stage,self.plan))
+        if repository in self.repository_overrides:
+            request['repository']=repository
         request['identity']=request_identity(request)
         with request_lock(self.state/request['identity']/'dispatch.lock', self.stopped):
             return self._component(request)
@@ -136,8 +141,9 @@ class Coordinator:
             # Capsules contain verified build receipts, including references.
             # They can seed a new run after an unrelated framework commit; the
             # producer's input hashes, not this coordinator, decide cache hits.
-            if stage not in ('yibu','debian','arch','omarchy','plasma','lxqt','windows-fonts','wine-product'):
-                candidate=api(f"repos/{repository}/releases/tags/{self.plan['stages'][stage]['release']}", optional=True)
+            release=self.plan['stages'][stage].get('release')
+            if release and stage not in ('yibu','debian','arch','omarchy','plasma','lxqt','windows-fonts','wine-product'):
+                candidate=api(f"repos/{repository}/releases/tags/{release}", optional=True)
                 if candidate:
                     asset=next((a for a in candidate['assets'] if a['name']=='component.json'), None)
                     digest=asset.get('digest','') if asset else ''
@@ -285,6 +291,7 @@ def main():
     framework=Path(__file__).resolve().parents[2]
     plan=load_plan()
     workflow_refs={}
+    repository_overrides={}
     for value in args.workflow_ref:
         repository,separator,ref=value.partition('=')
         if not separator or not repository or not ref:
@@ -301,6 +308,7 @@ def main():
                 matched=True
         if not matched:
             parser.error('--repository-override did not match a component repository')
+        repository_overrides[upstream]=fork
     if args.plan:
         print(json.dumps(plan,indent=2))
         return
@@ -312,7 +320,7 @@ def main():
     if args.distribution != 'yibu':
         plan['products']['rootfs'] = args.distribution
     state=args.output/'github-state'
-    coordinator=Coordinator(plan,framework_sha,None,state,workflow_refs)
+    coordinator=Coordinator(plan,framework_sha,None,state,workflow_refs,repository_overrides)
     result=coordinator.run(products,args.parallel)
     if not args.metadata_only:
         for name,reference in result.items():
