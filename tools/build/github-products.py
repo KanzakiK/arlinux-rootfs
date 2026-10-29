@@ -269,12 +269,25 @@ def main():
     parser.add_argument('--product',choices=('rootfs','guest-tools','capture','all'),default='all')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--parallel',type=int,default=8)
+    parser.add_argument('--repository-override',action='append',default=[],
+                        metavar='UPSTREAM=FORK',help='dispatch one component from a fork')
     parser.add_argument('--plan',action='store_true')
     parser.add_argument('--metadata-only',action='store_true',
                         help='Resolve/build the same graph, leaving payload downloads to the device')
     args=parser.parse_args()
     framework=Path(__file__).resolve().parents[2]
     plan=load_plan()
+    for override in args.repository_override:
+        upstream,separator,fork=override.partition('=')
+        if not separator or not upstream or not fork:
+            parser.error('--repository-override requires UPSTREAM=FORK')
+        matched=False
+        for stage in plan['stages'].values():
+            if stage['repository']==upstream:
+                stage['repository']=fork
+                matched=True
+        if not matched:
+            parser.error('--repository-override did not match a component repository')
     if args.plan:
         print(json.dumps(plan,indent=2))
         return
