@@ -76,8 +76,9 @@ def request_lock(path, stopped):
 
 
 class Coordinator:
-    def __init__(self, plan, framework, android, state, poll=30):
+    def __init__(self, plan, framework, android, state, workflow_refs=None, poll=30):
         self.plan,self.framework,self.android,self.state,self.poll = plan,framework,android,state,poll
+        self.workflow_refs=workflow_refs or {}
         state.mkdir(parents=True,exist_ok=True)
         self.stopped = Event()
 
@@ -152,7 +153,11 @@ class Coordinator:
                             raise ValueError('Cache seed belongs to a different component')
                         request['cacheSeed']['identity']=seed['identity']
             payload=json.dumps(request,sort_keys=True)
-            gh('workflow','run',self.plan['workflow'],'--repo',repository,'-f','request='+payload)
+            command=['workflow','run',self.plan['workflow'],'--repo',repository]
+            if repository in self.workflow_refs:
+                command += ['--ref',self.workflow_refs[repository]]
+            command += ['-f','request='+payload]
+            gh(*command)
             print('START '+repository+'/'+stage,flush=True)
         else:
             print('RESUME '+repository+'/'+stage+' '+run['url'],flush=True)
@@ -271,12 +276,20 @@ def main():
     parser.add_argument('--parallel',type=int,default=8)
     parser.add_argument('--repository-override',action='append',default=[],
                         metavar='UPSTREAM=FORK',help='dispatch one component from a fork')
+    parser.add_argument('--workflow-ref',action='append',default=[],
+                        metavar='REPOSITORY=REF',help='use a workflow definition from a branch')
     parser.add_argument('--plan',action='store_true')
     parser.add_argument('--metadata-only',action='store_true',
                         help='Resolve/build the same graph, leaving payload downloads to the device')
     args=parser.parse_args()
     framework=Path(__file__).resolve().parents[2]
     plan=load_plan()
+    workflow_refs={}
+    for value in args.workflow_ref:
+        repository,separator,ref=value.partition('=')
+        if not separator or not repository or not ref:
+            parser.error('--workflow-ref requires REPOSITORY=REF')
+        workflow_refs[repository]=ref
     for override in args.repository_override:
         upstream,separator,fork=override.partition('=')
         if not separator or not upstream or not fork:
@@ -299,7 +312,7 @@ def main():
     if args.distribution != 'yibu':
         plan['products']['rootfs'] = args.distribution
     state=args.output/'github-state'
-    coordinator=Coordinator(plan,framework_sha,None,state)
+    coordinator=Coordinator(plan,framework_sha,None,state,workflow_refs)
     result=coordinator.run(products,args.parallel)
     if not args.metadata_only:
         for name,reference in result.items():
